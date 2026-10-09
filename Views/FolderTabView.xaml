@@ -1,0 +1,950 @@
+<UserControl x:Class="TabBrowser.Views.FolderTabView"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:TabBrowser.Views"
+             Background="#101114"
+             AllowDrop="True"
+             DragEnter="FolderItemsContent_DragEnter"
+             DragLeave="FolderItemsContent_DragLeave"
+             DragOver="FolderItemsContent_DragOver"
+             Drop="FolderItemsContent_Drop"
+             Focusable="True"
+             PreviewKeyDown="FolderTabView_PreviewKeyDown"
+             PreviewMouseDown="FolderTabView_PreviewMouseDown">
+    <UserControl.Resources>
+        <Style x:Key="FolderTabButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Height" Value="26" />
+            <Setter Property="MinWidth" Value="28" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Padding" Value="7,0" />
+            <Setter Property="Foreground" Value="#F3F4F6" />
+            <Setter Property="Background" Value="#20242E" />
+            <Setter Property="BorderBrush" Value="#3A404D" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#2A313D" />
+                    <Setter Property="BorderBrush" Value="#64748B" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.45" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <ContextMenu x:Key="FolderTabBlankContextMenu"
+                     x:Shared="False"
+                     Opened="BlankContextMenu_Opened">
+            <MenuItem Header="新しいフォルダー"
+                      InputGestureText="Ctrl+Shift+N"
+                      Click="CreateFolderMenuItem_Click" />
+            <MenuItem Header="貼り付け"
+                      InputGestureText="Ctrl+V"
+                      Tag="blank-paste"
+                      Click="PasteMenuItem_Click" />
+            <MenuItem Header="元に戻す"
+                      InputGestureText="Ctrl+Z"
+                      Tag="blank-undo"
+                      Click="UndoFileOperationMenuItem_Click" />
+            <Separator />
+            <MenuItem Header="すべて選択"
+                      InputGestureText="Ctrl+A"
+                      Tag="blank-select-all"
+                      Click="SelectAllMenuItem_Click" />
+            <MenuItem Header="更新"
+                      InputGestureText="F5"
+                      Click="RefreshButton_Click" />
+            <MenuItem Header="表示">
+                <MenuItem Header="詳細表示"
+                          IsCheckable="True"
+                          Tag="blank-view-details"
+                          Click="BlankViewModeMenuItem_Click" />
+                <MenuItem Header="アイコン表示"
+                          IsCheckable="True"
+                          Tag="blank-view-icons"
+                          Click="BlankViewModeMenuItem_Click" />
+                <Separator />
+                <MenuItem Header="隠しファイルを表示"
+                          IsCheckable="True"
+                          Tag="blank-show-hidden"
+                          Click="HiddenItemsButton_Click" />
+            </MenuItem>
+            <MenuItem Header="並べ替え">
+                <MenuItem Header="名前順"
+                          IsCheckable="True"
+                          Tag="name"
+                          Click="SortModeMenuItem_Click" />
+                <MenuItem Header="種類順"
+                          IsCheckable="True"
+                          Tag="type"
+                          Click="SortModeMenuItem_Click" />
+                <MenuItem Header="更新日時順"
+                          IsCheckable="True"
+                          Tag="lastWriteTime"
+                          Click="SortModeMenuItem_Click" />
+                <MenuItem Header="サイズ順"
+                          IsCheckable="True"
+                          Tag="size"
+                          Click="SortModeMenuItem_Click" />
+                <Separator />
+                <MenuItem Header="昇順"
+                          IsCheckable="True"
+                          Tag="ascending"
+                          Click="SortDirectionMenuItem_Click" />
+                <MenuItem Header="降順"
+                          IsCheckable="True"
+                          Tag="descending"
+                          Click="SortDirectionMenuItem_Click" />
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="この場所をピン留め"
+                      Tag="blank-pin"
+                      Click="ToggleCurrentPlacePinMenuItem_Click" />
+            <MenuItem Header="現在のパスをコピー"
+                      Tag="blank-copy-path"
+                      Click="CopyCurrentPathMenuItem_Click" />
+            <MenuItem Header="Workspaceへ参照保存"
+                      Tag="blank-save-workspace"
+                      Click="SaveCurrentFolderToWorkspaceMenuItem_Click" />
+            <MenuItem Header="Explorerで開く"
+                      Tag="blank-open-explorer"
+                      Click="ExplorerButton_Click" />
+        </ContextMenu>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="38" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="24" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="#11141A"
+                BorderBrush="#2A2F39"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="8,5">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button x:Name="BackButton"
+                            Content="←"
+                            Click="BackButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="戻る" />
+                    <Button x:Name="ForwardButton"
+                            Content="→"
+                            Click="ForwardButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="進む" />
+                    <Button x:Name="UpButton"
+                            Content="↑"
+                            Click="UpButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="上のフォルダー" />
+                    <Button Content="↻"
+                            Click="RefreshButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="更新" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="HierarchyButton"
+                            Content="階層"
+                            Click="HierarchyButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="親フォルダーを選択">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="HierarchyMenu" />
+                        </Button.ContextMenu>
+                    </Button>
+                    <Button x:Name="PlacesButton"
+                            Content="場所"
+                            Click="PlacesButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                        ToolTip="主要な場所へ移動">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="PlacesMenu" />
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
+                <TextBox x:Name="PathBox"
+                         Grid.Column="2"
+                         Height="26"
+                         Margin="4,0,8,0"
+                         Padding="7,3"
+                         VerticalContentAlignment="Center"
+                         Background="#0D1015"
+                         BorderBrush="#3A404D"
+                         Foreground="#E5E7EB"
+                         FontSize="12"
+                         KeyDown="PathBox_KeyDown"
+                         TextChanged="PathBox_TextChanged"
+                         GotKeyboardFocus="PathBox_GotKeyboardFocus"
+                         LostKeyboardFocus="PathBox_LostKeyboardFocus"
+                         ToolTip="パスを入力して Enter で移動" />
+                <TextBox x:Name="SearchBox"
+                         Grid.Column="3"
+                         Height="26"
+                         Margin="0,0,8,0"
+                         Padding="7,3"
+                         VerticalContentAlignment="Center"
+                         Background="#0D1015"
+                         BorderBrush="#3A404D"
+                         Foreground="#E5E7EB"
+                         FontSize="12"
+                         KeyDown="SearchBox_KeyDown"
+                         TextChanged="SearchBox_TextChanged"
+                         ToolTip="現在の一覧を名前・拡張子・種類で検索 (Ctrl+F)" />
+                <StackPanel Grid.Column="4" Orientation="Horizontal">
+                    <Button x:Name="RecursiveSearchButton"
+                            Content="配下検索"
+                            Click="RecursiveSearchButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="サブフォルダーを含めて検索。size&gt;10MB、date&gt;=2026-01-01も使用可能" />
+                    <Button x:Name="SortButton"
+                            Click="SortButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="並び替え">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="SortMenu">
+                                <MenuItem x:Name="SortByNameMenuItem"
+                                          Header="名前順"
+                                          IsCheckable="True"
+                                          Tag="name"
+                                          Click="SortModeMenuItem_Click" />
+                                <MenuItem x:Name="SortByTypeMenuItem"
+                                          Header="種類順"
+                                          IsCheckable="True"
+                                          Tag="type"
+                                          Click="SortModeMenuItem_Click" />
+                                <MenuItem x:Name="SortByLastWriteTimeMenuItem"
+                                          Header="更新日時順"
+                                          IsCheckable="True"
+                                          Tag="lastWriteTime"
+                                          Click="SortModeMenuItem_Click" />
+                                <MenuItem x:Name="SortBySizeMenuItem"
+                                          Header="サイズ順"
+                                          IsCheckable="True"
+                                          Tag="size"
+                                          Click="SortModeMenuItem_Click" />
+                                <Separator />
+                                <MenuItem x:Name="SortAscendingMenuItem"
+                                          Header="昇順"
+                                          IsCheckable="True"
+                                          Tag="ascending"
+                                          Click="SortDirectionMenuItem_Click" />
+                                <MenuItem x:Name="SortDescendingMenuItem"
+                                          Header="降順"
+                                          IsCheckable="True"
+                                          Tag="descending"
+                                          Click="SortDirectionMenuItem_Click" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                    <Button x:Name="ViewModeButton"
+                            Click="ViewModeButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}" />
+                    <Button x:Name="HiddenItemsButton"
+                            Click="HiddenItemsButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}" />
+                    <Button Content="Explorer"
+                            Click="ExplorerButton_Click"
+                            Style="{StaticResource FolderTabButtonStyle}"
+                            ToolTip="Explorer で開く" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Popup x:Name="PathSuggestionsPopup"
+               PlacementTarget="{Binding ElementName=PathBox}"
+               Placement="Bottom"
+               AllowsTransparency="True"
+               PopupAnimation="None"
+               StaysOpen="True">
+            <Border Width="420"
+                    MaxHeight="300"
+                    Padding="4"
+                    Background="#11141A"
+                    BorderBrush="#3A404D"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <ListBox x:Name="PathSuggestionsList"
+                         ItemsSource="{Binding PathSuggestions, ElementName=Root}"
+                         Background="#11141A"
+                         BorderThickness="0"
+                         Foreground="#E5E7EB"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         SelectionChanged="PathSuggestionsList_SelectionChanged"
+                         MouseLeftButtonUp="PathSuggestionsList_MouseLeftButtonUp">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="{x:Type ListBoxItem}">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Background" Value="#11141A" />
+                            <Setter Property="Foreground" Value="#E5E7EB" />
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#253246" />
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#202A38" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="6,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Margin="0,0,7,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="#7DD3FC"
+                                           FontSize="11"
+                                           Text="★">
+                                    <TextBlock.Style>
+                                        <Style TargetType="{x:Type TextBlock}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Foreground="#F3F4F6"
+                                               FontSize="12"
+                                               Text="{Binding DisplayName}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Foreground="#94A3B8"
+                                               FontSize="10"
+                                               Text="{Binding Path}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+        </Popup>
+
+        <Grid Grid.Row="1">
+            <Grid x:Name="FolderItemsContent"
+                  AllowDrop="True"
+                  ClipToBounds="True"
+                  DragEnter="FolderItemsContent_DragEnter"
+                  DragLeave="FolderItemsContent_DragLeave"
+                  DragOver="FolderItemsContent_DragOver"
+                  Drop="FolderItemsContent_Drop">
+            <DataGrid x:Name="ItemsGrid"
+                      AutoGenerateColumns="False"
+                      Background="#101114"
+                      BorderThickness="0"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserReorderColumns="True"
+                      CanUserResizeRows="False"
+                      EnableColumnVirtualization="True"
+                      EnableRowVirtualization="True"
+                      Foreground="#E5E7EB"
+                      GridLinesVisibility="Horizontal"
+                      HeadersVisibility="Column"
+                      IsReadOnly="True"
+                      ItemsSource="{Binding Items, ElementName=Root}"
+                      KeyDown="ItemsGrid_KeyDown"
+                      MouseDoubleClick="ItemsGrid_MouseDoubleClick"
+                      ContextMenuOpening="ItemsGrid_ContextMenuOpening"
+                      PreviewMouseLeftButtonDown="ItemsGrid_PreviewMouseLeftButtonDown"
+                      PreviewMouseMove="ItemsGrid_PreviewMouseMove"
+                      PreviewMouseDown="ItemsGrid_PreviewMouseDown"
+                      RowBackground="#101114"
+                      AlternatingRowBackground="#13171D"
+                      HorizontalGridLinesBrush="#252B34"
+                      SelectionMode="Extended"
+                      SelectionChanged="ItemsGrid_SelectionChanged"
+                      SelectionUnit="FullRow"
+                      ColumnReordered="ItemsGrid_ColumnReordered"
+                      Sorting="ItemsGrid_Sorting"
+                      ScrollViewer.ScrollChanged="DetailScrollViewer_ScrollChanged"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling">
+                <DataGrid.ContextMenu>
+                    <ContextMenu DataContext="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource Self}}"
+                                 Opened="ItemContextMenu_Opened">
+                        <MenuItem Header="新しいタブで開く"
+                                  Tag="folder-open-new-tab"
+                                  Click="OpenFolderInNewTabMenuItem_Click"
+                                  IsEnabled="{Binding IsDirectory}" />
+                        <MenuItem Header="バックグラウンドのタブで開く"
+                                  Tag="folder-open-background-tab"
+                                  Click="OpenFolderInBackgroundTabMenuItem_Click"
+                                  IsEnabled="{Binding IsDirectory}" />
+                        <MenuItem Header="新しいウィンドウで開く"
+                                  Tag="folder-open-new-window"
+                                  Click="OpenFolderInNewWindowMenuItem_Click"
+                                  IsEnabled="{Binding IsDirectory}" />
+                        <MenuItem Header="反対側のFolderTabで開く"
+                                  Tag="folder-open-opposite-pane"
+                                  Click="OpenFolderInOppositePaneMenuItem_Click"
+                                  IsEnabled="{Binding IsDirectory}"
+                                  Visibility="Collapsed" />
+                        <MenuItem Header="分割で開く"
+                                  Tag="folder-open-new-split"
+                                  IsEnabled="{Binding IsDirectory}"
+                                  Visibility="Collapsed">
+                            <MenuItem Header="左右分割で開く"
+                                      Click="OpenFolderInLeftRightSplitMenuItem_Click" />
+                            <MenuItem Header="上下分割で開く"
+                                      Click="OpenFolderInTopBottomSplitMenuItem_Click" />
+                        </MenuItem>
+                        <Separator Tag="folder-open-separator" />
+                        <MenuItem Header="プレビュー"
+                                  Click="QuickLookMenuItem_Click" />
+                        <MenuItem Header="YouTubeミニプレイヤーで開く"
+                                  Click="OpenVideoInMiniPlayerMenuItem_Click"
+                                  IsEnabled="{Binding CanOpenInMiniPlayer}" />
+                        <MenuItem Header="格納フォルダーを開く"
+                                  Click="OpenContainingFolderMenuItem_Click" />
+                        <MenuItem Header="Workspaceへ参照保存"
+                                  Click="SaveToWorkspaceMenuItem_Click" />
+                        <MenuItem Header="プログラムから開く..."
+                                  Click="OpenWithMenuItem_Click">
+                            <MenuItem.Style>
+                                <Style TargetType="{x:Type MenuItem}">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </MenuItem.Style>
+                        </MenuItem>
+                        <Separator />
+                        <MenuItem Header="新しいフォルダー"
+                                  InputGestureText="Ctrl+Shift+N"
+                                  Click="CreateFolderMenuItem_Click" />
+                        <Separator />
+                        <MenuItem Header="コピー"
+                                  InputGestureText="Ctrl+C"
+                                  Click="CopyMenuItem_Click" />
+                        <MenuItem Header="切り取り"
+                                  InputGestureText="Ctrl+X"
+                                  Click="CutMenuItem_Click" />
+                        <MenuItem Header="貼り付け"
+                                  InputGestureText="Ctrl+V"
+                                  Click="PasteMenuItem_Click" />
+                        <Separator />
+                        <MenuItem Header="名前の変更"
+                                  InputGestureText="F2"
+                                  Click="RenameMenuItem_Click" />
+                        <MenuItem Header="ごみ箱へ移動"
+                                  InputGestureText="Delete"
+                                  Click="RecycleMenuItem_Click" />
+                        <MenuItem Header="元に戻す"
+                                  InputGestureText="Ctrl+Z"
+                                  Click="UndoFileOperationMenuItem_Click" />
+                        <Separator />
+                        <MenuItem Header="プロパティ"
+                                  Click="PropertiesMenuItem_Click" />
+                    </ContextMenu>
+                </DataGrid.ContextMenu>
+                <DataGrid.ColumnHeaderStyle>
+                    <Style TargetType="{x:Type DataGridColumnHeader}">
+                        <Setter Property="Height" Value="28" />
+                        <Setter Property="Padding" Value="8,0" />
+                        <Setter Property="Background" Value="#171B22" />
+                        <Setter Property="BorderBrush" Value="#303641" />
+                        <Setter Property="Foreground" Value="#CBD5E1" />
+                        <Setter Property="FontSize" Value="11" />
+                    </Style>
+                </DataGrid.ColumnHeaderStyle>
+                <DataGrid.RowStyle>
+                    <Style TargetType="{x:Type DataGridRow}">
+                        <Setter Property="Height" Value="30" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsHidden}" Value="True">
+                                <Setter Property="Opacity" Value="0.58" />
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#202A36" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#23415B" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                                <Setter Property="BorderBrush" Value="#67D4FF" />
+                                <Setter Property="BorderThickness" Value="2" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </DataGrid.RowStyle>
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="名前" SortMemberPath="Name" Width="*" MinWidth="240">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid Margin="6,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="24" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Width="20"
+                                          Height="18"
+                                          VerticalAlignment="Center"
+                                          Loaded="DetailTypeIcon_Loaded"
+                                          SnapsToDevicePixels="True"
+                                          Tag="folder-detail-type-icon"
+                                          ToolTip="{Binding TypeText}"
+                                          Unloaded="DetailTypeIcon_Unloaded">
+                                        <Image Width="16"
+                                               Height="16"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               RenderOptions.BitmapScalingMode="HighQuality"
+                                               Source="{Binding DetailIcon}"
+                                               Stretch="Uniform" />
+                                        <Path StrokeLineJoin="Round"
+                                              StrokeThickness="1.2"
+                                              Stretch="Uniform">
+                                            <Path.Style>
+                                                <Style TargetType="{x:Type Path}">
+                                                    <Setter Property="Data" Value="M3,1 L11,1 L16,6 L16,17 L3,17 Z M11,1 L11,6 L16,6" />
+                                                    <Setter Property="Fill" Value="#334A63" />
+                                                    <Setter Property="Stroke" Value="#A8C7E8" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                            <Setter Property="Data" Value="M1,4 L7.5,4 L9.5,6 L18,6 L18,16 L1,16 Z" />
+                                                            <Setter Property="Fill" Value="#D6A33F" />
+                                                            <Setter Property="Stroke" Value="#FFE08A" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding HasDetailIcon}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Path.Style>
+                                        </Path>
+                                    </Grid>
+                                    <TextBlock Grid.Column="1"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding DisplayName}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding FullPath}" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="種類" Binding="{Binding TypeText}" SortMemberPath="TypeText" Width="150" />
+                    <DataGridTextColumn Header="更新日時" Binding="{Binding LastWriteTimeText}" SortMemberPath="LastWriteTime" Width="145" />
+                    <DataGridTextColumn Header="サイズ" Binding="{Binding SizeText}" SortMemberPath="SizeBytes" Width="100" />
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <ListBox x:Name="IconRowsList"
+                     Background="#101114"
+                     BorderThickness="0"
+                     HorizontalContentAlignment="Stretch"
+                     ScrollViewer.CanContentScroll="True"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.ScrollChanged="IconScrollViewer_ScrollChanged"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     SizeChanged="IconRowsList_SizeChanged"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.ScrollUnit="Pixel"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     Visibility="Collapsed">
+                <ListBox.ContextMenu>
+                    <StaticResource ResourceKey="FolderTabBlankContextMenu" />
+                </ListBox.ContextMenu>
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="{x:Type ListBoxItem}">
+                        <Setter Property="Focusable" Value="False" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="IsHitTestVisible" Value="True" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                    <ContentPresenter />
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <ItemsControl ItemsSource="{Binding Items}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="112"
+                                            Height="92"
+                                            Margin="3,2"
+                                            Padding="5,4"
+                                            BorderThickness="1"
+                                            CornerRadius="3"
+                                            Focusable="True"
+                                            KeyDown="IconTile_KeyDown"
+                                            Loaded="IconTile_Loaded"
+                                            PreviewMouseLeftButtonDown="IconTile_PreviewMouseLeftButtonDown"
+                                            PreviewMouseMove="IconTile_PreviewMouseMove"
+                                            PreviewMouseDown="IconTile_PreviewMouseDown"
+                                            ToolTip="{Binding FullPath}"
+                                            Unloaded="IconTile_Unloaded">
+                                        <Border.ContextMenu>
+                                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                                         Opened="ItemContextMenu_Opened">
+                                                <MenuItem Header="新しいタブで開く"
+                                                          Tag="folder-open-new-tab"
+                                                          Click="OpenFolderInNewTabMenuItem_Click"
+                                                          IsEnabled="{Binding IsDirectory}" />
+                                                <MenuItem Header="バックグラウンドのタブで開く"
+                                                          Tag="folder-open-background-tab"
+                                                          Click="OpenFolderInBackgroundTabMenuItem_Click"
+                                                          IsEnabled="{Binding IsDirectory}" />
+                                                <MenuItem Header="新しいウィンドウで開く"
+                                                          Tag="folder-open-new-window"
+                                                          Click="OpenFolderInNewWindowMenuItem_Click"
+                                                          IsEnabled="{Binding IsDirectory}" />
+                                                <MenuItem Header="反対側のFolderTabで開く"
+                                                          Tag="folder-open-opposite-pane"
+                                                          Click="OpenFolderInOppositePaneMenuItem_Click"
+                                                          IsEnabled="{Binding IsDirectory}"
+                                                          Visibility="Collapsed" />
+                                                <MenuItem Header="分割で開く"
+                                                          Tag="folder-open-new-split"
+                                                          IsEnabled="{Binding IsDirectory}"
+                                                          Visibility="Collapsed">
+                                                    <MenuItem Header="左右分割で開く"
+                                                              Click="OpenFolderInLeftRightSplitMenuItem_Click" />
+                                                    <MenuItem Header="上下分割で開く"
+                                                              Click="OpenFolderInTopBottomSplitMenuItem_Click" />
+                                                </MenuItem>
+                                                <Separator Tag="folder-open-separator" />
+                                                <MenuItem Header="プレビュー"
+                                                          Click="QuickLookMenuItem_Click" />
+                                                <MenuItem Header="YouTubeミニプレイヤーで開く"
+                                                          Click="OpenVideoInMiniPlayerMenuItem_Click"
+                                                          IsEnabled="{Binding CanOpenInMiniPlayer}" />
+                                                <MenuItem Header="格納フォルダーを開く"
+                                                          Click="OpenContainingFolderMenuItem_Click" />
+                                                <MenuItem Header="Workspaceへ参照保存"
+                                                          Click="SaveToWorkspaceMenuItem_Click" />
+                                                <MenuItem Header="プログラムから開く..."
+                                                          Click="OpenWithMenuItem_Click">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="{x:Type MenuItem}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                                <Separator />
+                                                <MenuItem Header="新しいフォルダー"
+                                                          InputGestureText="Ctrl+Shift+N"
+                                                          Click="CreateFolderMenuItem_Click" />
+                                                <Separator />
+                                                <MenuItem Header="コピー"
+                                                          InputGestureText="Ctrl+C"
+                                                          Click="CopyMenuItem_Click" />
+                                                <MenuItem Header="切り取り"
+                                                          InputGestureText="Ctrl+X"
+                                                          Click="CutMenuItem_Click" />
+                                                <MenuItem Header="貼り付け"
+                                                          InputGestureText="Ctrl+V"
+                                                          Click="PasteMenuItem_Click" />
+                                                <Separator />
+                                                <MenuItem Header="名前の変更"
+                                                          InputGestureText="F2"
+                                                          Click="RenameMenuItem_Click" />
+                                                <MenuItem Header="ごみ箱へ移動"
+                                                          InputGestureText="Delete"
+                                                          Click="RecycleMenuItem_Click" />
+                                                <MenuItem Header="元に戻す"
+                                                          InputGestureText="Ctrl+Z"
+                                                          Click="UndoFileOperationMenuItem_Click" />
+                                                <Separator />
+                                                <MenuItem Header="プロパティ"
+                                                          Click="PropertiesMenuItem_Click" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Border.Style>
+                                            <Style TargetType="{x:Type Border}">
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="BorderBrush" Value="Transparent" />
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#202A36" />
+                                                        <Setter Property="BorderBrush" Value="#3B82A8" />
+                                                    </Trigger>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="Background" Value="#23415B" />
+                                                        <Setter Property="BorderBrush" Value="#67B7DC" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                                                        <Setter Property="Background" Value="#20394A" />
+                                                        <Setter Property="BorderBrush" Value="#67D4FF" />
+                                                        <Setter Property="BorderThickness" Value="2" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsHidden}" Value="True">
+                                                        <Setter Property="Opacity" Value="0.58" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="52" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <Grid Width="100" Height="52" HorizontalAlignment="Center">
+                                                <Border Width="52"
+                                                        Height="52"
+                                                        HorizontalAlignment="Center"
+                                                        Background="#334155"
+                                                        BorderBrush="#64748B"
+                                                        BorderThickness="1"
+                                                        CornerRadius="3">
+                                                    <Border.Style>
+                                                        <Style TargetType="{x:Type Border}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasIcon}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="18"
+                                                               FontWeight="SemiBold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="{x:Type TextBlock}">
+                                                                <Setter Property="Foreground" Value="#CBD5E1" />
+                                                                <Setter Property="Text" Value="F" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                                                        <Setter Property="Foreground" Value="#FDE68A" />
+                                                                        <Setter Property="Text" Value="D" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                                <Image HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                                       Source="{Binding Icon}">
+                                                    <Image.Style>
+                                                        <Style TargetType="{x:Type Image}">
+                                                            <Setter Property="Width" Value="48" />
+                                                            <Setter Property="Height" Value="48" />
+                                                            <Setter Property="Stretch" Value="Uniform" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsThumbnail}" Value="True">
+                                                                    <Setter Property="Width" Value="100" />
+                                                                    <Setter Property="Height" Value="52" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Image.Style>
+                                                </Image>
+                                            </Grid>
+                                            <TextBlock Grid.Row="1"
+                                                       Height="32"
+                                                       Margin="1,2,1,0"
+                                                       HorizontalAlignment="Stretch"
+                                                       VerticalAlignment="Top"
+                                                       Foreground="#E5E7EB"
+                                                       FontSize="11"
+                                                       LineHeight="15"
+                                                       Text="{Binding DisplayName}"
+                                                       TextAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Border x:Name="DropTargetHighlight"
+                    Margin="3"
+                    IsHitTestVisible="False"
+                    Panel.ZIndex="80"
+                    BorderBrush="#67D4FF"
+                    BorderThickness="2"
+                    CornerRadius="3"
+                    Visibility="Collapsed">
+                <TextBlock x:Name="DropActionText"
+                           Margin="8"
+                           Padding="8,4"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Top"
+                           Background="#E6111820"
+                           Foreground="#E5F7FF"
+                           FontSize="12" />
+            </Border>
+
+            <Border x:Name="FileOperationProgressPanel"
+                    Width="380"
+                    Margin="12"
+                    Padding="12,10"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Panel.ZIndex="90"
+                    Background="#F211141A"
+                    BorderBrush="#38BDF8"
+                    BorderThickness="1"
+                    CornerRadius="5"
+                    Visibility="Collapsed">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="FileOperationTitleText"
+                                   Foreground="#F3F4F6"
+                                   FontSize="14"
+                                   FontWeight="SemiBold" />
+                        <TextBlock x:Name="FileOperationCountText"
+                                   Grid.Column="1"
+                                   Margin="12,0,0,0"
+                                   Foreground="#7DD3FC"
+                                   FontSize="12" />
+                    </Grid>
+                    <TextBlock x:Name="FileOperationCurrentText"
+                               Grid.Row="1"
+                               Margin="0,6,0,2"
+                               Foreground="#CBD5E1"
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="FileOperationDetailText"
+                               Grid.Row="2"
+                               Margin="0,0,0,8"
+                               Foreground="#94A3B8"
+                               FontSize="11" />
+                    <Grid Grid.Row="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ProgressBar x:Name="FileOperationProgressBar"
+                                     Height="9"
+                                     VerticalAlignment="Center"
+                                     Background="#20242E"
+                                     BorderBrush="#3A404D"
+                                     BorderThickness="1"
+                                     Foreground="#38BDF8"
+                                     IsIndeterminate="True" />
+                        <Button x:Name="CancelFileOperationPanelButton"
+                                Grid.Column="1"
+                                Height="24"
+                                Margin="10,0,0,0"
+                                Padding="10,0"
+                                Content="キャンセル"
+                                Click="CancelFileOperationButton_Click"
+                                Style="{StaticResource FolderTabButtonStyle}" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border x:Name="MessagePanel"
+                    Margin="24"
+                    Padding="18"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="#E611141A"
+                    BorderBrush="#3A404D"
+                    BorderThickness="1"
+                    Visibility="Collapsed">
+                <TextBlock x:Name="MessageText"
+                           MaxWidth="620"
+                           Foreground="#CBD5E1"
+                           FontSize="13"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap" />
+            </Border>
+            </Grid>
+
+            <views:QuickLookHost x:Name="QuickLookPreviewHost"
+                                 Panel.ZIndex="100" />
+        </Grid>
+
+        <Border Grid.Row="2"
+                Background="#11141A"
+                BorderBrush="#2A2F39"
+                BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusText"
+                           Margin="9,0"
+                           VerticalAlignment="Center"
+                           Foreground="#94A3B8"
+                           FontSize="11"
+                           TextTrimming="CharacterEllipsis" />
+                <Button x:Name="CancelFileOperationButton"
+                        Grid.Column="2"
+                        Height="20"
+                        Margin="4,2,6,2"
+                        Padding="8,0"
+                        Content="キャンセル"
+                        Click="CancelFileOperationButton_Click"
+                        Style="{StaticResource FolderTabButtonStyle}"
+                        Visibility="Collapsed" />
+                <Button x:Name="RetryFileOperationButton"
+                        Grid.Column="1"
+                        Height="20"
+                        Margin="4,2,0,2"
+                        Padding="8,0"
+                        Content="失敗項目を再試行"
+                        Click="RetryFileOperationButton_Click"
+                        Style="{StaticResource FolderTabButtonStyle}"
+                        Visibility="Collapsed" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

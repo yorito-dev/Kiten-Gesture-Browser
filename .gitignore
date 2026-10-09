@@ -1,0 +1,38 @@
+# .NET / Visual Studio 生成物
+bin/
+obj/
+publish/
+artifacts/
+.vs/
+TestResults/
+packages/
+
+# ユーザー固有設定
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# テスト・カバレッジ
+*.trx
+coverage/
+coverage.*
+
+# 一時ファイル・ログ
+*.log
+*.tmp
+*.bak
+*.cache
+
+# ローカルデータベース
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Windows・エディター
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/

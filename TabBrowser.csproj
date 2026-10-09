@@ -1,0 +1,103 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.1</KitenReleaseVersion>
+    <KitenReleaseClass Condition="'$(KitenReleaseClass)' == ''">Preview</KitenReleaseClass>
+    <KitenBuildVerification Condition="'$(KitenBuildVerification)' == ''">unverified</KitenBuildVerification>
+    <KitenDistributionPageUrl Condition="'$(KitenDistributionPageUrl)' == ''" />
+    <KitenIssueReportUrl Condition="'$(KitenIssueReportUrl)' == ''" />
+    <KitenPublicBuild Condition="'$(KitenPublicBuild)' == ''">true</KitenPublicBuild>
+    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <DefineConstants Condition="'$(KitenPublicBuild)' == 'true'">$(DefineConstants);KITEN_PUBLIC_BUILD</DefineConstants>
+    <IntermediateOutputPath Condition="'$(KitenPublicBuild)' == 'true'">obj\$(Configuration)\public\</IntermediateOutputPath>
+    <OutputPath Condition="'$(KitenPublicBuild)' == 'true'">bin\$(Configuration)\public\</OutputPath>
+    <Version>$(KitenReleaseVersion)</Version>
+    <Product>Kiten Gesture Browser</Product>
+    <AssemblyTitle>Kiten Gesture Browser</AssemblyTitle>
+    <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.30" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Scripts\GestureHost.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Help\user-guide.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="docs\images\user-guide\**\*" Exclude="docs\images\user-guide\07-youtube-mini-player.png;docs\images\user-guide\07b-youtube-mini-player-controls.png;docs\images\user-guide\08-mini-player-list.png">
+      <Link>Help\images\user-guide\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <TargetPath>Help\images\user-guide\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Resource Include="Assets\AppIcon.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Tests\**\*.cs" />
+    <Compile Remove="Tools\**\*.cs" />
+  </ItemGroup>
+  <Target Name="VerifyKitenPublicXaml" BeforeTargets="MarkupCompilePass1" Condition="'$(KitenPublicBuild)' == 'true' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('MainWindow.xaml') or !Exists('SettingsWindow.xaml') or !Exists('Views\LocalVideoPlayerView.xaml') or !Exists('Views\QuickLookMediaView.xaml')" Text="切り出した公開用XAMLがありません。ソースZIPを欠けなく展開してください。" />
+  </Target>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TabBrowser.Tests" />
+    <AssemblyMetadata Include="KitenPublicVersion" Value="$(KitenReleaseVersion)" />
+    <AssemblyMetadata Include="KitenReleaseClass" Value="$(KitenReleaseClass)" />
+    <AssemblyMetadata Include="KitenBuildVerification" Value="$(KitenBuildVerification)" />
+    <AssemblyMetadata Include="KitenDistributionPageUrl" Value="$(KitenDistributionPageUrl)" />
+    <AssemblyMetadata Include="KitenIssueReportUrl" Value="$(KitenIssueReportUrl)" />
+  </ItemGroup>
+  <Target Name="AddKitenSourceRevisionMetadata" BeforeTargets="GetAssemblyAttributes" DependsOnTargets="InitializeSourceControlInformation" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup Condition="'$(SourceRevisionId)' != ''">
+      <AssemblyMetadata Include="KitenSourceRevisionId" Value="$(SourceRevisionId)" />
+    </ItemGroup>
+  </Target>
+  <Target Name="GenerateKitenReleaseInfo" AfterTargets="GetAssemblyAttributes" Condition="'$(DesignTimeBuild)' != 'true' and '$(MSBuildProjectName)' == 'TabBrowser'">
+    <PropertyGroup>
+      <_KitenSourceRevisionIsFullSha>$([System.Text.RegularExpressions.Regex]::IsMatch('$(SourceRevisionId)', '^[0-9a-fA-F]{40}$'))</_KitenSourceRevisionIsFullSha>
+      <KitenReleaseInfoPath>$(IntermediateOutputPath)release-info.json</KitenReleaseInfoPath>
+      <_KitenRepositoryDirtyJson>null</_KitenRepositoryDirtyJson>
+      <_KitenRepositoryDirtyJson Condition="'$(KitenBuildVerification)' == 'dirty'">true</_KitenRepositoryDirtyJson>
+      <_KitenRepositoryDirtyJson Condition="'$(KitenBuildVerification)' == 'verified-clean'">false</_KitenRepositoryDirtyJson>
+    </PropertyGroup>
+    <Error Condition="'$(KitenBuildVerification)' != 'unverified' and '$(KitenBuildVerification)' != 'dirty' and '$(KitenBuildVerification)' != 'verified-clean'" Text="KitenBuildVerificationはunverified、dirty、verified-cleanのいずれかを指定してください。" />
+    <Error Condition="'$(KitenBuildVerification)' == 'verified-clean' and '$(_KitenSourceRevisionIsFullSha)' != 'True'" Text="検証済み公開候補には40桁の16進SourceRevisionIdが必要です。" />
+    <ItemGroup>
+      <_KitenReleaseInfoLine Remove="@(_KitenReleaseInfoLine)" />
+      <_KitenReleaseInfoLine Include="{" />
+      <_KitenReleaseInfoLine Include="  &quot;schemaVersion&quot;: 1," />
+      <_KitenReleaseInfoLine Include="  &quot;productName&quot;: &quot;Kiten Gesture Browser&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;releaseClass&quot;: &quot;$(KitenReleaseClass)&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;version&quot;: &quot;$(KitenReleaseVersion)&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;sourceCommit&quot;: &quot;$(SourceRevisionId)&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;repositoryDirty&quot;: $(_KitenRepositoryDirtyJson)," />
+      <_KitenReleaseInfoLine Include="  &quot;buildVerification&quot;: &quot;$(KitenBuildVerification)&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;configuration&quot;: &quot;$(Configuration)&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;targetFramework&quot;: &quot;$(TargetFramework)&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;runtimeIdentifier&quot;: &quot;$(RuntimeIdentifier)&quot;," />
+      <_KitenReleaseInfoLine Include="  &quot;dotnetSdkVersion&quot;: &quot;$(NETCoreSdkVersion)&quot;" />
+      <_KitenReleaseInfoLine Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(KitenReleaseInfoPath)" Lines="@(_KitenReleaseInfoLine)" Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <FileWrites Include="$(KitenReleaseInfoPath)" />
+    </ItemGroup>
+  </Target>
+  <Target Name="CopyKitenReleaseInfoToOutput" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and Exists('$(KitenReleaseInfoPath)')">
+    <Copy SourceFiles="$(KitenReleaseInfoPath)" DestinationFiles="$(TargetDir)release-info.json" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CopyKitenReleaseInfoToPublish" AfterTargets="Publish" Condition="'$(DesignTimeBuild)' != 'true' and Exists('$(KitenReleaseInfoPath)') and '$(PublishDir)' != ''">
+    <Copy SourceFiles="$(KitenReleaseInfoPath)" DestinationFiles="$(PublishDir)release-info.json" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="RemoveStalePublishRuntimeAssemblies" AfterTargets="PrepareForPublish" Condition="'$(PublishDir)' != ''">
+    <Delete Files="$(PublishDir)System.Text.Json.dll;$(PublishDir)System.Text.Encodings.Web.dll;$(PublishDir)System.IO.Pipelines.dll" />
+  </Target>
+  <Target Name="RequirePublicSourceBuild" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(KitenPublicBuild)' != 'true'" Text="このソースは公開用構成専用です。KitenPublicBuild=trueでビルドしてください。" />
+  </Target>
+</Project>

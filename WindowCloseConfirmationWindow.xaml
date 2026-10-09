@@ -1,0 +1,58 @@
+<Window x:Class="TabBrowser.WindowCloseConfirmationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ウィンドウを閉じる"
+        Width="560"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="#101114"
+        WindowStartupLocation="CenterOwner"
+        ContentRendered="Window_ContentRendered"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+        <Style x:Key="CloseConfirmationButtonStyle"
+               TargetType="{x:Type Button}"
+               BasedOn="{StaticResource DarkDialogButtonStyle}">
+            <Setter Property="MinWidth" Value="112" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Foreground="#F3F4F6"
+                   FontSize="17"
+                   FontWeight="SemiBold"
+                   Text="開いているウィンドウが複数あります" />
+
+        <TextBlock Grid.Row="1"
+                   Margin="0,12,0,18"
+                   Foreground="#C7CDD8"
+                   FontSize="13"
+                   LineHeight="21"
+                   TextWrapping="Wrap"
+                   Text="すべて閉じると、現在のウィンドウ構成を保存して次回起動時に復元します。&#x0a;このウィンドウだけ閉じる場合、ほかのウィンドウはそのまま利用できます。" />
+
+        <StackPanel Grid.Row="2"
+                    HorizontalAlignment="Right"
+                    Orientation="Horizontal">
+            <Button Content="すべて閉じる"
+                    Click="CloseAllButton_Click"
+                    Style="{StaticResource CloseConfirmationButtonStyle}" />
+            <Button x:Name="CloseCurrentButton"
+                    Content="このウィンドウだけ閉じる"
+                    Click="CloseCurrentButton_Click"
+                    Style="{StaticResource CloseConfirmationButtonStyle}" />
+            <Button Content="キャンセル"
+                    Click="CancelButton_Click"
+                    Style="{StaticResource CloseConfirmationButtonStyle}" />
+        </StackPanel>
+    </Grid>
+</Window>

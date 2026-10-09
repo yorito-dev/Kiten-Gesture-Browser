@@ -1,0 +1,135 @@
+<Window x:Class="TabBrowser.BookmarkImportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ブックマークの取り込み"
+        Width="860"
+        Height="500"
+        MinWidth="680"
+        MinHeight="380"
+        Background="#101114"
+        WindowStartupLocation="CenterOwner"
+        Loaded="Window_Loaded">
+    <Window.Resources>
+        <Style x:Key="DialogButtonStyle"
+               TargetType="{x:Type Button}"
+               BasedOn="{StaticResource DarkDialogButtonStyle}">
+            <Setter Property="MinWidth" Value="84" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Margin="0,0,0,10"
+                   Foreground="#F3F4F6"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Text="Chrome/Edge のブックマーク" />
+
+        <DataGrid x:Name="ProfileGrid"
+                  Grid.Row="1"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  HeadersVisibility="Column"
+                  IsReadOnly="True"
+                  ItemsSource="{Binding Profiles}"
+                  SelectionChanged="ProfileGrid_SelectionChanged"
+                  SelectionMode="Single"
+                  SelectionUnit="FullRow"
+                  Background="#11141A"
+                  Foreground="#F3F4F6"
+                  BorderBrush="#303541"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="#303541"
+                  RowBackground="#171A22"
+                  AlternatingRowBackground="#141720"
+                  ColumnHeaderHeight="30"
+                  RowHeight="34">
+            <DataGrid.Resources>
+                <Style TargetType="{x:Type DataGridColumnHeader}">
+                    <Setter Property="Background" Value="#1D2028" />
+                    <Setter Property="Foreground" Value="#D1D5DB" />
+                    <Setter Property="BorderBrush" Value="#303541" />
+                    <Setter Property="BorderThickness" Value="0,0,1,1" />
+                    <Setter Property="Padding" Value="8,0" />
+                </Style>
+                <Style TargetType="{x:Type DataGridRow}">
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="#284B73" />
+                            <Setter Property="BorderBrush" Value="#73B7FF" />
+                            <Setter Property="BorderThickness" Value="2" />
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+                <Style TargetType="{x:Type DataGridCell}">
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderBrush" Value="Transparent" />
+                    <Setter Property="Foreground" Value="#F3F4F6" />
+                    <Setter Property="Padding" Value="8,0" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Foreground" Value="#FFFFFF" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.Resources>
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="ブラウザ"
+                                    Binding="{Binding BrowserName}"
+                                    Width="90" />
+                <DataGridTextColumn Header="プロファイル"
+                                    Binding="{Binding ProfileName}"
+                                    Width="150" />
+                <DataGridTextColumn Header="合計"
+                                    Binding="{Binding TotalCount}"
+                                    Width="80" />
+                <DataGridTextColumn Header="新規"
+                                    Binding="{Binding NewCount}"
+                                    Width="80" />
+                <DataGridTextColumn Header="重複"
+                                    Binding="{Binding DuplicateCount}"
+                                    Width="80" />
+                <DataGridTextColumn Header="ファイル"
+                                    Binding="{Binding BookmarkFile}"
+                                    Width="3*" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="2"
+                   Margin="0,8,0,8"
+                   Style="{StaticResource DarkStatusTextStyle}" />
+
+        <DockPanel Grid.Row="3" LastChildFill="False">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="更新"
+                        Click="RefreshButton_Click"
+                        Style="{StaticResource DialogButtonStyle}" />
+                <Button x:Name="ImportButton"
+                        Content="取り込む"
+                        IsEnabled="False"
+                        Click="ImportButton_Click"
+                        Style="{StaticResource DialogButtonStyle}" />
+            </StackPanel>
+            <Button DockPanel.Dock="Right"
+                    Content="閉じる"
+                    Click="CloseButton_Click"
+                    Style="{StaticResource DialogButtonStyle}" />
+        </DockPanel>
+    </Grid>
+</Window>

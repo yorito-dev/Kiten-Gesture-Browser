@@ -1,0 +1,69 @@
+<Window x:Class="TabBrowser.DownloadDetailWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ダウンロード詳細"
+        Width="680"
+        Height="560"
+        MinWidth="520"
+        MinHeight="380"
+        Background="#101114"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <Style x:Key="DialogButtonStyle"
+               TargetType="{x:Type Button}"
+               BasedOn="{StaticResource DarkDialogButtonStyle}">
+            <Setter Property="MinWidth" Value="96" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Margin="0,0,0,10"
+                   Foreground="#F3F4F6"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Text="ダウンロード詳細" />
+
+        <TextBox x:Name="DetailTextBox"
+                 Grid.Row="1"
+                 AcceptsReturn="True"
+                 AcceptsTab="True"
+                 Background="#151820"
+                 BorderBrush="#343842"
+                 BorderThickness="1"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 Foreground="#E5E7EB"
+                 HorizontalScrollBarVisibility="Auto"
+                 IsReadOnly="True"
+                 Padding="10"
+                 TextWrapping="NoWrap"
+                 VerticalScrollBarVisibility="Auto" />
+
+        <StackPanel Grid.Row="2"
+                    Margin="0,12,0,0"
+                    HorizontalAlignment="Right"
+                    Orientation="Horizontal">
+            <Button x:Name="RetryButton"
+                    Content="再試行"
+                    Click="RetryButton_Click"
+                    Style="{StaticResource DialogButtonStyle}" />
+            <Button Content="エラーをコピー"
+                    Click="CopyErrorButton_Click"
+                    Style="{StaticResource DialogButtonStyle}" />
+            <Button Content="詳細をコピー"
+                    Click="CopyDetailsButton_Click"
+                    Style="{StaticResource DialogButtonStyle}" />
+            <Button Content="閉じる"
+                    Click="CloseButton_Click"
+                    Style="{StaticResource DialogButtonStyle}" />
+        </StackPanel>
+    </Grid>
+</Window>

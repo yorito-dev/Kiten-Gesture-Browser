@@ -1,0 +1,212 @@
+<Window x:Class="TabBrowser.RuntimeDiagnosticsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="バージョン情報・Runtime診断"
+        Width="1120"
+        Height="640"
+        MinWidth="900"
+        MinHeight="480"
+        Background="#101114"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <Style TargetType="{x:Type TextBlock}">
+            <Setter Property="Foreground" Value="#E5E7EB" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style TargetType="{x:Type Button}"
+               BasedOn="{StaticResource DarkCompactButtonStyle}">
+            <Setter Property="MinWidth" Value="76" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Padding" Value="10,2" />
+        </Style>
+        <Style TargetType="{x:Type CheckBox}"
+               BasedOn="{StaticResource DarkCheckBoxStyle}">
+            <Setter Property="Foreground" Value="#D1D5DB" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="{x:Type DataGrid}"
+               BasedOn="{StaticResource DarkDataGridStyle}">
+            <Setter Property="Background" Value="#101114" />
+            <Setter Property="Foreground" Value="#E5E7EB" />
+            <Setter Property="BorderBrush" Value="#30343C" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#292D35" />
+            <Setter Property="RowBackground" Value="#14171C" />
+            <Setter Property="AlternatingRowBackground" Value="#181B22" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+        </Style>
+        <Style TargetType="{x:Type DataGridColumnHeader}">
+            <Setter Property="Background" Value="#20242B" />
+            <Setter Property="Foreground" Value="#D1D5DB" />
+            <Setter Property="BorderBrush" Value="#343842" />
+            <Setter Property="Padding" Value="7,5" />
+        </Style>
+        <Style TargetType="{x:Type TabItem}">
+            <Setter Property="Foreground" Value="#E5E7EB" />
+            <Setter Property="Background" Value="#181B22" />
+            <Setter Property="BorderBrush" Value="#343842" />
+            <Setter Property="Padding" Value="12,5" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" LastChildFill="False">
+            <Button Content="再取得" Click="RefreshButton_Click" />
+            <Button x:Name="StartButton" Content="計測開始" Click="StartButton_Click" />
+            <Button x:Name="StopButton" Content="停止" IsEnabled="False" Click="StopButton_Click" />
+            <Button Content="詳細診断をコピー"
+                    Click="CopyButton_Click"
+                    ToolTip="現在のRuntime診断結果をコピーします"
+                    AutomationProperties.Name="詳細診断をコピー" />
+            <Button Content="レポート保存" Click="SaveButton_Click" />
+            <CheckBox x:Name="OnlyProblemWindowsCheckBox"
+                      Margin="8,0,0,0"
+                      Content="問題のあるWindowのみ"
+                      Checked="OnlyProblemWindowsCheckBox_Changed"
+                      Unchecked="OnlyProblemWindowsCheckBox_Changed" />
+        </DockPanel>
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="1"
+                   Margin="0,8,0,8"
+                   Style="{StaticResource DarkStatusTextStyle}"
+                   Text="Runtime状態を取得しています" />
+
+        <TabControl Grid.Row="2" Background="#101114" BorderBrush="#343842">
+            <TabItem Header="バージョン情報">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Margin="0,0,0,8"
+                               Text="不具合報告に必要な基本情報だけを表示します。個人のパス、閲覧内容、Cookie、ログ本文は含みません。"
+                               TextWrapping="Wrap" />
+
+                    <DataGrid x:Name="ReleaseInformationGrid"
+                              Grid.Row="1"
+                              AlternationCount="2">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="項目" Binding="{Binding Name}" Width="240" />
+                            <DataGridTextColumn Header="値" Binding="{Binding Value}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <WrapPanel Grid.Row="2" Margin="0,8,0,0">
+                        <Button x:Name="CopyBasicInformationButton"
+                                Content="基本情報をコピー"
+                                Click="CopyBasicInformationButton_Click"
+                                ToolTip="表示中の診断用基本情報をクリップボードへコピーします"
+                                AutomationProperties.Name="診断用基本情報をコピー" />
+                        <Button x:Name="DistributionPageButton"
+                                Content="配布ページを開く"
+                                Click="DistributionPageButton_Click"
+                                ToolTip="設定済みの配布ページを既定のブラウザーで開きます"
+                                AutomationProperties.Name="配布ページを開く" />
+                        <Button x:Name="IssueReportButton"
+                                Content="不具合を報告"
+                                Click="IssueReportButton_Click"
+                                ToolTip="設定済みの不具合報告先を既定のブラウザーで開きます"
+                                AutomationProperties.Name="不具合報告先を開く" />
+                    </WrapPanel>
+
+                    <TextBlock x:Name="ReleaseLinkStatusText"
+                               Grid.Row="3"
+                               Margin="0,6,0,0"
+                               Foreground="#9CA3AF"
+                               TextWrapping="Wrap" />
+                </Grid>
+            </TabItem>
+            <TabItem Header="概要">
+                <DataGrid x:Name="OverviewGrid" AlternationCount="2">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="項目" Binding="{Binding Name}" Width="240" />
+                        <DataGridTextColumn Header="値" Binding="{Binding Value}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="Window / WebView2">
+                <DataGrid x:Name="WindowGrid" AlternationCount="2">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Window" Binding="{Binding Window}" Width="75" />
+                        <DataGridTextColumn Header="タブ" Binding="{Binding Tabs}" Width="60" />
+                        <DataGridTextColumn Header="WebView2" Binding="{Binding WebViews}" Width="80" />
+                        <DataGridTextColumn Header="分割" Binding="{Binding SplitViews}" Width="60" />
+                        <DataGridTextColumn Header="ミニプレイヤー" Binding="{Binding MiniPlayers}" Width="105" />
+                        <DataGridTextColumn Header="Popup" Binding="{Binding Popups}" Width="70" />
+                        <DataGridTextColumn Header="バックグラウンド" Binding="{Binding Background}" Width="140" />
+                        <DataGridTextColumn Header="状態" Binding="{Binding State}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="検出事項">
+                <DataGrid x:Name="IssueGrid" AlternationCount="2">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="重要度" Binding="{Binding Severity}" Width="70" />
+                        <DataGridTextColumn Header="対象" Binding="{Binding Scope}" Width="150" />
+                        <DataGridTextColumn Header="コード" Binding="{Binding Code}" Width="220" />
+                        <DataGridTextColumn Header="内容" Binding="{Binding Message}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="入力履歴">
+                <DataGrid x:Name="InputGrid" AlternationCount="2">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="時刻" Binding="{Binding Time}" Width="105" />
+                        <DataGridTextColumn Header="イベント" Binding="{Binding Event}" Width="120" />
+                        <DataGridTextColumn Header="種別" Binding="{Binding Kind}" Width="150" />
+                        <DataGridTextColumn Header="Window" Binding="{Binding Window}" Width="90" />
+                        <DataGridTextColumn Header="対象" Binding="{Binding Target}" Width="90" />
+                        <DataGridTextColumn Header="操作ID" Binding="{Binding Interaction}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="計測履歴">
+                <DataGrid x:Name="SampleGrid" AlternationCount="2">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="時刻" Binding="{Binding Time}" Width="105" />
+                        <DataGridTextColumn Header="CPU合計" Binding="{Binding TotalCpu}" Width="80" />
+                        <DataGridTextColumn Header="本体CPU" Binding="{Binding HostCpu}" Width="75" />
+                        <DataGridTextColumn Header="Web CPU" Binding="{Binding WebViewCpu}" Width="75" />
+                        <DataGridTextColumn Header="Renderer" Binding="{Binding RendererCpu}" Width="75" />
+                        <DataGridTextColumn Header="GPU" Binding="{Binding GpuCpu}" Width="65" />
+                        <DataGridTextColumn Header="合計Private MB" Binding="{Binding TotalPrivateMemoryMb}" Width="110" />
+                        <DataGridTextColumn Header="開始比 MB" Binding="{Binding TotalPrivateMemoryDeltaMb}" Width="85" />
+                        <DataGridTextColumn Header="Window" Binding="{Binding Windows}" Width="70" />
+                        <DataGridTextColumn Header="タブ" Binding="{Binding Tabs}" Width="55" />
+                        <DataGridTextColumn Header="WebView2" Binding="{Binding WebViews}" Width="75" />
+                        <DataGridTextColumn Header="Mini" Binding="{Binding MiniPlayers}" Width="55" />
+                        <DataGridTextColumn Header="Chat" Binding="{Binding LiveChats}" Width="55" />
+                        <DataGridTextColumn Header="Handle" Binding="{Binding Handles}" Width="75" />
+                        <DataGridTextColumn Header="エラー" Binding="{Binding Errors}" Width="65" />
+                        <DataGridTextColumn Header="警告" Binding="{Binding Warnings}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="起動・復元">
+                <DataGrid x:Name="StartupGrid" AlternationCount="2">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="経過" Binding="{Binding Elapsed}" Width="85" />
+                        <DataGridTextColumn Header="工程" Binding="{Binding Stage}" Width="260" />
+                        <DataGridTextColumn Header="Window" Binding="{Binding Window}" Width="75" />
+                        <DataGridTextColumn Header="タブ" Binding="{Binding Tab}" Width="100" />
+                        <DataGridTextColumn Header="件数" Binding="{Binding Count}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

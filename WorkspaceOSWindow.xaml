@@ -1,0 +1,17 @@
+<Window x:Class="TabBrowser.WorkspaceOSWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:TabBrowser.Views"
+        Title="Workspace OS"
+        Width="1100"
+        Height="720"
+        MinWidth="820"
+        MinHeight="520"
+        Background="#101114"
+        WindowStartupLocation="CenterOwner">
+    <Grid x:Name="WorkspaceResizeHost"
+          Background="#101114"
+          ClipToBounds="True">
+        <views:WorkspaceOSView x:Name="WorkspaceView" />
+    </Grid>
+</Window>

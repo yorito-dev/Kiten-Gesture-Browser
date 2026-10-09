@@ -1,0 +1,9 @@
+<Project>
+  <!-- 公開構成を既定にし、NuGet読込前にアプリの依存解決結果を分離する。 -->
+  <PropertyGroup>
+    <KitenPublicBuild Condition="'$(KitenPublicBuild)' == ''">true</KitenPublicBuild>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(KitenPublicBuild)' == 'true' and '$(MSBuildProjectName)' == 'TabBrowser'">
+    <MSBuildProjectExtensionsPath>$(MSBuildThisFileDirectory)obj\public\</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

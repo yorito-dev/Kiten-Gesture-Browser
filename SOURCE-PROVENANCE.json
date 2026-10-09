@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "kind": "public-source-snapshot",
+  "created": "2026-10-10",
+  "upstreamCommit": "3d7c720e90525e0d7be33645a10b9c4e422e2c8c",
+  "publicRepositoryCommit": null,
+  "buildVerification": "unverified",
+  "csharpExport": "公開用Releaseで有効な396ファイルのトークン一致を確認。無効な条件分岐と一部コメントを除外。",
+  "xamlExport": "既存の公開用XAML生成を使用。4件を元の相対パスへ配置。",
+  "projectChanges": "公開専用に整理。実際の公開用パッケージ版・出力metadata・XAML不足検査は維持。",
+  "unitTestFiles": [
+    "AtomicFileDurabilityTests",
+    "BookmarkServiceTests",
+    "BookmarkStateStoreTests",
+    "SessionServiceTests",
+    "NamedSessionRestorePointTests",
+    "WorkspaceRepositoryTests",
+    "WorkspaceDurabilityTests",
+    "WorkspacePersistenceReliabilityTests",
+    "KitenDataMaintenanceServiceTests",
+    "ApplicationChannelServiceTests",
+    "ClosedTabWindowHistoryStoreTests",
+    "ContainerProfileStoreTests",
+    "SessionDiagnosticSummaryFormatterTests",
+    "BrowserUrlRulesServiceTests",
+    "WorkspaceTrashWindowTests"
+  ],
+  "unitTestsAreSubset": true,
+  "browserSuiteMinimumCounts": [
+    6,
+    9,
+    22
+  ],
+  "productGuiTested": false,
+  "realPlaybackTested": false,
+  "documentationStage": "ソース提供段階。実行用Release・Sponsorsの受付は準備中。"
+}

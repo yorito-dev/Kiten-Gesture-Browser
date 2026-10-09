@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiten ?????</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #0d1117;
+      --surface: #10151d;
+      --surface-2: #161d27;
+      --border: #30363d;
+      --border-strong: #455163;
+      --text: #e6edf3;
+      --muted: #aeb8c5;
+      --link: #58a6ff;
+      --accent: #22d3ee;
+      --code: #79c0ff;
+    }
+    * { box-sizing: border-box; }
+    html { min-height: 100%; scroll-behavior: smooth; }
+    body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: "Yu Gothic UI", "Meiryo", sans-serif;
+      font-size: 15px;
+      line-height: 1.75;
+      letter-spacing: 0;
+    }
+    main {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 20px 72px;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text);
+      line-height: 1.35;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
+      scroll-margin-top: 18px;
+    }
+    h1 { margin: 0 0 20px; font-size: 30px; }
+    h2 {
+      margin: 46px 0 18px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border-strong);
+      font-size: 24px;
+    }
+    h3 { margin: 30px 0 12px; font-size: 19px; color: #dce8f5; }
+    h4 { margin: 24px 0 10px; font-size: 16px; color: #c9d7e6; }
+    p, li { overflow-wrap: anywhere; }
+    p { margin: 10px 0 16px; }
+    ul, ol { padding-left: 1.65rem; }
+    li + li { margin-top: 4px; }
+    a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    a:hover, a:focus-visible { color: #8bc5ff; }
+    strong { color: #f0f5fa; }
+    code {
+      padding: 2px 5px;
+      border: 1px solid #273241;
+      border-radius: 3px;
+      background: #131a24;
+      color: var(--code);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.92em;
+      overflow-wrap: anywhere;
+    }
+    pre {
+      margin: 14px 0 20px;
+      padding: 14px 16px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: #0a0f16;
+    }
+    pre code { padding: 0; border: 0; background: transparent; color: #d9e4ef; }
+    blockquote {
+      margin: 18px 0;
+      padding: 10px 16px;
+      border-left: 3px solid var(--accent);
+      background: var(--surface);
+      color: var(--muted);
+    }
+    blockquote > :first-child { margin-top: 0; }
+    blockquote > :last-child { margin-bottom: 0; }
+    table {
+      display: block;
+      width: 100%;
+      margin: 16px 0 22px;
+      overflow-x: auto;
+      border-collapse: collapse;
+    }
+    th, td {
+      min-width: 120px;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--surface-2); color: #f0f5fa; }
+    td { background: var(--surface); }
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 18px auto 26px;
+      border: 1px solid var(--border-strong);
+      background: #0b0f14;
+    }
+    hr { margin: 34px 0; border: 0; border-top: 1px solid var(--border); }
+    .source-reference {
+      color: var(--muted);
+      text-decoration: underline dotted;
+      text-underline-offset: 3px;
+    }
+    @media (max-width: 680px) {
+      body { font-size: 14px; }
+      main { width: 100%; padding: 20px 14px 56px; }
+      h1 { font-size: 25px; }
+      h2 { margin-top: 36px; font-size: 21px; }
+      th, td { min-width: 100px; padding: 7px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+<h1 id="kiten-操作ガイド">Kiten 操作ガイド</h1>
+<p>このガイドは、Kitenを実際に操作する順番に沿って説明します。</p>
+<p>各項目は、次の順番で記載します。</p>
+<ol>
+<li>操作を始める前の状態</li>
+<li>実際の操作</li>
+<li>操作後の結果</li>
+<li>うまくいかない場合の確認事項</li>
+</ol>
+<p>現在の実行ファイル名、設定保存先、ソース内の名前には、開発名の<code>TabBrowser</code>が残っています。</p>
+<h2 id="目次">目次</h2>
+<ol>
+<li><a href="#1-最初に確認する">最初に確認する</a></li>
+<li><a href="#2-webページを開く">Webページを開く</a></li>
+<li><a href="#3-マウスジェスチャーを使う">マウスジェスチャーを使う</a></li>
+<li><a href="#4-タブを管理する">タブを管理する</a></li>
+<li><a href="#5-分割表示を使う">分割表示を使う</a></li>
+<li><a href="#6-workspaceへ保存する">Workspaceへ保存する</a></li>
+<li><a href="#7-フォルダータブを使う">フォルダータブを使う</a></li>
+<li><a href="#8-quicklookで内容を確認する">QuickLookで内容を確認する</a></li>
+<li><a href="#9-youtubeミニプレイヤーを使う">YouTubeミニプレイヤーを使う</a></li>
+<li><a href="#10-コマンドパレットを使う">コマンドパレットを使う</a></li>
+<li><a href="#11-履歴ブックマークダウンロードを使う">履歴、ブックマーク、ダウンロードを使う</a></li>
+<li><a href="#12-サイト権限コンテナプライベートwindow">サイト権限、コンテナ、プライベートWindow</a></li>
+<li><a href="#13-設定と連携機能を使う">設定と連携機能を使う</a></li>
+<li><a href="#14-困ったとき">困ったとき</a></li>
+<li><a href="#15-データ保存先">データ保存先</a></li>
+<li><a href="#16-関連資料">関連資料</a></li>
+</ol>
+<h2 id="1-最初に確認する">1. 最初に確認する</h2>
+<h3 id="11-動作環境">1.1 動作環境</h3>
+<p>利用に必要なもの:</p>
+<ul>
+<li>Windows 11 x64</li>
+<li>Microsoft Edge WebView2 Evergreen Runtime</li>
+</ul>
+<p>配布版は.NET Runtimeを同梱した自己完結型です。.NET SDKは不要です。バックアップ／復元には、配布物に含まれるPowerShellスクリプトと補助ツールを使います。</p>
+<h3 id="12-kitenを起動する">1.2 Kitenを起動する</h3>
+<p><strong>開始状態</strong></p>
+<p>実行用ZIP <code>Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip</code>を入手し、新しい空フォルダーへ展開済みです。<code>Source code</code> ZIPは実行用ではありません。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>Explorerで展開先の<code>TabBrowser.exe</code>を開きます。ZIP内から直接起動しません。</li>
+<li>メインWindowが表示されるまで待ちます。</li>
+<li>前回のタブがある場合は、選択中だったタブから順番に復元されることを確認します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>KitenのメインWindowが表示され、Webページを開ける状態になります。起動時は画面表示を優先するため、すべてのタブが同時に読み込みを開始するわけではありません。</p>
+<p><strong>うまくいかない場合</strong></p>
+<ul>
+<li>Webページ部分だけが表示されない場合は、Microsoft Edge WebView2 Runtimeを確認します。</li>
+<li>前回のタブがすぐ表示されない場合は、復元処理が段階的に進んでいるか少し待ちます。</li>
+<li>配布物の入手、展開、更新、削除は、ZIP内の<code>docs\distribution-guide.md</code>を確認します。</li>
+</ul>
+<h3 id="13-メインwindowの入口を確認する">1.3 メインWindowの入口を確認する</h3>
+<p>メインWindowは、上から順に次の領域で構成されています。</p>
+<table>
+<thead>
+<tr>
+<th>領域</th>
+<th>主な操作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>タブ列</td>
+<td>タブの選択、並べ替え、固定、分割、別Windowへの移動</td>
+</tr>
+<tr>
+<td>上部ツールバー</td>
+<td>戻る、進む、更新、復元、URL入力、操作、ツール、ダウンロード、ミニプレイヤー一覧、倍率</td>
+</tr>
+<tr>
+<td>ページ表示領域</td>
+<td>Webページ、Workspace、フォルダータブ、分割ペイン</td>
+</tr>
+<tr>
+<td>下部情報バー</td>
+<td>リンク情報、処理結果、診断情報がある場合だけ表示</td>
+</tr>
+</tbody></table>
+<p>上部ツールバーの主な入口:</p>
+<ul>
+<li><code>←</code> / <code>→</code> / <code>更新</code>: 現在の操作対象ページを移動・更新</li>
+<li><code>復元</code>: 直前に閉じたタブまたはWindowを復元</li>
+<li><code>▼</code>: 閉じたタブ履歴を表示</li>
+<li><code>操作</code>: ブックマーク、Workspace</li>
+<li><code>ツール</code>: 履歴、権限、設定、拡張機能など</li>
+<li><code>DL</code>: ダウンロード一覧</li>
+<li><code>YT</code>: YouTubeミニプレイヤー一覧</li>
+<li><code>100%</code>: 現在ページの倍率</li>
+</ul>
+<p>設定によって一部のボタンを非表示にしている場合は、<code>操作</code>または<code>ツール</code>のメニューから同じ機能を開けます。</p>
+<h2 id="2-webページを開く">2. Webページを開く</h2>
+<h3 id="21-urlまたは検索語を入力する">2.1 URLまたは検索語を入力する</h3>
+<p><strong>開始状態</strong></p>
+<p>KitenのメインWindowが表示されています。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Ctrl+L</code>を押します。</li>
+<li>選択されたアドレス欄へURLまたは検索語を入力します。</li>
+<li>開いているタブ、ブックマーク、履歴の統合候補が必要なら、<code>↑</code>／<code>↓</code>で選びます。</li>
+<li><code>Enter</code>を押します。</li>
+</ol>
+<p>マウスだけで操作する場合は、アドレス欄をクリックして入力し、右側の<code>移動</code>を押します。</p>
+<p>統合候補は種類、タイトル、URLを最大8件表示します。入力直後には候補が選択されないため、そのまま<code>Enter</code>を押せば従来どおり入力内容を開けます。候補選択中は、<code>Ctrl+Enter</code>で新しいタブ、<code>Shift+Enter</code>でバックグラウンド、<code>Alt+Enter</code>で分割表示として開けます。<code>Esc</code>を押すと編集前のアドレスへ戻ります。プライベートWindowでは保存済み閲覧履歴を検索しません。</p>
+<p><strong>結果</strong></p>
+<ul>
+<li>URLを入力した場合は、そのページへ移動します。</li>
+<li>検索語を入力した場合は、設定されている検索エンジンで検索します。</li>
+<li>開いているタブ候補を通常の<code>Enter</code>で選んだ場合は、同じページを増やさず、そのタブがあるWindowへ移動します。</li>
+</ul>
+<p><strong>うまくいかない場合</strong></p>
+<ul>
+<li>Workspaceでは<code>Ctrl+L</code>を横取りしません。</li>
+<li>分割表示中は、最後に操作したペインのWebタブが対象になります。</li>
+<li>フォルダータブでは、<code>Ctrl+L</code>はURL欄ではなくフォルダーパス欄を選択します。</li>
+</ul>
+<h3 id="22-新しいタブを作る">2.2 新しいタブを作る</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Ctrl+T</code>を押します。</li>
+<li>新しいタブのアドレス欄へURLまたは検索語を入力します。</li>
+<li><code>Enter</code>を押します。</li>
+</ol>
+<p>タブ列右側の<code>+</code>を押しても新しいタブを作成できます。</p>
+<p><strong>結果</strong></p>
+<p>現在のWindowへ新しい通常タブが追加されます。</p>
+<h3 id="23-ページ内を検索する">2.3 ページ内を検索する</h3>
+<p><strong>開始状態</strong></p>
+<p>検索したいWebページを表示しています。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Ctrl+F</code>を押します。</li>
+<li>表示された検索欄へ検索語を入力します。</li>
+<li><code>Enter</code>で次の一致、<code>Shift+Enter</code>で前の一致へ移動します。</li>
+<li><code>Esc</code>で検索欄を閉じます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>現在の操作対象ペインにあるWebページだけを検索します。</p>
+<h3 id="24-ページを拡大縮小する">2.4 ページを拡大・縮小する</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li><code>Ctrl++</code>: 10%拡大</li>
+<li><code>Ctrl+-</code>: 10%縮小</li>
+<li><code>Ctrl+0</code>: 100%へ戻す</li>
+</ul>
+<p>ツールバー右端の倍率表示から操作することもできます。</p>
+<p><strong>結果</strong></p>
+<p>現在のWebページの倍率が変わります。倍率はサイトとコンテナの組み合わせごとに保存されます。</p>
+<h2 id="3-マウスジェスチャーを使う">3. マウスジェスチャーを使う</h2>
+<h3 id="31-右ドラッグで戻る">3.1 右ドラッグで戻る</h3>
+<p><strong>開始状態</strong></p>
+<p>同じタブで2ページ以上移動し、戻る履歴がある状態です。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>Webページ上で右ボタンを押し続けます。</li>
+<li>マウスを左へ動かします。</li>
+<li>軌跡付近と固定表示に<code>戻る</code>と表示されることを確認します。</li>
+<li>右ボタンを離します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>直前に表示していたページへ戻ります。</p>
+<p><strong>うまくいかない場合</strong></p>
+<ul>
+<li>移動距離が短いと、通常の右クリックとして扱われます。</li>
+<li>認識中に<code>Esc</code>を押すとジェスチャーをキャンセルできます。</li>
+<li>設定を変更している場合は、画面に表示された機能名を優先してください。</li>
+</ul>
+<h3 id="32-既定のジェスチャーを試す">3.2 既定のジェスチャーを試す</h3>
+<table>
+<thead>
+<tr>
+<th>入力</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>←</code></td>
+<td>戻る</td>
+</tr>
+<tr>
+<td><code>→</code></td>
+<td>進む</td>
+</tr>
+<tr>
+<td><code>↑</code></td>
+<td>更新</td>
+</tr>
+<tr>
+<td><code>↓</code></td>
+<td>タブを閉じる</td>
+</tr>
+<tr>
+<td><code>←↑</code></td>
+<td>最近閉じたタブまたはWindowを復元</td>
+</tr>
+<tr>
+<td><code>→↑</code></td>
+<td>ページ先頭へ</td>
+</tr>
+<tr>
+<td><code>→↓</code></td>
+<td>ページ末尾へ</td>
+</tr>
+<tr>
+<td><code>↓→</code></td>
+<td>新しいタブ</td>
+</tr>
+<tr>
+<td><code>↑↓</code></td>
+<td>現在タブを複製</td>
+</tr>
+<tr>
+<td><code>↓←</code></td>
+<td>URLをコピー</td>
+</tr>
+<tr>
+<td><code>↑→</code></td>
+<td>選択テキストを検索</td>
+</tr>
+<tr>
+<td><code>←→</code></td>
+<td>Workspace OSを開く</td>
+</tr>
+<tr>
+<td><code>→←</code></td>
+<td>ブックマーク一覧を開く</td>
+</tr>
+</tbody></table>
+<p>方向を切り替える場合は、右ボタンを押したまま続けて曲げます。異なる方向を最大3つまで組み合わせられます。</p>
+<h3 id="33-通常の右クリックを使う">3.3 通常の右クリックを使う</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>Webページ上で右ボタンを押します。</li>
+<li>マウスをほとんど動かさず、そのまま離します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>リンク、画像、選択テキスト、入力欄など、右クリックした対象に合うメニューが表示されます。</p>
+<h3 id="34-右ボタンとホイールでタブを切り替える">3.4 右ボタンとホイールでタブを切り替える</h3>
+<p><strong>開始状態</strong></p>
+<p>同じWindowに複数のタブがあります。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>KitenのWindow内で右ボタンを押し続けます。</li>
+<li>ホイールを下へ回すと次のタブへ移動します。</li>
+<li>ホイールを上へ回すと前のタブへ移動します。</li>
+<li>目的のタブで右ボタンを離します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>タブをクリックせずに連続して切り替えられます。右クリックメニューは表示されません。</p>
+<h3 id="35-ジェスチャーの割り当てを変更する">3.5 ジェスチャーの割り当てを変更する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>ツールバーの<code>ツール</code>を押します。</li>
+<li><code>マウスジェスチャー設定</code>を選択します。</li>
+<li>簡単割り当てで操作対象を選びます。</li>
+<li>記録欄で右ドラッグし、方向を入力します。</li>
+<li>機能を検索して<code>割り当て</code>を押します。</li>
+<li><code>OK</code>を押して保存します。</li>
+</ol>
+<p><img src="images/user-guide/11-gesture-settings.png" alt="マウスジェスチャー設定の簡単割り当てと既存割り当て一覧"></p>
+<p><strong>結果</strong></p>
+<p>Webページ、フォルダータブ、Workspaceなど、対象ごとにジェスチャーを割り当てられます。</p>
+<p>Workspaceを往復したい場合は、機能から<code>Workspace OSを開く／元のタブへ戻る</code>を選びます。Workspace以外でこのジェスチャーを実行すると現在のタブを覚えてWorkspaceを開き、Workspaceでもう一度実行すると元のタブへ戻ります。従来の<code>Workspace OSを開く</code>は開くだけの操作として残ります。</p>
+<h2 id="4-タブを管理する">4. タブを管理する</h2>
+<h3 id="41-タブを閉じて復元する">4.1 タブを閉じて復元する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>閉じるタブを選びます。</li>
+<li><code>Ctrl+W</code>を押します。</li>
+<li>復元する場合は<code>Ctrl+Shift+T</code>を押します。</li>
+</ol>
+<p>マウスジェスチャーの既定設定では、<code>↓</code>で閉じ、<code>←↑</code>で復元できます。ツールバーの<code>復元</code>や閉じたタブ履歴も利用できます。</p>
+<p><strong>結果</strong></p>
+<p>通常Webタブとフォルダータブは、閉じたタブ履歴から復元されます。直前の操作がWindowの終了だった場合はWindow全体を復元します。Workspaceタブは固定入口のため、<code>Ctrl+W</code>では閉じません。</p>
+<h3 id="42-タブを並べ替える">4.2 タブを並べ替える</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>タブを左ボタンで押し続けます。</li>
+<li>タブ列内の目的の位置へドラッグします。</li>
+<li>挿入位置を確認してボタンを離します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>タブがその位置へ移動します。分割中のタブは相方と一緒に移動します。</p>
+<h3 id="43-タブを別windowへ移す">4.3 タブを別Windowへ移す</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>移動するタブをドラッグします。</li>
+<li>タブ列から外側へドラッグし、Window枠の配置予告を確認します。</li>
+<li>新しいWindowにする位置でボタンを離します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>ボタンを離した時だけ新しいWindowが作成され、タブが移動します。保持時間を待つ必要はありません。既存の別Windowの横タブ列または縦タブ列へドロップすると、そのWindowへ統合できます。ドラッグ中に<code>Esc</code>を押すと、開始前の並びへ戻して取り消します。</p>
+<p><strong>注意</strong></p>
+<ul>
+<li>Workspaceタブは別Windowへ分離しません。</li>
+<li>分割ペアの片方を移動した場合は、相方も一緒に移動します。</li>
+</ul>
+<h2 id="5-分割表示を使う">5. 分割表示を使う</h2>
+<h3 id="51-2つのタブを並べる">5.1 2つのタブを並べる</h3>
+<p><strong>開始状態</strong></p>
+<p>分割したい2つのタブがあります。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>分割へ追加するタブを右クリックします。</li>
+<li><code>右側に分割表示</code>または<code>下側に分割表示</code>を選択します。</li>
+<li>中央の境界をドラッグして比率を調整します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>2つのタブが左右または上下へ表示されます。</p>
+<h3 id="52-分割中の操作対象を切り替える">5.2 分割中の操作対象を切り替える</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>操作したいペイン内をクリックします。</li>
+<li>対象ペインの強調表示を確認します。</li>
+<li>戻る、進む、更新、検索、倍率変更などを実行します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>最後に操作したペインだけが対象になります。非アクティブなフォルダーペイン上では、右ドラッグがジェスチャーとして成立した時点でそのペインが操作対象になります。</p>
+<h3 id="53-分割を解除する">5.3 分割を解除する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>分割上部の<code>解除</code>を押します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>分割状態だけが解除され、両方のタブは通常タブとして残ります。タブを閉じる操作とは異なります。</p>
+<h2 id="6-workspaceへ保存する">6. Workspaceへ保存する</h2>
+<h3 id="61-workspaceを開く">6.1 Workspaceを開く</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>ツールバーの<code>操作</code>を押します。</li>
+<li><code>Workspace OS</code>を選択します。</li>
+</ol>
+<p>既定ジェスチャーの<code>←→</code>でも開けます。</p>
+<p><strong>結果</strong></p>
+<p>Workspaceタブが表示されます。上部のWorkspace番号で作業領域を切り替えられます。</p>
+<ul>
+<li>Workspace番号列にマウスを置いてホイール上／下: 前／次のWorkspaceへ移動</li>
+<li>Workspace画面内で<code>Ctrl</code>を押しながら右ボタン＋ホイール上／下: 前／次のWorkspaceへ移動</li>
+</ul>
+<p>いずれもWorkspace 1～9を循環します。<code>Ctrl</code>を押さない右ボタン＋ホイールは、従来どおり前後のタブ切り替えです。</p>
+<h3 id="62-workspaceへ名前を付ける">6.2 Workspaceへ名前を付ける</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>上部のWorkspace番号を右クリックします。</li>
+<li><code>名前を変更...</code>を選択します。</li>
+<li>名前を入力して確定します。</li>
+<li>Workspace番号へマウスを置きます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>番号と名前がツールチップへ表示されます。カードや配置は変更されません。</p>
+<h3 id="63-タブをカードとして保存する">6.3 タブをカードとして保存する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>Workspace左側のTab Shelfで保存したいタブを探します。</li>
+<li>タブをWorkspaceキャンバスへドラッグします。</li>
+<li>配置したい場所でボタンを離します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>タブがWorkspaceカードとして保存されます。</p>
+<h3 id="64-ファイルやフォルダーを登録する">6.4 ファイルやフォルダーを登録する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>Explorerで登録したいファイルまたはフォルダーを表示します。</li>
+<li>対象をWorkspaceキャンバスへドラッグします。</li>
+<li>配置したい場所でボタンを離します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>元のファイルを移動せず、参照カードとして登録されます。画像や動画はサムネイル、フォルダーやアプリは種別を識別できるアイコンで表示されます。</p>
+<h3 id="65-複数のカードを選択する">6.5 複数のカードを選択する</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li><code>Ctrl</code>を押しながらカードを順番にクリックします。</li>
+<li>または、<code>Ctrl</code>を押しながらWorkspaceの空白部分をドラッグして範囲選択します。</li>
+</ul>
+<p><strong>結果</strong></p>
+<p>複数のカードが選択され、一括で開く、移動する、削除するなどの操作を実行できます。カード以外の場所をクリックすると選択を解除します。</p>
+<h3 id="66-カードを整列する">6.6 カードを整列する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>2件以上選択している場合は、選択カードだけを整列対象にできます。</li>
+<li>右上の<code>整列</code>または背景の右クリックメニューを開きます。</li>
+<li>対象範囲と、コンパクト、名前、種類、サイト・場所、追加順のいずれかを選びます。</li>
+<li>元へ戻す場合は<code>元に戻す</code>を押します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>配置はまとめて保存されます。同じ整列セッション中に複数の並び順を試しても、<code>元に戻す</code>で最初の配置へ戻ります。</p>
+<h3 id="67-論理フォルダーを使う">6.7 論理フォルダーを使う</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>Workspaceの追加操作からフォルダーを作成します。</li>
+<li>カードをフォルダーカードへドラッグします。</li>
+<li>フォルダーカードを開きます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>カードを実ファイルの場所とは関係なく、Workspace内の論理フォルダーへ整理できます。論理フォルダーWindowは、閉じたときの位置と大きさを記憶します。フォルダー内のカードをダブルクリックして開くと、開いた後に元のフォルダーWindowを閉じます。右クリックの<code>開く</code>またはEnterで開いた場合は、続けて操作できるようフォルダーWindowを維持します。</p>
+<h2 id="7-フォルダータブを使う">7. フォルダータブを使う</h2>
+<h3 id="71-実フォルダーをタブで開く">7.1 実フォルダーをタブで開く</h3>
+<p><strong>開始状態</strong></p>
+<p>Workspaceに実フォルダーの参照カードがあります。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>実フォルダーカードを右クリックします。</li>
+<li><code>タブで表示</code>を選択します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>通常のWebタブと同じタブ列にフォルダータブが追加されます。</p>
+<h3 id="72-表示方法と並び順を変える">7.2 表示方法と並び順を変える</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>フォルダータブ上段の表示切り替えボタンで詳細表示またはアイコン表示を選びます。</li>
+<li>並び替えメニューから名前、種類、更新日時、サイズを選びます。</li>
+<li>必要に応じて昇順と降順を切り替えます。</li>
+</ol>
+<p>詳細表示では列見出しを押して並び替えることもできます。</p>
+<p><strong>結果</strong></p>
+<p>画像や動画はアイコン表示でサムネイルを確認できます。並び順はフォルダーごとに記憶されます。</p>
+<h3 id="73-ファイルやフォルダーを開く">7.3 ファイルやフォルダーを開く</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li><code>Enter</code>: 選択項目を開く</li>
+<li>ダブルクリック: 対象を開く</li>
+<li>フォルダーの右クリック → <code>新しいタブで開く</code></li>
+<li>フォルダーの右クリック → <code>バックグラウンドのタブで開く</code></li>
+</ul>
+<p><strong>結果</strong></p>
+<p>ファイルは既定のアプリ、フォルダーは選択した方法で開きます。フォルダータブを閉じた場合も、閉じたタブ履歴から復元できます。</p>
+<p><code>新しいタブで開く</code>、<code>バックグラウンドのタブで開く</code>、<code>新しいウィンドウで開く</code>、分割関連の操作はフォルダー専用です。ファイルを右クリックした場合はこのグループを表示せず、<code>プレビュー</code>などファイルに使える操作から表示します。</p>
+<h3 id="74-windows標準のプロパティを表示する">7.4 Windows標準のプロパティを表示する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>ファイルまたはフォルダーを右クリックします。</li>
+<li><code>プロパティ</code>を選択します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>Windows標準のプロパティ画面が開きます。</p>
+<h2 id="8-quicklookで内容を確認する">8. QuickLookで内容を確認する</h2>
+<h3 id="81-選択項目をプレビューする">8.1 選択項目をプレビューする</h3>
+<p><strong>開始状態</strong></p>
+<p>Workspaceまたはフォルダータブで、ファイルカードやファイル行を選択しています。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Space</code>を押します。</li>
+</ol>
+<p>右クリックして<code>プレビュー</code>を選択しても開けます。</p>
+<p><strong>結果</strong></p>
+<p>ファイルを既定のアプリで開かず、QuickLookで内容を確認できます。画像、テキスト、PDF、動画、音声などは対応する表示へ切り替わります。</p>
+<h3 id="82-表示位置と大きさを変える">8.2 表示位置と大きさを変える</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li>上段の<code>浮動</code>: 一覧の上へフローティング表示</li>
+<li>上段の<code>右</code>: 一覧の右側へペイン表示</li>
+<li>上段の<code>下</code>: 一覧の下側へペイン表示</li>
+<li>フローティングのタイトル領域をドラッグ: 表示位置を移動</li>
+<li>フローティング右下のハンドルをドラッグ: 幅と高さを変更</li>
+<li>右ペインの左境界をドラッグ: 横幅を変更</li>
+<li>下ペインの上境界をドラッグ: 高さを変更</li>
+</ul>
+<p><strong>結果</strong></p>
+<p>表示方法ごとの位置と大きさが保存されます。右ペインと下ペインは一覧へ重ならず、表示領域を分けて使用します。</p>
+<h3 id="83-quicklookを閉じる">8.3 QuickLookを閉じる</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Esc</code>を押します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>QuickLookが閉じ、進行中の読み込みやメディア再生が停止します。</p>
+<p><strong>注意</strong></p>
+<p>入力欄、パス欄、検索欄へフォーカスがある場合は、<code>Space</code>をQuickLook操作として横取りしません。</p>
+<h2 id="9-youtubeミニプレイヤーを使う">9. YouTubeミニプレイヤーを使う</h2>
+<h3 id="91-youtube動画を独立windowで開く">9.1 YouTube動画を独立Windowで開く</h3>
+<p><strong>開始状態</strong></p>
+<p>通常のYouTube動画またはShortsのタブがあります。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>対象タブを右クリックします。</li>
+<li><code>ミニプレイヤーで開く</code>を選択します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>動画が独立Windowで開きます。通常動画は横長、Shortsは縦長の初期サイズになります。Windowはタスクバーから最小化、復帰、終了できます。</p>
+<h3 id="92-ミニプレイヤーを操作する">9.2 ミニプレイヤーを操作する</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li>Windowをドラッグ: 移動</li>
+<li>Windowの辺または角をドラッグ: リサイズ</li>
+<li>動画をダブルクリック: 全画面と通常表示を切り替え</li>
+<li>上端へマウスを移動: 上段帯を表示</li>
+<li>下端へマウスを移動: 操作パネルを表示</li>
+<li>動画領域で右ボタンを押したまま下へ動かし、<code>閉じる</code>表示後に離す: ミニプレイヤーを閉じる</li>
+<li>上段の<code>常に最前面</code>: Windowごとの最前面設定</li>
+<li>上段の<code>最小化</code>、<code>閉じる</code>: Window操作</li>
+<li>ライブ配信中: 取得できた現在の視聴者数を上段帯へ表示</li>
+<li>ライブ配信を初めて読み込んだ時: 自動的に現在のライブ位置へ移動して再生。読み込み直後に手動操作した場合は、その操作を優先</li>
+</ul>
+<table>
+<thead><tr><th>マウス位置</th><th>表示される操作</th></tr></thead>
+<tbody>
+<tr><td>Window上端</td><td>上段帯: 常に最前面、最小化、閉じるなどのWindow操作</td></tr>
+<tr><td>動画の下端</td><td>操作パネル: 再生、一時停止、音量などの動画操作</td></tr>
+</tbody>
+</table>
+<p><strong>結果</strong></p>
+<p>Webページ内のYouTube操作と、Window自体の移動・終了を分けて操作できます。</p>
+<h3 id="93-ライブチャットまたはリプレイを開く">9.3 ライブチャットまたはリプレイを開く</h3>
+<p><strong>開始状態</strong></p>
+<p>ライブ配信中、またはYouTube側でチャットリプレイが提供されている動画をミニプレイヤーで開いています。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>ミニプレイヤー上段の<code>チャット</code>を押します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>YouTube標準のライブチャットまたはチャットリプレイが独立Windowで開きます。チャットWindowは移動、リサイズ、最小化、最前面設定ができ、本体プレイヤーへ吸着させることもできます。</p>
+<h3 id="94-複数プレイヤーを一覧から操作する">9.4 複数プレイヤーを一覧から操作する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>メインWindowでYouTubeミニプレイヤー一覧を開きます。</li>
+<li>対象プレイヤーを選択します。</li>
+<li>一覧の順序を変える場合は、行内ボタン以外の項目本体をドラッグし、移動先の上下に表示される水色線へドロップします。</li>
+<li>個別の再生、ミュート、音量、シーク、速度、ループ、最小化、最前面、終了を操作します。現在ライブ配信中の動画には<code>ライブへ</code>が表示され、配信の現在位置へ移動できます。YouTube公式プレイヤーのLIVE表示が赤い丸の場合は、すでにライブ位置のためボタンが無効になります。</li>
+<li>必要に応じて<code>グリッド</code>、<code>横一列</code>、<code>縦一列</code>、<code>ランダム</code>を押します。</li>
+<li>整列前へ戻す場合は<code>最初に戻す</code>を押します。</li>
+</ol>
+<p>一覧にはプレイヤーごとの操作行と、全体の整列操作が表示されます。項目本体をドラッグすると一覧の順序を変更できます。</p>
+<p><strong>結果</strong></p>
+<p>複数のミニプレイヤーを一か所から操作できます。<code>最初に戻す</code>は、最初の整列前の位置と大きさへ戻します。</p>
+<h3 id="95-閉じたミニプレイヤーを復元する">9.5 閉じたミニプレイヤーを復元する</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li>メインWindow上部の<code>最近閉じた項目</code>を開き、<code>YTミニ</code>から対象を選択します。</li>
+<li>または、ミニプレイヤー一覧の<code>閉じた動画を復元</code>を押します。</li>
+</ul>
+<p><strong>結果</strong></p>
+<p>直近20件までのYouTube／ローカル動画ミニプレイヤーを、閉じた時の再生位置、音量、速度、Window位置などを使って復元します。履歴はアプリ再起動後も残りますが、復元するまで動画やWebView2は読み込みません。</p>
+<h3 id="96-ローカル動画を開く">9.6 ローカル動画を開く</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li>一覧上部の<code>動画を開く</code>から動画ファイルを選択します。</li>
+<li>または、フォルダータブの動画を右クリックして<code>YouTubeミニプレイヤーで開く</code>を選択します。</li>
+<li>または、Workspaceの動画カードを右クリックして<code>ミニプレイヤーで再生</code>を選択します。</li>
+</ul>
+<p><strong>結果</strong></p>
+<p>ローカル動画がYouTubeミニプレイヤーと同じ一覧・配置管理の対象として開き、基本設定ではループ再生します。</p>
+<p>動画面を右ドラッグすると、YouTubeミニプレイヤーと同じ固定操作を利用できます。</p>
+<ul>
+<li>右へ24px以上: ボタンを離すまで2倍速。離すと元の速度と再生状態へ戻ります。</li>
+<li>左へ24px以上: ボタンを離すまで0.25秒ごとに0.5秒巻き戻します。</li>
+<li>下へ24px以上: <code>閉じる</code>表示を確認してボタンを離すと、そのミニプレイヤーを閉じます。</li>
+<li>左右の操作中に逆方向へ動かすと、早送りと巻き戻しを切り替えられます。</li>
+</ul>
+<p>登録済みの<code>動画ミニプレイヤー</code>用ジェスチャーがある方向は登録内容を優先します。操作中の<code>Esc</code>、右ボタン＋ホイール、入力の中断では固定操作を取り消し、元の速度と再生状態へ戻します。右ボタン＋ホイールのズーム、ホイールボタンドラッグの表示位置移動、サイドボタンの再生／一時停止とミュートもYouTube動画と共通です。</p>
+<h2 id="10-コマンドパレットを使う">10. コマンドパレットを使う</h2>
+<h3 id="101-操作や情報を検索する">10.1 操作や情報を検索する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Ctrl+Shift+K</code>を押します。</li>
+<li>検索欄へ機能名、タブ名、URL、アプリ名などを入力します。</li>
+<li><code>↑</code> / <code>↓</code>で候補を選びます。</li>
+<li><code>Enter</code>で実行します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>現在のタブ、閉じたタブ、履歴、ブックマーク、コンテナ、Workspace、ミニプレイヤー、Windowsアプリ、ブラウザー操作を横断して検索できます。</p>
+<h3 id="102-ショートカットやジェスチャーから機能を探す">10.2 ショートカットやジェスチャーから機能を探す</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>コマンドパレットへ<code>Ctrl+W</code>、<code>←</code>、<code>wheelDown</code>などを入力します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>その入力に割り当てられている機能を確認できます。<code>未割り当て</code>を検索すると、ジェスチャーが割り当てられていない機能を探せます。</p>
+<p>URLを持つ候補では、<code>Ctrl+Enter</code>で新しいタブ、<code>Alt+Enter</code>で現在タブとの分割表示として開けます。</p>
+<h2 id="11-履歴ブックマークダウンロードを使う">11. 履歴、ブックマーク、ダウンロードを使う</h2>
+<h3 id="111-最近閉じたタブまたはwindowを復元する">11.1 最近閉じたタブまたはWindowを復元する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Ctrl+Shift+T</code>を押します。</li>
+</ol>
+<p>または、ツールバーの<code>復元</code>や「最近閉じた項目」を開きます。</p>
+<p><strong>結果</strong></p>
+<p>直前の終了操作が通常タブまたはフォルダータブなら、そのタブを復元します。直前の終了操作が「このウィンドウだけ閉じる」なら、タブ構成を含むWindow全体を復元します。「最近閉じた項目」で子タブを選べば、そのタブだけを復元できます。履歴一覧では「今日」「昨日」などの日付別に確認できます。</p>
+<h3 id="112-閲覧履歴を有効にする">11.2 閲覧履歴を有効にする</h3>
+<p>閲覧履歴は初期状態では無効です。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code> → <code>設定</code>を開きます。</li>
+<li><code>連携・プライバシー</code>を選択します。</li>
+<li>閲覧履歴を有効にします。</li>
+<li><code>OK</code>を押します。</li>
+<li><code>ツール</code> → <code>閲覧履歴</code>を開きます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>有効化後に正常表示したHTTP／HTTPSページのURL、タイトル、訪問日時、ホスト名、コンテナを検索できます。ページ本文、入力内容、Cookie、認証情報、Web Storageは保存しません。</p>
+<h3 id="113-クリップボード履歴を有効にする">11.3 クリップボード履歴を有効にする</h3>
+<p>クリップボード履歴は初期状態では無効で、アプリ終了時に消去されます。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code> → <code>設定</code>を開きます。</li>
+<li>クリップボード履歴を有効にします。</li>
+<li><code>OK</code>を押します。</li>
+<li><code>ツール</code> → <code>クリップボード履歴</code>を開きます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>通常のテキスト、URL、ファイル、フォルダーをKitenの起動中だけ検索して再利用できます。Windowsの履歴除外指定が付いたクリップボード内容は取り込みません。</p>
+<h3 id="114-現在のページをブックマークする">11.4 現在のページをブックマークする</h3>
+<p><strong>開始状態</strong></p>
+<p>あとで開きたいWebページを表示しています。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>ツールバーの<code>操作</code>を押します。</li>
+<li><code>現在のページをブックマーク</code>を選択します。</li>
+<li>保存するタイトルとフォルダーを確認して確定します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>現在のページのタイトルとURLがブックマークへ保存されます。新しいタブ画面、アドレス欄、コマンドパレットから検索できます。</p>
+<h3 id="115-ブックマークを整理する">11.5 ブックマークを整理する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>操作</code> → <code>ブックマーク一覧</code>を開きます。</li>
+<li>上部の検索欄または並び順から目的のブックマークを探します。</li>
+<li>左側の<code>新規フォルダ</code>で分類用フォルダーを作成します。</li>
+<li>ブックマークをフォルダーへドラッグするか、選択して<code>フォルダへ移動</code>を押します。</li>
+<li>開く場合は、対象をダブルクリックするか<code>開く</code>を押します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>ブックマークをフォルダー、検索、並び順で整理できます。<code>編集</code>、<code>削除</code>、<code>重複整理</code>、<code>存在確認</code>も一覧から実行できます。</p>
+<p><strong>バックアップと移行</strong></p>
+<ul>
+<li><code>取込</code>: Chrome／Edgeのブックマークを取り込む</li>
+<li><code>HTML出力</code>: ブラウザー互換のHTMLへ出力する</li>
+<li><code>バックアップ</code>: Kiten用のJSONバックアップを作成する</li>
+<li><code>復元</code>: JSONバックアップから戻す</li>
+</ul>
+<h3 id="116-ダウンロードを確認する">11.6 ダウンロードを確認する</h3>
+<p><strong>開始状態</strong></p>
+<p>Webページからファイルのダウンロードを開始しています。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li>ツールバーの<code>DL</code>を押します。</li>
+<li>対象のダウンロードを探します。</li>
+<li>状態に応じて、一時停止、再開、中止、再試行を選択します。</li>
+<li>完了後は<code>開く</code>または<code>フォルダー</code>を押します。<code>フォルダー</code>は保存先をフォルダタブで開き、右クリックメニューの<code>エクスプローラーで開く</code>ではWindowsのExplorerで開きます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>進行中、完了、失敗したダウンロードを同じ一覧で確認できます。進捗率、受信済みサイズ、総サイズ、速度、残り時間が表示されます。URLコピー、詳細表示、履歴削除、実ファイル削除も実行できます。</p>
+<h2 id="12-サイト権限コンテナプライベートwindow">12. サイト権限、コンテナ、プライベートWindow</h2>
+<h3 id="121-コンテナを作成する">12.1 コンテナを作成する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code> → <code>設定</code>を開きます。</li>
+<li><code>連携・プライバシー</code>を選択します。</li>
+<li><code>コンテナプロファイル</code>で名前と色を入力します。</li>
+<li><code>追加</code>を押します。</li>
+<li><code>OK</code>を押して設定を確定します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>標準とは別のWebView2保存領域を使うコンテナが追加されます。コンテナを実際に使うまで、追加のWebView2環境は作りません。</p>
+<h3 id="122-コンテナを指定してページを開く">12.2 コンテナを指定してページを開く</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li>新しいタブを作る場合は、タブ列の<code>+</code>を右クリックしてコンテナを選びます。</li>
+<li>現在のタブを切り替える場合は、タブを右クリックして<code>別コンテナで開き直す</code>を選びます。</li>
+<li>ページまたはリンクでは、Webページの右クリックメニューから<code>別コンテナで開く</code>を選びます。</li>
+</ul>
+<p><strong>結果</strong></p>
+<p>同じサイトを異なるログイン状態や用途に分けて開けます。コンテナ間でCookieやWeb Storageをコピーせず、その内容をKiten側から読み取りません。</p>
+<h3 id="123-サイト権限を確認する">12.3 サイト権限を確認する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code>を押します。</li>
+<li><code>サイト権限・プライバシー</code>を選択します。</li>
+<li>対象コンテナを選びます。</li>
+<li>カメラ、マイク、通知、位置情報などの権限を確認します。</li>
+<li>必要な項目を許可、拒否、または既定へ戻します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>サイトとコンテナごとの権限を確認・変更できます。Cookie、認証情報、Web Storageの内容はKiten側で読み取りません。</p>
+<h3 id="124-閲覧データを削除する">12.4 閲覧データを削除する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code> → <code>サイト権限・プライバシー</code>を開きます。</li>
+<li>対象コンテナと期間を選びます。</li>
+<li>キャッシュ、Cookieとサイトデータ、閲覧履歴、ダウンロード履歴から削除対象を選びます。</li>
+<li>表示された注意事項を確認して実行します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>選択したコンテナと期間のデータだけを削除します。Cookieとサイトデータを削除した場合は、サイトからログアウトする可能性があります。</p>
+<p>設定画面のコンテナ一覧にある<code>データ削除</code>は、そのコンテナの保存領域を明示的に削除する操作です。</p>
+<h3 id="125-プライベートwindowを開く">12.5 プライベートWindowを開く</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code>を押します。</li>
+<li><code>新しいプライベートWindow</code>を選択します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>一時的なWebView2保存領域を使用するWindowが開きます。閲覧履歴、閉じたタブ、セッション、ダウンロード履歴、ミニプレイヤー状態は保存しません。</p>
+<p><strong>注意</strong></p>
+<p>ダウンロードした実ファイルと、明示的にWorkspaceやブックマークへ保存した内容は残ります。</p>
+<h2 id="13-設定と連携機能を使う">13. 設定と連携機能を使う</h2>
+<h3 id="131-設定画面を開く">13.1 設定画面を開く</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li>ツールバーの<code>ツール</code>を押します。</li>
+<li><code>設定</code>を選択します。</li>
+<li>上部のカテゴリタブを選びます。</li>
+<li>設定を変更します。</li>
+<li><code>OK</code>を押します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>確定した設定が保存されます。設定Windowを開いたままでも、他のKiten WindowやYouTubeミニプレイヤーを操作できます。</p>
+<p>設定カテゴリ:</p>
+<ul>
+<li><code>一般</code>: 検索、基本動作、WebView2</li>
+<li><code>表示・操作</code>: QuickLook、ツールバー、ジェスチャー</li>
+<li><code>メディア</code>: ダウンロード</li>
+<li><code>サイト</code>: 5ch実況、ChatGPT表示</li>
+<li><code>連携・プライバシー</code>: クリップボード履歴、閲覧履歴、コンテナ</li>
+</ul>
+<p>リンク先プレビューは初期状態で有効です。<code>一般</code>→<code>動作</code>の<code>リンク先をマウスオーバーでポップアップ表示する</code>を外して<code>OK</code>を押すと無効になります。マウスポインターが止まった後にリンク先へアクセスする場合があります。取得には専用InPrivateプロファイルを使い、通常タブやコンテナのCookie・ログイン状態を使いません。ログインを要する画像が得られない場合があります。InPrivateでも接続先との通信は発生し、IPアドレス等が伝わり得ます。</p>
+<p><img src="images/user-guide/10-settings-categories.png" alt="設定Windowの一般、表示・操作、メディア、サイト、連携・プライバシーのカテゴリ"></p>
+<h3 id="132-設定カテゴリをホイールで切り替える">13.2 設定カテゴリをホイールで切り替える</h3>
+<p><strong>操作</strong></p>
+<ul>
+<li>設定画面上部のカテゴリタブへマウスを置き、ホイールを回します。</li>
+<li>または、設定画面内で右ボタンを押しながらホイールを回します。</li>
+</ul>
+<p><strong>結果</strong></p>
+<p>設定カテゴリが前後へ切り替わります。通常の設定内容上では、ホイールはスクロールに使われます。</p>
+<h3 id="133-5ch実況向け表示を有効にする">13.3 5ch実況向け表示を有効にする</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code> → <code>設定</code>を開きます。</li>
+<li><code>サイト</code>を選択します。</li>
+<li><code>5ch実況向け表示を有効にする</code>を有効にします。</li>
+<li>必要に応じて、新着強調、自動取得、次スレ移行、自動追従、返信プレビュー、投稿者ID表示を調整します。</li>
+<li><code>OK</code>を押します。</li>
+<li>公式5ch実況スレを開きます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>対象の実況スレだけが簡潔なレス表示へ切り替わり、設定に応じて新着取得と自動追従を開始します。過去レスを読んでいる間は最下部へ移動せず、新着件数を表示します。</p>
+<h3 id="134-chatgptとxの表示支援を切り替える">13.4 ChatGPTとXの表示支援を切り替える</h3>
+<p><strong>ChatGPT</strong></p>
+<ol>
+<li>ChatGPTを表示します。</li>
+<li>ツールバーの<code>GPT</code>を押します。</li>
+<li>文字サイズ、行間、本文幅などを調整します。</li>
+</ol>
+<p><strong>X</strong></p>
+<ol>
+<li><code>ツール</code>を押します。</li>
+<li><code>X 整形モード</code>を切り替えます。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>対象サイトだけへ表示調整を適用します。通常のWebサイトには専用CSSやJavaScriptを適用しません。</p>
+<h3 id="135-展開済み拡張機能を追加する">13.5 展開済み拡張機能を追加する</h3>
+<p><strong>開始状態</strong></p>
+<p><code>manifest.json</code>を含む展開済みChrome拡張機能フォルダーがあります。</p>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>ツール</code>を押します。</li>
+<li><code>拡張機能フォルダを追加</code>を選択します。</li>
+<li><code>manifest.json</code>があるフォルダーを指定します。</li>
+<li><code>ツール</code> → <code>拡張機能を管理</code>を開きます。</li>
+<li>一覧から拡張機能を選び、<code>ON/OFF</code>、<code>設定</code>、<code>削除</code>を操作します。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>WebView2が対応する範囲で拡張機能が読み込まれます。</p>
+<p><strong>注意</strong></p>
+<p>Chromeウェブストアからの直接インストールと、<code>.crx</code>の直接読み込みには対応していません。設定で拡張機能を有効化した直後は、Kitenの再起動後に完全反映される項目があります。</p>
+<h3 id="136-バージョン情報とruntime診断を確認する">13.6 バージョン情報とRuntime診断を確認する</h3>
+<p><strong>操作</strong></p>
+<ol>
+<li><code>Ctrl+Shift+K</code>でコマンドパレットを開きます。</li>
+<li><code>バージョン情報</code>または<code>Runtime診断</code>を検索し、<code>バージョン情報・Runtime診断を開く</code>を実行します。</li>
+<li><code>バージョン情報</code>タブで公開版番号、ソースSHA、実行チャンネル、Windows、.NET／WebView2 Runtimeを確認します。</li>
+<li>不具合報告用には<code>基本情報をコピー</code>を押します。現在は公開配布ページと不具合報告先が未設定のため、各ボタンは<code>準備中</code>として無効です。</li>
+<li>詳細な状態は<code>再取得</code>で更新します。長時間確認する場合は<code>計測開始</code>を押し、終了時に<code>停止</code>を押します。</li>
+<li>必要に応じて<code>詳細診断をコピー</code>または<code>レポート保存</code>を使います。</li>
+</ol>
+<p><strong>結果</strong></p>
+<p>版情報タブでは、配布物の識別と不具合報告に必要な固定10項目を確認・コピーできます。WebView2をまだ使用していない場合、WebView2 Runtimeは<code>未取得</code>と表示されます。この確認のために新しいWebView2を作成することはありません。</p>
+<p>詳細診断では、Window、タブ、WebView2、分割、ミニプレイヤー、ライブチャット、入力所有権、メモリ、ハンドル、起動段階に加え、タブの休止・メモリ解放・復元件数を確認できます。</p>
+<p><code>計測開始</code>後は30秒ごとに、本体／WebView2／合計CPU、Renderer／GPU CPU、合計Private Memory、計測開始時からのメモリ差分を最大6時間分だけメモリ内へ保持します。CPUは全論理CPU基準で、2回目のサンプルから表示されます。YouTubeミニプレイヤーでは、同じ区間の描画・ドロップ・破損フレーム差分も保存レポートで確認できます。保存レポートには、負荷が本体・WebView2のどちらへ偏っているかを示す参考診断も含まれます。参考診断だけでタブの終了や再読み込みを自動実行することはありません。</p>
+<p>基本情報には、ユーザー名、PC名、個人のパス、閲覧URL、ページ名、メモ、Cookie、認証情報、環境変数、ログ本文を含めません。詳細診断もURL、ファイルパス、QuickLook内容、Cookie、認証情報、Web Storageを収集しません。ファイルへ書き込むのは<code>レポート保存</code>を実行したときだけです。</p>
+<h2 id="14-困ったとき">14. 困ったとき</h2>
+<h3 id="141-webページだけが表示されない">14.1 Webページだけが表示されない</h3>
+<ol>
+<li>対象タブを更新します。</li>
+<li>別タブが正常に表示できるか確認します。</li>
+<li>Microsoft Edge WebView2 Runtimeを確認します。</li>
+<li>Runtime診断で対象WebView2の状態を確認します。</li>
+</ol>
+<h3 id="142-youtubeミニプレイヤーが黒画面になる">14.2 YouTubeミニプレイヤーが黒画面になる</h3>
+<ol>
+<li>ミニプレイヤー一覧で対象を選択します。</li>
+<li>個別の再読み込みを実行します。</li>
+<li>改善しない場合は対象プレイヤーを閉じ、閉じた動画の復元または元タブから開き直します。</li>
+<li>長時間利用後に繰り返す場合は、Runtime診断と診断ログを確認します。</li>
+</ol>
+<h3 id="143-ジェスチャーが通常の右クリックになる">14.3 ジェスチャーが通常の右クリックになる</h3>
+<ol>
+<li>認識開始に必要な距離まで動かしているか確認します。</li>
+<li>軌跡と機能名が表示されるまで右ボタンを離さないようにします。</li>
+<li><code>ツール</code> → <code>マウスジェスチャー設定</code>で対象画面と割り当てを確認します。</li>
+<li>右ボタン＋ホイール中ではないことを確認します。</li>
+</ol>
+<h3 id="144-復元されたタブの表示を待っている">14.4 復元されたタブの表示を待っている</h3>
+<p>Kitenは起動速度を優先し、最後に選択していたタブから段階的に復元します。目的のタブを選択すると、そのタブの準備を優先します。</p>
+<h2 id="15-データ保存先">15. データ保存先</h2>
+<p>引数を付けずに起動する常用版の主なユーザーデータは、次の場所へ保存します。</p>
+<pre><code class="language-text">%LOCALAPPDATA%\TabBrowser\
+├─ settings.json
+├─ session.json
+├─ window-memory.json
+├─ bookmarks.json
+├─ workspace.db
+├─ youtube-mini-players.json
+├─ container-profiles.json
+├─ downloads\history.json
+├─ WebView2\
+└─ containers\
+</code></pre>
+<h3 id="151-常用版と開発版">15.1 常用版と開発版</h3>
+<p>開発版は<code>--channel development</code>を付けて起動します。</p>
+<pre><code class="language-powershell">TabBrowser.exe --channel development
+</code></pre>
+<p>開発版の設定、セッション、Workspace、履歴、WebView2プロファイルは次の専用場所へ保存し、常用版と共有しません。</p>
+<pre><code class="language-text">%LOCALAPPDATA%\TabBrowser-Dev\
+</code></pre>
+<p>常用版と開発版は同時に起動できます。開発版のWindowタイトルには<code>[開発版]</code>と表示します。FolderTabで扱う実ファイルとダウンロード先はWindows上の同じ実体なので、開発版では専用のテストフォルダーを使用してください。</p>
+<p>開発成果を常用版へ反映する場合は、常用版を終了し、<code>%LOCALAPPDATA%\TabBrowser</code>をバックアップしてから、全検証済みの同一publish成果物で常用版を更新します。開発版のデータを常用版へ丸ごとコピーしないでください。</p>
+<p>設定やユーザーデータを初期化する場合は、必要なバックアップを作成してから操作してください。</p>
+<h2 id="16-関連資料">16. 関連資料</h2>
+<ul>
+<li><span class="source-reference" title="???????????docs????????????">README</span></li>
+<li><span class="source-reference" title="???????????docs????????????">ブラウザー基本操作仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">マウスジェスチャー仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">分割表示仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">Workspace OS仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">QuickLook仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">YouTubeミニプレイヤー仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">コマンドパレット仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">サイト権限・プライバシー仕様</span></li>
+<li><span class="source-reference" title="???????????docs????????????">操作ガイド スクリーンショット計画</span></li>
+</ul>
+
+  <section><h2>配布用ローカル動画の対応環境</h2><p>配布用構成のQuickLookとローカル動画ミニプレイヤーは、WPF標準のMediaElementを利用します。再生できる形式・コーデックはWindows環境に依存します。WebMやMKV等も拡張子だけでは再生を保証しません。再生エラー時は表示内容を記録し、既定アプリで開く操作を使えます。YouTubeミニプレイヤーは既存のWebView2方式です。通常の開発用構成はLibVLCを維持します。</p></section>
+</main>
+</body>
+</html>

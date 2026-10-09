@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Kiten.DataTool</AssemblyName>
+    <RootNamespace>Kiten.DataTool</RootNamespace>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.1</KitenReleaseVersion>
+    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <Version>$(KitenReleaseVersion)</Version>
+    <Product>Kiten Gesture Browser Data Maintenance Tool</Product>
+    <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.30" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Services\ApplicationChannelService.cs" Link="Shared\ApplicationChannelService.cs" />
+    <Compile Include="..\..\Services\SingleInstanceService.cs" Link="Shared\SingleInstanceService.cs" />
+    <Compile Include="..\..\Services\DataMaintenance\*.cs" Link="DataMaintenance\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\tools\Backup-KitenData.ps1" Link="Backup-KitenData.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\tools\Restore-KitenData.ps1" Link="Restore-KitenData.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

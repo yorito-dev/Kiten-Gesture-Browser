@@ -1,0 +1,75 @@
+<UserControl x:Class="TabBrowser.Views.GestureStatusHud"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False"
+             IsHitTestVisible="False"
+             SnapsToDevicePixels="True">
+    <Border Padding="12,9,12,10"
+            Background="#F211141A"
+            BorderBrush="#526173"
+            BorderThickness="1"
+            CornerRadius="6">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="AccentBar"
+                    Grid.Column="0"
+                    Background="#66E3FF"
+                    CornerRadius="2" />
+
+            <Grid Grid.Column="1" Margin="10,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0" LastChildFill="True">
+                    <Border x:Name="StatusBorder"
+                            DockPanel.Dock="Right"
+                            Margin="10,0,0,0"
+                            Padding="6,2"
+                            Background="#1B25303B"
+                            BorderBrush="#66E3FF"
+                            BorderThickness="1"
+                            CornerRadius="3">
+                        <TextBlock x:Name="StatusText"
+                                   Foreground="#A5F3FC"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Text="認識中" />
+                    </Border>
+                    <TextBlock x:Name="RouteText"
+                               Foreground="#A5F3FC"
+                               FontFamily="Segoe UI"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Text="方向  …"
+                               TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+
+                <TextBlock x:Name="CommandText"
+                           Grid.Row="1"
+                           Margin="0,4,0,0"
+                           Foreground="#F8FAFC"
+                           FontFamily="Segoe UI"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Text="認識中"
+                           TextWrapping="Wrap" />
+
+                <TextBlock x:Name="NextText"
+                           Grid.Row="2"
+                           Margin="0,5,0,0"
+                           Foreground="#CBD5E1"
+                           FontFamily="Segoe UI"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>
