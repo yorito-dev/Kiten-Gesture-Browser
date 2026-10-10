@@ -150,14 +150,14 @@ public partial class RuntimeDiagnosticsWindow : Window
             };
             DistributionPageButton.IsEnabled = false;
             IssueReportButton.IsEnabled = false;
-            ReleaseLinkStatusText.Text = "配布先準備中／不具合報告先準備中";
+            ReleaseLinkStatusText.Text = "配布ページ：この版では利用不可／不具合報告：この版では利用不可";
         }
     }
 
     private static string CreateReleaseLinkStatus(ReleaseBuildInformation build)
     {
-        var distribution = build.DistributionPageUri is null ? "配布先準備中" : "配布ページ設定済み";
-        var issueReport = build.IssueReportUri is null ? "不具合報告先準備中" : "不具合報告先設定済み";
+        var distribution = build.DistributionPageUri is null ? "配布ページ：この版では利用不可" : "配布ページ設定済み";
+        var issueReport = build.IssueReportUri is null ? "不具合報告：この版では利用不可" : "不具合報告先設定済み";
         return $"{distribution}／{issueReport}";
     }
 

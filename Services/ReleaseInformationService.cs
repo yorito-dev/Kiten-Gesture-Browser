@@ -53,7 +53,7 @@ public sealed class ReleaseInformationService
     internal const string UnknownValue = "未取得";
     internal const string UnverifiedBuildMessage = "公開検証未実施（未コミット変更を含む可能性）";
     internal const string DirtyBuildMessage = "未コミット変更を含む開発ビルド";
-    internal const string VerifiedCleanBuildMessage = "clean検証済み候補（公開承認前）";
+    internal const string VerifiedCleanBuildMessage = "検証済みビルド";
 
     private const string PublicVersionMetadataName = "KitenPublicVersion";
     private const string ReleaseClassMetadataName = "KitenReleaseClass";
@@ -194,13 +194,13 @@ public sealed class ReleaseInformationService
         ArgumentNullException.ThrowIfNull(openPage);
         if (uri is null)
         {
-            return new ReleaseInformationActionResult(false, $"{pageName}は準備中です");
+            return new ReleaseInformationActionResult(false, $"{pageName}はこの版では利用できません");
         }
 
         if (!TryCreatePublicLink(uri.AbsoluteUri, out var validatedUri)
             || validatedUri is null)
         {
-            return new ReleaseInformationActionResult(false, $"{pageName}は準備中です");
+            return new ReleaseInformationActionResult(false, $"{pageName}はこの版では利用できません");
         }
 
         try

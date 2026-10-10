@@ -2,7 +2,7 @@
 
 **本版は開発中のアルファ版です。** 不具合、仕様変更、保存データが失われる可能性があります。重要データの唯一の保存先にせず、利用前・更新前にバックアップしてください。
 
-このガイドは、Windows 11 x64向けPreview版の実行用ZIPを手動で導入・更新する手順を説明する。公式GitHub配布リポジトリのReleasesから、無料の実行用ZIPとSHA-256を入手する。GitHub Sponsorsでの支援は任意で、本体の機能差はない。
+このガイドは、Windows 11 x64向けPreview版の実行用ZIPを手動で導入・更新する手順を説明する。公式GitHub配布リポジトリのReleasesから、無料の実行用ZIPとSHA-256を入手する。本体の利用は無料で、支援の有無による機能差はない。
 
 作者表示名は「ヨリト」。本体は、試したい人が事前招待や人数制限なく、無償で、用途と期間を限定せず利用できる公開アルファ版である。本体ソースを公開し、[MIT License](../LICENSE.txt)で商用利用・改変・再配布を認める。著作権表示と許諾文を保持する。第三者ソフトウェアには各第三者ライセンスが適用される。
 
@@ -16,7 +16,7 @@
 Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip
 ```
 
-GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPではない。ダウンロード後は、配布ページに記載されたSHA-256と、ZIPと隣にある同名の`Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip.sha256`の値が一致することを確認する。配布ページの版番号・ZIPのSHA-256と、配布manifest／実行ファイルのソースSHAを対応させる。本体ソースを公開するKiten-Gesture-BrowserのReleaseタグ、公開ソースcommit、配布manifestと実行ファイルの埋込みSHAを対応させる。非公開開発repoからソースを切り出す場合は元の候補との対応も配布記録へ残す。
+GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPではない。ダウンロード後は、配布ページに記載されたSHA-256と、ZIPと隣にある同名の`Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip.sha256`の値が一致することを確認する。実行ファイルとmanifestに記録されるソースSHAは開発用リポジトリのcommitである。Releaseページには、そのSHAと、同じ内容を公開しているKiten-Gesture-Browserのcommit（Releaseタグの指す先）の対応を記載する。
 
 ## 2. 動作条件
 
@@ -86,6 +86,6 @@ WebView2 Runtimeがない場合は、Microsoft公式の[WebView2 Runtime配布�
 - Webサイトやクラウド側に保存されたデータ
 - 別チャンネルの`%LOCALAPPDATA%\TabBrowser-Dev`
 
-## 8. 入手先と報告先の現在状態
+## 8. 入手先と報告先
 
 実行用ZIPは公式GitHub配布リポジトリのReleasesから無料で入手する。通常の不具合と非公開の脆弱性・個人情報に関わる報告は専用メールアドレス `kiten.gesture.contact@gmail.com` へ送る。公開Issueへ機密事項を書かない。アプリから診断情報を自動送信することはない。

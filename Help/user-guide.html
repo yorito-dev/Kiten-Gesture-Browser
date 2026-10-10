@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kiten ?????</title>
+  <title>Kiten 操作ガイド</title>
   <style>
     :root {
       color-scheme: dark;
@@ -900,7 +900,7 @@
 <li><code>Ctrl+Shift+K</code>でコマンドパレットを開きます。</li>
 <li><code>バージョン情報</code>または<code>Runtime診断</code>を検索し、<code>バージョン情報・Runtime診断を開く</code>を実行します。</li>
 <li><code>バージョン情報</code>タブで公開版番号、ソースSHA、実行チャンネル、Windows、.NET／WebView2 Runtimeを確認します。</li>
-<li>不具合報告用には<code>基本情報をコピー</code>を押します。現在は公開配布ページと不具合報告先が未設定のため、各ボタンは<code>準備中</code>として無効です。</li>
+<li>不具合報告用には<code>基本情報をコピー</code>を押します。この版では配布ページ・不具合報告の各ボタンは無効です。状態は<code>配布ページ：この版では利用不可／不具合報告：この版では利用不可</code>、ビルド状態は検証済み配布ビルドで<code>検証済みビルド</code>と表示します。報告は同梱の<code>REPORTING.md</code>に記載した連絡先へ送ってください。</li>
 <li>詳細な状態は<code>再取得</code>で更新します。長時間確認する場合は<code>計測開始</code>を押し、終了時に<code>停止</code>を押します。</li>
 <li>必要に応じて<code>詳細診断をコピー</code>または<code>レポート保存</code>を使います。</li>
 </ol>
@@ -934,7 +934,7 @@
 <h3 id="144-復元されたタブの表示を待っている">14.4 復元されたタブの表示を待っている</h3>
 <p>Kitenは起動速度を優先し、最後に選択していたタブから段階的に復元します。目的のタブを選択すると、そのタブの準備を優先します。</p>
 <h2 id="15-データ保存先">15. データ保存先</h2>
-<p>引数を付けずに起動する常用版の主なユーザーデータは、次の場所へ保存します。</p>
+<p>引数を付けずに起動する常用版（Stableチャンネル）の主なユーザーデータは、次の場所へ保存します。</p>
 <pre><code class="language-text">%LOCALAPPDATA%\TabBrowser\
 ├─ settings.json
 ├─ session.json
@@ -948,30 +948,28 @@
 └─ containers\
 </code></pre>
 <h3 id="151-常用版と開発版">15.1 常用版と開発版</h3>
-<p>開発版は<code>--channel development</code>を付けて起動します。</p>
+<p>開発版（Developmentチャンネル）は<code>--channel development</code>を付けて起動します。</p>
 <pre><code class="language-powershell">TabBrowser.exe --channel development
 </code></pre>
 <p>開発版の設定、セッション、Workspace、履歴、WebView2プロファイルは次の専用場所へ保存し、常用版と共有しません。</p>
 <pre><code class="language-text">%LOCALAPPDATA%\TabBrowser-Dev\
 </code></pre>
 <p>常用版と開発版は同時に起動できます。開発版のWindowタイトルには<code>[開発版]</code>と表示します。FolderTabで扱う実ファイルとダウンロード先はWindows上の同じ実体なので、開発版では専用のテストフォルダーを使用してください。</p>
-<p>開発成果を常用版へ反映する場合は、常用版を終了し、<code>%LOCALAPPDATA%\TabBrowser</code>をバックアップしてから、全検証済みの同一publish成果物で常用版を更新します。開発版のデータを常用版へ丸ごとコピーしないでください。</p>
+<p>更新は同梱の配布ガイドの手動更新手順（ZIP内の<code>docs\distribution-guide.md</code>）に従い、通常終了とバックアップの後、新しい空フォルダーへ展開してください。開発版のデータを常用版へ丸ごとコピーしないでください。</p>
 <p>設定やユーザーデータを初期化する場合は、必要なバックアップを作成してから操作してください。</p>
 <h2 id="16-関連資料">16. 関連資料</h2>
 <ul>
-<li><span class="source-reference" title="???????????docs????????????">README</span></li>
-<li><span class="source-reference" title="???????????docs????????????">ブラウザー基本操作仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">マウスジェスチャー仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">分割表示仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">Workspace OS仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">QuickLook仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">YouTubeミニプレイヤー仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">コマンドパレット仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">サイト権限・プライバシー仕様</span></li>
-<li><span class="source-reference" title="???????????docs????????????">操作ガイド スクリーンショット計画</span></li>
+<li>導入・更新・削除ガイド（ZIP内の<code>docs\distribution-guide.md</code>）</li>
+<li>バックアップ・復元ガイド（ZIP内の<code>docs\backup-restore-guide.md</code>）</li>
+<li>既知の制約（ZIP内の<code>docs\known-limitations.md</code>）</li>
+<li>プライバシー説明（ZIP内の<code>PRIVACY.md</code>）</li>
+<li>不具合報告ガイド（ZIP内の<code>REPORTING.md</code>）</li>
+<li>セキュリティポリシー（ZIP内の<code>SECURITY.md</code>）</li>
+<li>本体の利用条件（MIT License）（ZIP内の<code>LICENSE.txt</code>）</li>
+<li>第三者ライセンス通知（ZIP内の<code>THIRD-PARTY-NOTICES.txt</code>）</li>
 </ul>
 
-  <section><h2>配布用ローカル動画の対応環境</h2><p>配布用構成のQuickLookとローカル動画ミニプレイヤーは、WPF標準のMediaElementを利用します。再生できる形式・コーデックはWindows環境に依存します。WebMやMKV等も拡張子だけでは再生を保証しません。再生エラー時は表示内容を記録し、既定アプリで開く操作を使えます。YouTubeミニプレイヤーは既存のWebView2方式です。通常の開発用構成はLibVLCを維持します。</p></section>
+  <section><h2>配布用ローカル動画の対応環境</h2><p>配布用構成のQuickLookとローカル動画ミニプレイヤーは、WPF標準のMediaElementを利用します。再生できる形式・コーデックはWindows環境に依存します。WebMやMKV等も拡張子だけでは再生を保証しません。再生エラー時は表示内容を記録し、既定アプリで開く操作を使えます。YouTubeミニプレイヤーは既存のWebView2方式です。</p></section>
 </main>
 </body>
 </html>

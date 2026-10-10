@@ -6,16 +6,16 @@
 
 Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブブラウザです。本体ソースはMIT Licenseで提供します。
 
-**現在はソースコードのみを提供しています。実行用ZIPのGitHub Releaseと、GitHub Sponsorsによる支援受付は準備中です。**
+**現在はソースコードのみを提供しています。実行用ZIPは、このリポジトリのReleasesで案内します。**
 完成した実行用ZIPは、使いたい方が無償で試せる公開アルファ版として案内する予定です。事前招待や人数制限は設けません。利用にあたっては[利用条件](LICENSE.txt)を確認してください。
 
 ## ソースからのビルド
 
-このソースは公開用構成です。実行用Releaseの提供は準備中です。
+このソースは公開用構成です。
 MITで提供する本体と、別の条件が適用される依存部品を区別してください。
 ソースZIPには.NET RuntimeやNuGetパッケージ自体は含めません。ビルド時に固定バージョンを取得します。
 
-Windows 11 x64、.NET SDK 10.0.401、PowerShell 7以上で、展開フォルダーから実行します。
+Windows 11 x64、PowerShell 7以上、.NET SDK 10.0.401以降（.NET Runtime 10.0.12以上を含むもの）が必要です。`global.json`は10.0.400を指定し、`latestFeature`で.NET 10の新しいfeature bandを許可しています。cloneしたフォルダー、またはソースZIPを展開したフォルダーの直下で実行します。
 
 ```powershell
 pwsh -NoProfile -File .\Build-Source.ps1
@@ -31,8 +31,8 @@ pwsh -NoProfile -File .\Build-Source.ps1
 元リポジトリの全回帰試験や実GUI確認の代わりではありません。
 Node.js 22以上とChromeがある場合は、`Build-Source.ps1 -BrowserTests`で
 追加の既存ブラウザー回帰も実行できます。未実施項目は成功と扱いません。
-切り出しの基点は`SOURCE-PROVENANCE.json`に記録しています。
-このコピーからのビルドは`unverified`表示であり、最終配布候補の承認記録を含みません。
+元の開発用リポジトリで、このソースの元になったcommitを`SOURCE-PROVENANCE.json`の`upstreamCommit`に記録しています。
+ソースからのビルドではRuntime診断に`公開検証未実施（未コミット変更を含む可能性）`と表示されます。配布用ZIPに対して行った検証を、このビルドが受けたことを示すものではありません。
 
 ## 実行用ZIPの提供予定
 
@@ -47,9 +47,9 @@ Node.js 22以上とChromeがある場合は、`Build-Source.ps1 -BrowserTests`�
 1. ReleasesにあるZIPのSHA-256を確認する。
 2. 新しい空フォルダーへZIPをすべて展開する。
 3. 展開後の`TabBrowser.exe`を起動する。
-4. Runtime診断の版番号・ソースSHAをReleaseの記録と照合する。
+4. Runtime診断のソースSHAを、Releaseページの対応表と照合する。実行ファイルに記録されるSHAは開発用リポジトリのcommitで、対応表には同じ内容の公開commitとZIPのSHA-256を記載します。
 
-[導入・更新・削除ガイド](docs/distribution-guide.md)と[バックアップ・復元ガイド](docs/backup-restore-guide.md)を確認してください。
+[導入・更新・削除ガイド](docs/distribution-guide.md)と[バックアップ・復元ガイド](docs/backup-restore-guide.md)、[既知の制約](docs/known-limitations.md)を確認してください。
 
 ## 主な機能
 
@@ -76,9 +76,7 @@ Node.js 22以上とChromeがある場合は、`Build-Source.ps1 -BrowserTests`�
 
 本体のダウンロードと利用は無料です。開発支援は任意で、支援の有無による機能差はありません。
 
-本体の実行用ZIPはGitHub Releasesへ無料で掲載する予定です。開発を応援したい方へ向け、GitHub Sponsorsによる任意の支援窓口も準備しています。現在は支援を受け付けていません。
-
-公式Sponsorsリンクは、申請条件・審査・受付可能状態を確認してから掲載します。
+本体の実行用ZIPはGitHub Releasesへ無料で掲載する予定です。
 
 ## 利用条件・プライバシー・報告
 

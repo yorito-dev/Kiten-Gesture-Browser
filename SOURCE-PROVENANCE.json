@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
-  "created": "2026-10-10",
-  "upstreamCommit": "3d7c720e90525e0d7be33645a10b9c4e422e2c8c",
+  "created": "2026-10-11",
+  "upstreamCommit": "af3dd1a3868454eafe903481568f934281dfe886",
   "publicRepositoryCommit": null,
   "buildVerification": "unverified",
   "csharpExport": "公開用Releaseで有効な396ファイルのトークン一致を確認。無効な条件分岐と一部コメントを除外。",
@@ -32,6 +32,5 @@
     22
   ],
   "productGuiTested": false,
-  "realPlaybackTested": false,
-  "documentationStage": "ソース提供段階。実行用Release・Sponsorsの受付は準備中。"
+  "realPlaybackTested": false
 }

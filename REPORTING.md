@@ -1,6 +1,6 @@
 # Kiten 不具合報告ガイド
 
-通常の不具合は、専用メールアドレス `kiten.gesture.contact@gmail.com` へ報告してください。公開アルファ版のため、不具合や仕様変更があり得ます。アプリから診断情報を自動送信することはありません。
+通常の不具合は、専用メールアドレス `kiten.gesture.contact@gmail.com` へ送る。アプリのRuntime診断からの自動送信やメール起動は行わない。
 
 ## 通常の不具合
 
@@ -24,4 +24,4 @@ Cookie、認証情報、WebView2プロファイル、Workspace DB、ブックマ
 
 ## 脆弱性または情報漏えいの可能性
 
-公開issueへ詳細を書かない。同じ専用メールアドレス `kiten.gesture.contact@gmail.com` に、件名の冒頭を「非公開報告」として送る。[セキュリティポリシー](SECURITY.md)も確認する。
+公開issueへ詳細を書かない。同じ専用メールアドレス `kiten.gesture.contact@gmail.com` に、件名の冒頭を「非公開報告」として送る。[セキュリティポリシー](SECURITY.md)も確認する。あらゆる差出人・添付・迷惑メール判定での到達を保証するものではない。

@@ -1,7 +1,5 @@
 # Kiten データのバックアップと復元
 
-状態: 配布・保守準備 第3段階。Windows 11 x64向け停止中手動操作
-
 この手順は、Kiten本体が起動しない場合でも使える`Kiten.DataTool.exe`とPowerShellスクリプトを対象とする。初回方式は、Kitenを通常終了してから手動で実行する。ツールは対象チャンネルの単一起動mutexを処理中ずっと保持し、Kitenが起動中、別の保守処理が実行中、または未完了の復元がある場合はデータを書き換えず停止する。Kitenを強制終了しない。
 
 実行用ZIPでは、`Maintenance`フォルダーに`Kiten.DataTool.exe`、`Backup-KitenData.ps1`、`Restore-KitenData.ps1`をまとめて含める。PowerShell 7以上が必要であり、利用者の.NET SDKや`sqlite3`コマンドは不要である。以下のコマンドは`Maintenance`フォルダーをPowerShellで開いて実行する。導入・更新・削除の全体手順は[導入・更新・削除ガイド](distribution-guide.md)を参照する。

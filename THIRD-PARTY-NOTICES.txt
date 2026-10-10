@@ -4,7 +4,7 @@ Kiten Gesture Browser - Third-Party Notices（MediaElement配布用）
 対象: 0.1.0-preview.1 win-x64 自己完結配布
 ローカル動画はWindowsのWPF標準MediaElementを利用します。LibVLC、LibVLCSharp、VLCプラグイン・付属データはこの配布構成に含みません。
 Windows側の再生機能・コーデックは利用者のOS環境に依存します。
-最終package-manifest.jsonと同梱物を再照合してください。Kiten本体の利用条件はLICENSE.txtです。
+Kiten本体の利用条件はLICENSE.txtです。
 
 同梱package一覧（name | resolved version）:
 - Microsoft.Data.Sqlite | 8.0.30
@@ -30,7 +30,7 @@ Windows側の再生機能・コーデックは利用者のOS環境に依存し�
   Source: https://github.com/dotnet/runtime
 
 Kitenのアプリアイコンとユーザーガイド画像はプロジェクト資産です。作者表示名は「ヨリト」です。
-所有者はアイコンと画像を自作・配布可能と申告しました。第三者の映像・人物が写る2枚と、YouTubeロゴ・実動画名が写る1枚のガイド画像は同梱対象から除外し、説明を文字に置き換えました。確定ZIPで不在を再確認します。この通知はKiten自身の利用条件を定めません。
+第三者の映像・人物やYouTubeロゴ・実在の動画名が写るガイド画像は同梱していません。この通知はKiten自身の利用条件を定めません。
 
 ------------------------------------------------------------------------
 Microsoft.Data.Sqlite / Microsoft.Data.Sqlite.Core 8.0.30 - MIT LICENSE.txt
