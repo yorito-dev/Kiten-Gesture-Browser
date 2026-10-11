@@ -2,7 +2,9 @@
 
 この手順は、Kiten本体が起動しない場合でも使える`Kiten.DataTool.exe`とPowerShellスクリプトを対象とする。初回方式は、Kitenを通常終了してから手動で実行する。ツールは対象チャンネルの単一起動mutexを処理中ずっと保持し、Kitenが起動中、別の保守処理が実行中、または未完了の復元がある場合はデータを書き換えず停止する。Kitenを強制終了しない。
 
-実行用ZIPでは、`Maintenance`フォルダーに`Kiten.DataTool.exe`、`Backup-KitenData.ps1`、`Restore-KitenData.ps1`をまとめて含める。PowerShell 7以上が必要であり、利用者の.NET SDKや`sqlite3`コマンドは不要である。以下のコマンドは`Maintenance`フォルダーをPowerShellで開いて実行する。導入・更新・削除の全体手順は[導入・更新・削除ガイド](distribution-guide.md)を参照する。
+実行用ZIPでは、`Maintenance`フォルダーに`Kiten.DataTool.exe`、`Backup-KitenData.ps1`、`Restore-KitenData.ps1`をまとめて含める。利用者の.NET SDKや`sqlite3`コマンドは不要である。追加のダブルクリック用補助ファイルを使うバックアップではPowerShell 7も不要である。PowerShellスクリプトでバックアップ・復元する場合はPowerShell 7以上が必要であり、以下のコマンドは`Maintenance`フォルダーで実行する。導入・更新・削除の全体手順は[導入・更新・削除ガイド](distribution-guide.md)を参照する。
+
+Kitenの保存データがまだない初回のお試しでは、バックアップは必須ではない。大切なデータを保存した後・既存データを使って更新する前に作成する。毎回の起動前に作る必要はない。
 
 ## 1. 先に知っておくこと
 
@@ -45,6 +47,19 @@
 コンテナ定義を復元しても、WebView2プロファイルを復元しないため、サイトへ再ログインが必要になる場合がある。
 
 ## 3. バックアップ
+
+### 3.1 ダブルクリックで作成する
+
+公開済み`v0.1.0-preview.1`のZIPには、ダブルクリック用補助ファイルを含めていない。[Backup-KitenData.cmd](../tools/Backup-KitenData.cmd)を保存し、展開済みKitenの`Maintenance`へ置く。GitHubでは「Download raw file」で保存し、ファイル名が`.cmd.txt`になっていないことを確認する。以降は次の手順を使う。
+
+1. KitenのすべてのWindowとミニプレイヤーなどを通常終了する。
+2. `Maintenance\Backup-KitenData.cmd`をダブルクリックする。
+3. 表示された対象と保存先を確認し、実行するときだけ大文字で`BACKUP`と入力する。それ以外はキャンセルになる。
+4. 「バックアップと作成後の検証が完了しました」を確認し、表示されたZIPと同名`.zip.sha256`をセットで保管する。何かキーを押して画面を閉じる。
+
+この入口は配布版（`stable`）の基本バックアップを対象にし、保存先はユーザーフォルダーの`KitenBackup`である。履歴3種類は含めず、開発版データは対象にしない。計画の表示と作成の両方で同梱DataToolを使い、起動中・別の保守処理・未完了の復元の拒否、パスとデータ形式の確認、作成後のmanifest・SHA-256・SQLite検証を維持する。エラー時は完了表示を出さない。
+
+### 3.2 PowerShellで対象・保存先を指定する
 
 1. 対象チャンネルのKitenを通常終了する。
 2. `Kiten.DataTool.exe`、`Backup-KitenData.ps1`、`Restore-KitenData.ps1`がある保守ツールフォルダーでPowerShellを開く。

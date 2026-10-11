@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\tools\Backup-KitenData.cmd" Link="Backup-KitenData.cmd" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\tools\Backup-KitenData.ps1" Link="Backup-KitenData.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\tools\Restore-KitenData.ps1" Link="Restore-KitenData.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>

@@ -1,6 +1,6 @@
 # Kiten Gesture Browser 公開アルファ版 導入・更新・削除ガイド
 
-**本版は開発中のアルファ版です。** 不具合、仕様変更、保存データが失われる可能性があります。重要データの唯一の保存先にせず、利用前・更新前にバックアップしてください。
+**本版は開発中のアルファ版です。** 不具合、仕様変更、保存データが失われる可能性があります。重要データの唯一の保存先にせず、大切なデータを保存した後・更新前にバックアップしてください。Kitenの保存データがまだない初回のお試しでは、バックアップは必須ではありません。
 
 このガイドは、Windows 11 x64向けPreview版の実行用ZIPを手動で導入・更新する手順を説明する。公式GitHub配布リポジトリのReleasesから、無料の実行用ZIPとSHA-256を入手する。本体の利用は無料で、支援の有無による機能差はない。
 
@@ -23,7 +23,8 @@ GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPでは�
 - 検証対象: Windows 11 x64
 - 必要な外部Runtime: Microsoft Edge WebView2 Evergreen Runtime
 - .NET: 実行用ZIPへ同梱する自己完結型。利用者による.NET SDKの導入は不要
-- バックアップ／復元: PowerShell 7以上（`pwsh`）。未導入の場合はMicrosoft公式の[WindowsへのPowerShell導入手順](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows)に従う
+- バックアップ: [ダブルクリック用の補助ファイルを追加する方法](backup-restore-guide.md#31-ダブルクリックで作成する)ではPowerShell 7不要。公開済みZIPには補助ファイルを同梱していない
+- PowerShellスクリプトによるバックアップ／復元: PowerShell 7以上（`pwsh`）。未導入の場合はMicrosoft公式の[WindowsへのPowerShell導入手順](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows)に従う
 - インストーラー、自動更新、Microsoft Store版: 初回Previewの対象外
 
 ローカル動画はWPF標準MediaElement方式で、対応形式はWindowsのコーデック環境に依存する。YouTubeミニプレイヤーと既存ミニプレイヤー内のローカル動画再生も利用できる。LibVLCは同梱しない。
