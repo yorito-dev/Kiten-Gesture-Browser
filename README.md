@@ -8,6 +8,8 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 
 **[無料の公開アルファをダウンロード（v0.1.0-preview.1）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)**
 
+**[初めて使う方へ：ダウンロード・起動・基本操作・バックアップ](docs/getting-started.md)**
+
 実行用ZIPと本体ソースを公開しています。使いたい方が無償で試せる、開発中の公開アルファ版です。事前招待や人数制限はありません。利用にあたっては[利用条件](LICENSE.txt)を確認してください。
 
 ## ソースからのビルド
