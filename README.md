@@ -6,8 +6,9 @@
 
 Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブブラウザです。本体ソースはMIT Licenseで提供します。
 
-**現在はソースコードのみを提供しています。実行用ZIPは、このリポジトリのReleasesで案内します。**
-完成した実行用ZIPは、使いたい方が無償で試せる公開アルファ版として案内する予定です。事前招待や人数制限は設けません。利用にあたっては[利用条件](LICENSE.txt)を確認してください。
+**[無料の公開アルファをダウンロード（v0.1.0-preview.1）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)**
+
+実行用ZIPと本体ソースを公開しています。使いたい方が無償で試せる、開発中の公開アルファ版です。事前招待や人数制限はありません。利用にあたっては[利用条件](LICENSE.txt)を確認してください。
 
 ## ソースからのビルド
 
@@ -34,15 +35,15 @@ Node.js 22以上とChromeがある場合は、`Build-Source.ps1 -BrowserTests`�
 元の開発用リポジトリで、このソースの元になったcommitを`SOURCE-PROVENANCE.json`の`upstreamCommit`に記録しています。
 ソースからのビルドではRuntime診断に`公開検証未実施（未コミット変更を含む可能性）`と表示されます。配布用ZIPに対して行った検証を、このビルドが受けたことを示すものではありません。
 
-## 実行用ZIPの提供予定
+## 実行用ZIPのダウンロード
 
-公開の準備と確認が終わり次第、このリポジトリのReleasesへ次の実行用ZIPを掲載する予定です。**現在はまだダウンロードできません。**
+[v0.1.0-preview.1の配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)のAssetsから、次の実行用ZIPを取得してください。
 
-`Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip`
+[Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip)
 
-公開時にはZIPと同名の`.zip.sha256`も提供します。`Source code` ZIPはアプリの実行用ではありません。`Preview`という版表示は、この開発中の公開アルファ版を指します。
+ZIPと同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip.sha256)も提供しています。`Source code` ZIPはアプリの実行用ではありません。`Preview`という版表示は、この開発中の公開アルファ版を指します。
 
-公開後は、次の順で導入してください。
+次の順で導入してください。
 
 1. ReleasesにあるZIPのSHA-256を確認する。
 2. 新しい空フォルダーへZIPをすべて展開する。
@@ -61,11 +62,11 @@ Node.js 22以上とChromeがある場合は、`Build-Source.ps1 -BrowserTests`�
 
 ローカル動画はWPF標準MediaElement方式で、対応形式はWindowsのコーデック環境に依存します。YouTubeは既存のWebView2方式です。LibVLCは同梱しません。
 
-## 実行用Releaseの予定条件と既知の制約
+## 実行用Releaseの動作条件と既知の制約
 
 - Windows 11 x64
 - Microsoft Edge WebView2 Evergreen Runtime
-- 実行用Releaseは.NET RuntimeをZIPへ自己完結同梱する予定。ソースからのビルドには上記SDKが必要
+- 実行用Releaseは.NET RuntimeをZIPへ自己完結同梱しています。ソースからのビルドには上記SDKが必要
 - バックアップ／復元にはPowerShell 7以上が必要
 - 初回は未署名。入手元とSHA-256を確認し、Windowsのセキュリティ機能を無効にしない
 - 自動更新はありません。修正版は新しい版番号のZIPで案内します
@@ -76,7 +77,7 @@ Node.js 22以上とChromeがある場合は、`Build-Source.ps1 -BrowserTests`�
 
 本体のダウンロードと利用は無料です。開発支援は任意で、支援の有無による機能差はありません。
 
-本体の実行用ZIPはGitHub Releasesへ無料で掲載する予定です。
+本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)で無料提供しています。
 
 ## 利用条件・プライバシー・報告
 
