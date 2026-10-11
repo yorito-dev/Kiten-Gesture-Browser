@@ -12,6 +12,33 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 
 実行用ZIPと本体ソースを公開しています。使いたい方が無償で試せる、開発中の公開アルファ版です。事前招待や人数制限はありません。利用にあたっては[利用条件](LICENSE.txt)を確認してください。
 
+## 主な機能
+
+- マウスジェスチャーによるタブ操作
+- タブ・Window・分割表示の保存と復元
+- Workspace、ブックマーク、メモ、FolderTab、QuickLook
+- YouTubeミニプレイヤーと、既存ミニプレイヤー内のローカル動画再生
+- 停止中のバックアップ・検証・復元を行う同梱DataTool
+
+ローカル動画はWPF標準MediaElement方式で、対応形式はWindowsのコーデック環境に依存します。YouTubeは既存のWebView2方式です。LibVLCは同梱しません。
+
+## 実行用ZIPのダウンロード
+
+[v0.1.0-preview.1の配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)のAssetsから、次の実行用ZIPを取得してください。
+
+[Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip)
+
+ZIPと同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip.sha256)も提供しています。`Source code` ZIPはアプリの実行用ではありません。`Preview`という版表示は、この開発中の公開アルファ版を指します。
+
+次の順で導入してください。
+
+1. ReleasesにあるZIPのSHA-256を確認する。
+2. 新しい空フォルダーへZIPをすべて展開する。
+3. 展開後の`TabBrowser.exe`を起動する。
+4. Runtime診断のソースSHAを、Releaseページの対応表と照合する。実行ファイルに記録されるSHAは開発用リポジトリのcommitで、対応表には同じ内容の公開commitとZIPのSHA-256を記載します。
+
+[導入・更新・削除ガイド](docs/distribution-guide.md)と[バックアップ・復元ガイド](docs/backup-restore-guide.md)、[既知の制約](docs/known-limitations.md)を確認してください。
+
 ## ソースからのビルド
 
 このソースは公開用構成です。
@@ -36,33 +63,6 @@ Node.js 22以上とChromeがある場合は、`Build-Source.ps1 -BrowserTests`�
 追加の既存ブラウザー回帰も実行できます。未実施項目は成功と扱いません。
 元の開発用リポジトリで、このソースの元になったcommitを`SOURCE-PROVENANCE.json`の`upstreamCommit`に記録しています。
 ソースからのビルドではRuntime診断に`公開検証未実施（未コミット変更を含む可能性）`と表示されます。配布用ZIPに対して行った検証を、このビルドが受けたことを示すものではありません。
-
-## 実行用ZIPのダウンロード
-
-[v0.1.0-preview.1の配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)のAssetsから、次の実行用ZIPを取得してください。
-
-[Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip)
-
-ZIPと同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip.sha256)も提供しています。`Source code` ZIPはアプリの実行用ではありません。`Preview`という版表示は、この開発中の公開アルファ版を指します。
-
-次の順で導入してください。
-
-1. ReleasesにあるZIPのSHA-256を確認する。
-2. 新しい空フォルダーへZIPをすべて展開する。
-3. 展開後の`TabBrowser.exe`を起動する。
-4. Runtime診断のソースSHAを、Releaseページの対応表と照合する。実行ファイルに記録されるSHAは開発用リポジトリのcommitで、対応表には同じ内容の公開commitとZIPのSHA-256を記載します。
-
-[導入・更新・削除ガイド](docs/distribution-guide.md)と[バックアップ・復元ガイド](docs/backup-restore-guide.md)、[既知の制約](docs/known-limitations.md)を確認してください。
-
-## 主な機能
-
-- マウスジェスチャーによるタブ操作
-- タブ・Window・分割表示の保存と復元
-- Workspace、ブックマーク、メモ、FolderTab、QuickLook
-- YouTubeミニプレイヤーと、既存ミニプレイヤー内のローカル動画再生
-- 停止中のバックアップ・検証・復元を行う同梱DataTool
-
-ローカル動画はWPF標準MediaElement方式で、対応形式はWindowsのコーデック環境に依存します。YouTubeは既存のWebView2方式です。LibVLCは同梱しません。
 
 ## 実行用Releaseの動作条件と既知の制約
 
