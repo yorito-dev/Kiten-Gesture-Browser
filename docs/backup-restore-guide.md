@@ -50,7 +50,23 @@ Kitenの保存データがまだない初回のお試しでは、バックアッ
 
 ### 3.1 ダブルクリックで作成する
 
-公開済み`v0.1.0-preview.1`のZIPには、ダブルクリック用補助ファイルを含めていない。[Backup-KitenData.cmd](../tools/Backup-KitenData.cmd)を保存し、展開済みKitenの`Maintenance`へ置く。GitHubでは「Download raw file」で保存し、ファイル名が`.cmd.txt`になっていないことを確認する。以降は次の手順を使う。
+この補助ファイルは`0.1.0-preview.1`向けであり、公開済みのZIPには含めていない。[Backup-KitenData.cmd（0.1.0-preview.1向けの固定版）](https://github.com/yorito-dev/Kiten-Gesture-Browser/blob/161dcc0b01e7fc80395a75ada83728fb709c5eb3/tools/Backup-KitenData.cmd)を「Download raw file」で保存し、展開済みKitenの`Maintenance`へ置く。ファイル名が`.cmd.txt`になっていないことを確認する。
+
+展開したKitenのフォルダーでPowerShellを開き、ZIPと同じ`Get-FileHash`で照合する。この照合にはWindows標準のPowerShellを使える。
+
+```powershell
+Get-FileHash -LiteralPath '.\Maintenance\Backup-KitenData.cmd' -Algorithm SHA256
+```
+
+表示された`Hash`が次のSHA-256と一致することを確認する。一致しなければ使わない。
+
+```text
+EFEA72536F577AE242114AB013ACBDD94549DDBD73EB02F49A34B8D308D7E76A
+```
+
+インターネットから入手した`.cmd`を開くと、Windowsのセキュリティ警告が表示される場合がある。警告が出た場合は、このリポジトリから入手し、SHA-256が一致した場合だけ「実行」に相当する操作を選ぶ。画面の文言は環境によって異なる。セキュリティ設定を変更して回避しない。
+
+この補助ファイルと公開済みZIPの同梱DataToolを組み合わせた実行確認は、まだ行っていない。以降は次の手順を使う。
 
 1. KitenのすべてのWindowとミニプレイヤーなどを通常終了する。
 2. `Maintenance\Backup-KitenData.cmd`をダブルクリックする。

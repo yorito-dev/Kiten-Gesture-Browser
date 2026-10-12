@@ -31,7 +31,7 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 - Windows 11 x64
 - Microsoft Edge WebView2 Evergreen Runtimeは、Windows 11には通常、最初から入っています。Webページが表示されない場合だけ、[動作条件](docs/distribution-guide.md#2-動作条件)の手順で導入してください
 - 実行用Releaseは.NET RuntimeをZIPへ自己完結同梱しています。ソースからのビルドには末尾のSDK要件を参照
-- [ダブルクリック用のバックアップ補助ファイル](tools/Backup-KitenData.cmd)を追加する方法は[利用案内](docs/getting-started.md#4-バックアップを作る)を参照。公開済みZIPには未同梱
+- [0.1.0-preview.1向けのバックアップ補助ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/blob/161dcc0b01e7fc80395a75ada83728fb709c5eb3/tools/Backup-KitenData.cmd)の入手方法とSHA-256の照合は[利用案内](docs/getting-started.md#4-バックアップを作る)を参照。公開済みZIPには未同梱
 - PowerShellスクリプトによるバックアップ／復元にはPowerShell 7以上が必要。ダブルクリック版のバックアップでは不要
 - 初回は未署名。入手元とSHA-256を確認し、Windowsのセキュリティ機能を無効にしない
 - 自動更新はありません。修正版は新しい版番号のZIPで案内します
