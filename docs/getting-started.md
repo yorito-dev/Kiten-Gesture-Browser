@@ -13,15 +13,30 @@ Kiten Gesture Browserは、Windows 11 x64向けの無料のタブブラウザで
 Get-FileHash -LiteralPath '.\Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip' -Algorithm SHA256
 ```
 
-実行用ZIPには.NET Runtimeを含みます。.NET SDKの導入やソースのビルドは不要です。Webページの表示にはMicrosoft Edge WebView2 Evergreen Runtimeが必要です。導入方法は[動作条件](distribution-guide.md#2-動作条件)を確認してください。
+実行用ZIPには.NET Runtimeを含みます。.NET SDKの導入やソースのビルドは不要です。Webページの表示に使うMicrosoft Edge WebView2 Evergreen Runtimeは、Windows 11には通常、最初から入っています。Webページが表示されない場合だけ、[動作条件](distribution-guide.md#2-動作条件)の手順で導入してください。
 
 ## 2. 展開して起動する
 
 1. ZIPを右クリックして「すべて展開」を選び、新しい空フォルダーへ展開します。ZIP内から直接実行しません。
-2. 展開先の`TabBrowser.exe`をダブルクリックします。
-3. `Ctrl+Shift+K`でコマンドパレットを開き、`Runtime診断`を検索して「バージョン情報・Runtime診断を開く」を選びます。「バージョン情報」タブの版番号とソースSHAを、配布ページの対応表にある「実行ファイルの埋め込みSHA」と照合します。
+2. 展開先の`TabBrowser.exe`をダブルクリックします。ファイルが多い場合は、エクスプローラーの検索欄で`TabBrowser.exe`を探すか、名前順に並べ替えると見つけやすくなります。
 
-未署名のためWindowsの警告が出る場合があります。入手元とSHA-256を確認し、DefenderやSmartScreenを無効にしないでください。起動できない場合は[不具合報告](../REPORTING.md)へ進んでください。
+普段の起動用には、`TabBrowser.exe`を右クリックして「スタートにピン留めする」を選べます。デスクトップに置く場合は「その他のオプションを確認」→「送る」→「デスクトップ（ショートカットを作成）」を選びます。表示名はWindowsの版で異なる場合があります。ショートカットを作った後も、展開したフォルダー全体を残してください。
+
+### 警告画面が出たとき
+
+未署名のため、Windowsの警告が出る場合があります。**このリポジトリのReleaseから入手し、ZIPのSHA-256が一致したことを確認した場合だけ**、次へ進みます。
+
+1. 「WindowsによってPCが保護されました」が出たら「詳細情報」を選びます。
+2. アプリ名が`TabBrowser.exe`、発行元が「不明な発行元」であることを確認します。別のアプリ名なら進みません。
+3. 「実行」を選びます。「実行」が表示されない場合は、設定を変更して回避せず、[不具合報告](../REPORTING.md)へ進んでください。
+
+**DefenderやSmartScreenは無効にしないでください。** Defenderが検出・隔離した場合は、除外設定をせず、検出名と起きた操作を[報告書式](../REPORTING.md#コピーして記入する書式)に記入してください。
+
+スマート アプリ コントロールが有効なPCでは、未署名のため起動できない場合があります。無効にして進む手順は案内していません。詳しくは[Microsoftの説明](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions)を確認してください。
+
+### （任意）正しい版か確かめたい場合
+
+`Ctrl+Shift+K`でコマンドパレットを開き、`Runtime診断`を検索して「バージョン情報・Runtime診断を開く」を選びます。「バージョン情報」タブの版番号とソースSHAを、配布ページの対応表にある「実行ファイルの埋め込みSHA」と照合します。これは起動後の追加確認です。ZIPのSHA-256確認は[ダウンロードの手順](#1-ダウンロードする)で行ってください。
 
 ## 3. まずは基本操作を試す
 
@@ -38,7 +53,7 @@ Webタブで、アドレス欄にURLや検索語を入力して`Enter`を押し�
 
 **ジェスチャーは、Webページ上で右ボタンを押したまま矢印の順に動かし、操作名が表示されたら離します。** 例えば`↓→`は「下へ動かしてから右へ動かす」です。戻る・進むには、そのタブの移動履歴が必要です。設定を変更した場合は画面に表示される操作名を優先し、取り消すときは右ボタンを離す前に`Esc`を押します。
 
-ブックマーク、Workspace、動画などの詳しい使い方は、展開先の`Help\user-guide.html`を開くか、[操作説明書](../Help/user-guide.html)を確認してください。
+ブックマーク、Workspace、動画などの詳しい使い方は、`Ctrl+Shift+K`でコマンドパレットを開き、「ユーザーガイドを開く」を実行してください。展開先の`Help\user-guide.html`を直接開くこともできます。
 
 ## 4. バックアップを作る
 
@@ -53,8 +68,11 @@ Webタブで、アドレス欄にURLや検索語を入力して`Enter`を押し�
 
 バックアップにはCookie・ログイン状態・ダウンロード済みファイル・外部ファイルを含みません。ZIPは暗号化されないため、公開場所へ置かないでください。開発版のデータや追加の履歴を保存する場合、復元が必要になった場合は[バックアップ・復元ガイド](backup-restore-guide.md)の手順を確認してください。
 
+従来のPowerShell方式を使う場合は、PowerShell 7（`pwsh`）を入れたうえで、ターミナルで`pwsh`を起動し、[バックアップ・復元ガイドのPowerShell手順](backup-restore-guide.md#32-powershellで対象保存先を指定する)を実行してください。ダブルクリック方式ではPowerShell 7は不要です。
+
 ## 困ったとき
 
 - 起動・更新・削除：[導入ガイド](distribution-guide.md)
+- 使うのをやめるとき：[アプリ本体を削除する](distribution-guide.md#6-アプリ本体を削除する)。保存データは別に残るので、必要に応じて[ユーザーデータの扱い](distribution-guide.md#7-ユーザーデータも削除する場合)も確認してください。
 - 動画などの対応範囲：[既知の制約](known-limitations.md)
 - 不具合：[コピーして記入できる報告書式](../REPORTING.md#コピーして記入する書式)。現在のメール窓口は`kiten.gesture.contact@gmail.com`です。

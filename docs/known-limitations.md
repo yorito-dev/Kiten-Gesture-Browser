@@ -15,6 +15,7 @@
 - 初回Previewの検証対象はWindows 11 x64だけである。Windows 10、Arm64、x86は未検証である。
 - .NET Runtimeは実行用ZIPへ同梱するが、Microsoft Edge WebView2 Evergreen Runtimeは別途必要である。
 - 実行ファイルはコード署名されていないため、Windowsの警告が出る場合がある。
+- スマート アプリ コントロールが有効なPCでは、未署名のため起動できない場合がある。無効化による回避は案内しない。[初回起動時の案内](getting-started.md#警告画面が出たとき)を確認する。
 
 ## Webページと表示支援
 
