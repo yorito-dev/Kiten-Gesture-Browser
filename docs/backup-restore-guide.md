@@ -1,5 +1,7 @@
 # Kiten データのバックアップと復元
 
+バックアップを作る方は[3.1 ダブルクリックで作成する](#31-ダブルクリックで作成する)へ進んでください。初回だけ必要な補助ファイルの準備から、作成・保管まで説明します。復元する方は[4. 復元計画を確認する](#4-復元計画を確認する)から順に進めてください。
+
 この手順は、Kiten本体が起動しない場合でも使える`Kiten.DataTool.exe`とPowerShellスクリプトを対象とする。初回方式は、Kitenを通常終了してから手動で実行する。ツールは対象チャンネルの単一起動mutexを処理中ずっと保持し、Kitenが起動中、別の保守処理が実行中、または未完了の復元がある場合はデータを書き換えず停止する。Kitenを強制終了しない。
 
 実行用ZIPでは、`Maintenance`フォルダーに`Kiten.DataTool.exe`、`Backup-KitenData.ps1`、`Restore-KitenData.ps1`をまとめて含める。利用者の.NET SDKや`sqlite3`コマンドは不要である。追加のダブルクリック用補助ファイルを使うバックアップではPowerShell 7も不要である。PowerShellスクリプトでバックアップ・復元する場合はPowerShell 7以上が必要であり、以下のコマンドは`Maintenance`フォルダーで実行する。導入・更新・削除の全体手順は[導入・更新・削除ガイド](distribution-guide.md)を参照する。
@@ -76,6 +78,8 @@ EFEA72536F577AE242114AB013ACBDD94549DDBD73EB02F49A34B8D308D7E76A
 この入口は配布版（`stable`）の基本バックアップを対象にし、保存先はユーザーフォルダーの`KitenBackup`である。履歴3種類は含めず、開発版データは対象にしない。計画の表示と作成の両方で同梱DataToolを使い、起動中・別の保守処理・未完了の復元の拒否、パスとデータ形式の確認、作成後のmanifest・SHA-256・SQLite検証を維持する。エラー時は完了表示を出さない。
 
 ### 3.2 PowerShellで対象・保存先を指定する
+
+この方式にはPowerShell 7（`pwsh`）が必要です。ターミナルで`pwsh`を起動し、`Maintenance`フォルダーで以下のコマンドを実行してください。
 
 1. 対象チャンネルのKitenを通常終了する。
 2. `Kiten.DataTool.exe`、`Backup-KitenData.ps1`、`Restore-KitenData.ps1`がある保守ツールフォルダーでPowerShellを開く。
