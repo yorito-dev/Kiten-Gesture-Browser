@@ -23,7 +23,7 @@ GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPでは�
 - 検証対象: Windows 11 x64
 - 必要な外部Runtime: Microsoft Edge WebView2 Evergreen Runtime
 - .NET: 実行用ZIPへ同梱する自己完結型。利用者による.NET SDKの導入は不要
-- バックアップ: [同梱の補助ファイルで作成する方法](backup-restore-guide.md#31-ダブルクリックで作成する)ではPowerShell 7不要。公開済みZIPには補助ファイルを同梱していない
+- バックアップ: `0.1.0-preview.2`には`Maintenance\Backup-KitenData.cmd`を同梱している。[同梱の補助ファイルで作成する方法](backup-restore-guide.md#31-ダブルクリックで作成する)ではPowerShell 7不要。`0.1.0-preview.1`には同梱していないため、同じページの旧版向け補足を参照する
 - PowerShellスクリプトによるバックアップ／復元: PowerShell 7以上（`pwsh`）。未導入の場合はMicrosoft公式の[WindowsへのPowerShell導入手順](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows)に従う
 - インストーラー、自動更新、Microsoft Store版: この版の対象外
 
@@ -50,7 +50,8 @@ WebView2 Runtimeがない場合は、Microsoft公式の[WebView2 Runtime配布�
 4. 旧版フォルダーを上書きせず、新しい別の空フォルダーへ新版を展開する。
 5. 旧版プロセスがすべて終了していることを確認し、新版の`TabBrowser.exe`を引数なしで起動する。
 6. Runtime診断の版情報、起動、設定、ブックマーク、Workspace、メモ、タブ復元を確認する。
-7. 問題がなければ、旧アプリフォルダーは後日削除できる。更新前バックアップは、復旧不要と判断するまで自動削除しない。
+7. ショートカットやスタート・タスクバーへのピン留めを使っている場合は、旧版のものを外し、新版フォルダーの`TabBrowser.exe`から作り直す。新版をいったん通常終了し、作り直した入口から起動して、Runtime診断の版番号が新版であることを確認する。
+8. 問題がなければ、旧アプリフォルダーは後日削除できる。更新前バックアップは、復旧不要と判断するまで自動削除しない。
 
 旧版と新版は同じStableデータを使うため、同時に起動しない。アプリの単一起動制御は同じチャンネルの通常起動を抑止するが、更新手順では利用者自身も同時起動を避ける。
 
