@@ -2880,8 +2880,18 @@ public sealed class WorkspaceRepositoryTests
         fault.Inner = actual;
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        fault.Fault = (method, args) => method.Name == nameof(IWorkspaceRepository.DeleteShellItemForUndoAsync)
-            ? PauseThenDeleteAsync(args!) : null;
+        const string icon = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        var backgroundIconWrites = 0;
+        fault.Fault = (method, args) =>
+        {
+            // この試験はUndoと別接続の更新競合を扱う。未監督のアイコン補完DB書込みを混在させない。
+            if (method.Name == nameof(IWorkspaceRepository.AddShellItemsAsync))
+                foreach (var item in (IReadOnlyList<ShellItem>)args![0]!) item.FaviconPngBase64 = icon;
+            if (method.Name is nameof(IWorkspaceRepository.UpdateItemFaviconAsync)
+                or nameof(IWorkspaceRepository.UpdateItemFaviconsAsync)) Interlocked.Increment(ref backgroundIconWrites);
+            return method.Name == nameof(IWorkspaceRepository.DeleteShellItemForUndoAsync)
+                ? PauseThenDeleteAsync(args!) : null;
+        };
         async Task PauseThenDeleteAsync(object?[] args)
         {
             entered.TrySetResult();
@@ -2903,10 +2913,11 @@ public sealed class WorkspaceRepositoryTests
             await actual.GetWorkspaceItemsAsync(workspace.Id), item => item.Id != parent.Id));
         var changedPath = Path.Combine(database.DirectoryPath, "changed");
 
+        Assert.All(view.Items, item => Assert.True(item.HasFavicon));
         var undo = Assert.IsType<AsyncRelayCommand>(view.UndoShellOperationCommand).ExecuteAsync(null);
-        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         try
         {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             await using var connection = new SqliteConnection($"Data Source={database.DatabasePath};Pooling=False");
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
@@ -2917,8 +2928,12 @@ public sealed class WorkspaceRepositoryTests
             command.Parameters.AddWithValue("$id", created.Id.ToString("D"));
             Assert.Equal(1, await command.ExecuteNonQueryAsync());
         }
-        finally { release.TrySetResult(); }
-        await undo;
+        finally
+        {
+            // 待機や更新の失敗時も、DBを片付ける前に一時停止したUndoを解放して完了を待つ。
+            release.TrySetResult();
+            await undo;
+        }
 
         var stored = Assert.IsType<ShellItem>(await actual.GetItemByIdAsync(created.Id));
         Assert.Null(stored.DeletedAt);
@@ -2926,6 +2941,7 @@ public sealed class WorkspaceRepositoryTests
         Assert.Equal(changeWorkspace ? created.TargetPath : changedPath, stored.TargetPath);
         Assert.False(Directory.Exists(created.TargetPath));
         Assert.True(view.CanUndoShellOperation);
+        Assert.Equal(0, backgroundIconWrites);
     }
 
     [Fact]

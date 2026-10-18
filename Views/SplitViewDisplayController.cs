@@ -53,7 +53,7 @@ internal interface ISplitViewDisplayHost
     void SetAddressText(string text);
     void SetDisplayedTab(BrowserTab? tab);
     void SetLastActiveBrowserTabId(Guid tabId);
-    void QueueFiveChLiveReadabilityActivation(BrowserTab tab, bool isActive);
+
     void UpdateSplitYouTubeControlPanels(string reason);
     void HideSplitYouTubeControlPopups();
     void QueueSplitYouTubeControlPanelRefresh();
@@ -252,14 +252,6 @@ internal sealed class SplitViewDisplayController(
         host.HidePlaceholder();
         elements.Host.UpdateLayout();
         RefreshPlacement(kickBlankNavigation: false);
-        if (!leftTab.IsFolderTab)
-        {
-            host.QueueFiveChLiveReadabilityActivation(leftTab, isActive: true);
-        }
-        if (!rightTab.IsFolderTab)
-        {
-            host.QueueFiveChLiveReadabilityActivation(rightTab, isActive: true);
-        }
 
         var activeTab = splitViewService.GetActiveTab(host.Tabs) ?? leftTab;
         host.SetDisplayedTab(activeTab);

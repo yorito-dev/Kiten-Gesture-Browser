@@ -64,6 +64,10 @@ internal sealed class CommandPaletteViewController : IDisposable
     private SearchQuickLookItemSource? _commandPaletteQuickLookSource;
     private bool _initialized;
     private bool _disposed;
+    private DispatcherOperation? _commandPaletteFocusOperation;
+    private DispatcherOperation? _commandPaletteTextInputOperation;
+    private readonly Queue<string?> _pendingCommandPaletteTextInput = new();
+    private int _commandPaletteInputGeneration;
 
     private Popup CommandPaletteOverlay => _elements.CommandPaletteOverlay;
     private FrameworkElement CommandPaletteOverlaySurface => _elements.CommandPaletteOverlaySurface;
@@ -125,6 +129,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal void PrepareOpen()
     {
         if (_disposed) return;
+        ResetCommandPaletteInput();
         _commandPaletteSearchRefreshTimer.Stop();
         _isCommandPaletteImeCompositionActive = false;
     }
@@ -142,6 +147,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal void Close()
     {
         if (_disposed) return;
+        ResetCommandPaletteInput();
         _commandPaletteSearchRefreshTimer.Stop();
         _isCommandPaletteImeCompositionActive = false;
         CommandPaletteQuickLookHost.Close();
@@ -212,6 +218,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal void CommandPaletteOverlay_Closed(object? sender, EventArgs e)
     {
         if (_disposed) return;
+        ResetCommandPaletteInput();
         _commandPaletteSearchRefreshTimer.Stop();
         _host.CloseContext();
         _isCommandPaletteImeCompositionActive = false;
@@ -284,9 +291,19 @@ internal sealed class CommandPaletteViewController : IDisposable
 
     internal void QueueCommandPaletteSearchFocus()
     {
-        if (_disposed) return;
-        Dispatcher.BeginInvoke(FocusCommandPaletteSearchBox, DispatcherPriority.Loaded);
-        Dispatcher.BeginInvoke(FocusCommandPaletteSearchBox, DispatcherPriority.ContextIdle);
+        if (!IsCommandPaletteOpen || _isCommandPaletteImeCompositionActive
+            || CommandPaletteSearchBox.IsKeyboardFocusWithin
+            || _commandPaletteFocusOperation?.Status == DispatcherOperationStatus.Pending)
+        {
+            return;
+        }
+
+        var generation = _commandPaletteInputGeneration;
+        _commandPaletteFocusOperation = Dispatcher.InvokeAsync(() =>
+        {
+            _commandPaletteFocusOperation = null;
+            if (generation == _commandPaletteInputGeneration) FocusCommandPaletteSearchBox();
+        }, DispatcherPriority.ContextIdle);
     }
 
     internal void RefreshCommandPaletteItems()
@@ -392,16 +409,19 @@ internal sealed class CommandPaletteViewController : IDisposable
     private void CommandPaletteSearchBox_PreviewTextInputStart(object sender, TextCompositionEventArgs e)
     {
         _isCommandPaletteImeCompositionActive = true;
+        CancelCommandPaletteSearchFocus();
     }
 
     private void CommandPaletteSearchBox_PreviewTextInputUpdate(object sender, TextCompositionEventArgs e)
     {
         _isCommandPaletteImeCompositionActive = true;
+        CancelCommandPaletteSearchFocus();
     }
 
     private void CommandPaletteSearchBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
     {
         _isCommandPaletteImeCompositionActive = false;
+        QueuePendingCommandPaletteTextInput();
     }
 
     internal void CommandPaletteSearchBox_PreviewKeyUp(object sender, KeyEventArgs e)
@@ -410,6 +430,7 @@ internal sealed class CommandPaletteViewController : IDisposable
         if (e.Key is Key.Enter or Key.Escape)
         {
             _isCommandPaletteImeCompositionActive = false;
+            QueuePendingCommandPaletteTextInput();
         }
     }
 
@@ -417,6 +438,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     {
         if (_disposed) return;
         _isCommandPaletteImeCompositionActive = false;
+        QueuePendingCommandPaletteTextInput();
     }
 
     internal void QueueCommandPaletteRefresh()
@@ -546,8 +568,7 @@ internal sealed class CommandPaletteViewController : IDisposable
 
     internal void InsertCommandPaletteSearchText(string text)
     {
-        if (_disposed) return;
-        FocusCommandPaletteSearchBox(selectWhenEmpty: false);
+        if (_disposed || _isCommandPaletteImeCompositionActive) return;
 
         var currentText = CommandPaletteSearchBox.Text ?? string.Empty;
         var selectionStart = Math.Clamp(CommandPaletteSearchBox.SelectionStart, 0, currentText.Length);
@@ -558,8 +579,7 @@ internal sealed class CommandPaletteViewController : IDisposable
 
     internal void BackspaceCommandPaletteSearchText()
     {
-        if (_disposed) return;
-        FocusCommandPaletteSearchBox(selectWhenEmpty: false);
+        if (_disposed || _isCommandPaletteImeCompositionActive) return;
 
         var currentText = CommandPaletteSearchBox.Text ?? string.Empty;
         var selectionStart = Math.Clamp(CommandPaletteSearchBox.SelectionStart, 0, currentText.Length);
@@ -605,12 +625,8 @@ internal sealed class CommandPaletteViewController : IDisposable
 
     private void FocusCommandPaletteSearchBox()
     {
-        FocusCommandPaletteSearchBox(selectWhenEmpty: true);
-    }
-
-    private void FocusCommandPaletteSearchBox(bool selectWhenEmpty)
-    {
-        if (!IsCommandPaletteOpen)
+        if (!IsCommandPaletteOpen || _isCommandPaletteImeCompositionActive
+            || CommandPaletteSearchBox.IsKeyboardFocusWithin)
         {
             return;
         }
@@ -621,24 +637,78 @@ internal sealed class CommandPaletteViewController : IDisposable
             _host.SetFocus(popupSource.Handle);
         }
 
-        CommandPaletteSearchBox.Focusable = true;
-        FocusManager.SetFocusedElement(CommandPalettePanel, CommandPaletteSearchBox);
-        CommandPaletteSearchBox.Focus();
-        Keyboard.Focus(CommandPaletteSearchBox);
-        if (selectWhenEmpty && string.IsNullOrEmpty(CommandPaletteSearchBox.Text))
+        // HWNDのfocus移動中に始まったIME入力にも割り込まない。
+        if (IsCommandPaletteOpen && !_isCommandPaletteImeCompositionActive
+            && !CommandPaletteSearchBox.IsKeyboardFocusWithin)
         {
-            CommandPaletteSearchBox.SelectAll();
+            CommandPaletteSearchBox.Focusable = true;
+            CommandPaletteSearchBox.Focus();
         }
-        else
+    }
+
+    internal void QueueCommandPaletteTextInput(string? text)
+    {
+        if (!IsCommandPaletteOpen) return;
+        // nullはBackspace。入力はこの表示中だけ保持し、閉じたら破棄する。
+        _pendingCommandPaletteTextInput.Enqueue(text);
+        QueuePendingCommandPaletteTextInput();
+    }
+
+    private void QueuePendingCommandPaletteTextInput()
+    {
+        if (!IsCommandPaletteOpen || _isCommandPaletteImeCompositionActive
+            || _pendingCommandPaletteTextInput.Count == 0
+            || _commandPaletteTextInputOperation?.Status == DispatcherOperationStatus.Pending)
         {
-            CommandPaletteSearchBox.CaretIndex = CommandPaletteSearchBox.Text.Length;
+            return;
         }
+
+        CancelCommandPaletteSearchFocus();
+        var generation = _commandPaletteInputGeneration;
+        _commandPaletteTextInputOperation = Dispatcher.InvokeAsync(() =>
+        {
+            _commandPaletteTextInputOperation = null;
+            if (!CanApplyCommandPaletteTextInput(generation)) return;
+            // nativeの文字通知内でfocus/Textを変更しない。TextStoreの準備も先に終える。
+            FocusCommandPaletteSearchBox();
+            if (!CanApplyCommandPaletteTextInput(generation)) return;
+            _commandPaletteTextInputOperation = Dispatcher.InvokeAsync(() =>
+            {
+                _commandPaletteTextInputOperation = null;
+                while (CanApplyCommandPaletteTextInput(generation)
+                    && _pendingCommandPaletteTextInput.TryDequeue(out var input))
+                {
+                    if (input is null) BackspaceCommandPaletteSearchText();
+                    else InsertCommandPaletteSearchText(input);
+                }
+            }, DispatcherPriority.ContextIdle);
+        }, DispatcherPriority.ContextIdle);
+    }
+
+    private bool CanApplyCommandPaletteTextInput(int generation)
+        => IsCommandPaletteOpen && !_isCommandPaletteImeCompositionActive
+            && generation == _commandPaletteInputGeneration;
+
+    private void CancelCommandPaletteSearchFocus()
+    {
+        _commandPaletteFocusOperation?.Abort();
+        _commandPaletteFocusOperation = null;
+    }
+
+    private void ResetCommandPaletteInput()
+    {
+        _commandPaletteInputGeneration++;
+        CancelCommandPaletteSearchFocus();
+        _commandPaletteTextInputOperation?.Abort();
+        _commandPaletteTextInputOperation = null;
+        _pendingCommandPaletteTextInput.Clear();
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        ResetCommandPaletteInput();
         _commandPaletteSearchRefreshTimer.Stop();
         _commandPaletteUsageSaveTimer.Stop();
         _commandPaletteSearchRefreshTimer.Tick -= SearchRefreshTimer_Tick;

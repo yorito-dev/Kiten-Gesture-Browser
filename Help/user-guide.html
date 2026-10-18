@@ -167,7 +167,7 @@
 <p>配布版は.NET Runtimeを同梱した自己完結型です。.NET SDKは不要です。バックアップ／復元には、配布物に含まれるPowerShellスクリプトと補助ツールを使います。</p>
 <h3 id="12-kitenを起動する">1.2 Kitenを起動する</h3>
 <p><strong>開始状態</strong></p>
-<p>実行用ZIP <code>Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip</code>を入手し、新しい空フォルダーへ展開済みです。<code>Source code</code> ZIPは実行用ではありません。</p>
+<p>実行用ZIP <code>Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip</code>を入手し、新しい空フォルダーへ展開済みです。<code>Source code</code> ZIPは実行用ではありません。</p>
 <p><strong>操作</strong></p>
 <ol>
 <li>Explorerで展開先の<code>TabBrowser.exe</code>を開きます。ZIP内から直接起動しません。</li>
@@ -840,11 +840,11 @@
 <li><code>一般</code>: 検索、基本動作、WebView2</li>
 <li><code>表示・操作</code>: QuickLook、ツールバー、ジェスチャー</li>
 <li><code>メディア</code>: ダウンロード</li>
-<li><code>サイト</code>: 5ch実況、ChatGPT表示</li>
+
 <li><code>連携・プライバシー</code>: クリップボード履歴、閲覧履歴、コンテナ</li>
 </ul>
 <p>リンク先プレビューは初期状態で有効です。<code>一般</code>→<code>動作</code>の<code>リンク先をマウスオーバーでポップアップ表示する</code>を外して<code>OK</code>を押すと無効になります。マウスポインターが止まった後にリンク先へアクセスする場合があります。取得には専用InPrivateプロファイルを使い、通常タブやコンテナのCookie・ログイン状態を使いません。ログインを要する画像が得られない場合があります。InPrivateでも接続先との通信は発生し、IPアドレス等が伝わり得ます。</p>
-<p><img src="images/user-guide/10-settings-categories.png" alt="設定Windowの一般、表示・操作、メディア、サイト、連携・プライバシーのカテゴリ"></p>
+<p>配布版の設定画面には、一般、表示・操作、メディア、連携・プライバシーの4つのカテゴリがあります。上部のカテゴリタブから選択します。</p>
 <h3 id="132-設定カテゴリをホイールで切り替える">13.2 設定カテゴリをホイールで切り替える</h3>
 <p><strong>操作</strong></p>
 <ul>
@@ -853,33 +853,7 @@
 </ul>
 <p><strong>結果</strong></p>
 <p>設定カテゴリが前後へ切り替わります。通常の設定内容上では、ホイールはスクロールに使われます。</p>
-<h3 id="133-5ch実況向け表示を有効にする">13.3 5ch実況向け表示を有効にする</h3>
-<p><strong>操作</strong></p>
-<ol>
-<li><code>ツール</code> → <code>設定</code>を開きます。</li>
-<li><code>サイト</code>を選択します。</li>
-<li><code>5ch実況向け表示を有効にする</code>を有効にします。</li>
-<li>必要に応じて、新着強調、自動取得、次スレ移行、自動追従、返信プレビュー、投稿者ID表示を調整します。</li>
-<li><code>OK</code>を押します。</li>
-<li>公式5ch実況スレを開きます。</li>
-</ol>
-<p><strong>結果</strong></p>
-<p>対象の実況スレだけが簡潔なレス表示へ切り替わり、設定に応じて新着取得と自動追従を開始します。過去レスを読んでいる間は最下部へ移動せず、新着件数を表示します。</p>
-<h3 id="134-chatgptとxの表示支援を切り替える">13.4 ChatGPTとXの表示支援を切り替える</h3>
-<p><strong>ChatGPT</strong></p>
-<ol>
-<li>ChatGPTを表示します。</li>
-<li>ツールバーの<code>GPT</code>を押します。</li>
-<li>文字サイズ、行間、本文幅などを調整します。</li>
-</ol>
-<p><strong>X</strong></p>
-<ol>
-<li><code>ツール</code>を押します。</li>
-<li><code>X 整形モード</code>を切り替えます。</li>
-</ol>
-<p><strong>結果</strong></p>
-<p>対象サイトだけへ表示調整を適用します。通常のWebサイトには専用CSSやJavaScriptを適用しません。</p>
-<h3 id="135-展開済み拡張機能を追加する">13.5 展開済み拡張機能を追加する</h3>
+<h3 id="133-展開済み拡張機能を追加する">13.3 展開済み拡張機能を追加する</h3>
 <p><strong>開始状態</strong></p>
 <p><code>manifest.json</code>を含む展開済みChrome拡張機能フォルダーがあります。</p>
 <p><strong>操作</strong></p>
@@ -894,7 +868,7 @@
 <p>WebView2が対応する範囲で拡張機能が読み込まれます。</p>
 <p><strong>注意</strong></p>
 <p>Chromeウェブストアからの直接インストールと、<code>.crx</code>の直接読み込みには対応していません。設定で拡張機能を有効化した直後は、Kitenの再起動後に完全反映される項目があります。</p>
-<h3 id="136-バージョン情報とruntime診断を確認する">13.6 バージョン情報とRuntime診断を確認する</h3>
+<h3 id="134-バージョン情報とruntime診断を確認する">13.4 バージョン情報とRuntime診断を確認する</h3>
 <p><strong>操作</strong></p>
 <ol>
 <li><code>Ctrl+Shift+K</code>でコマンドパレットを開きます。</li>

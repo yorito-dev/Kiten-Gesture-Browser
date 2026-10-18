@@ -30,7 +30,11 @@ using WorkspaceSessionTab = TabBrowser.Models.Workspaces.SessionTab;
 
 namespace TabBrowser;
 
-public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHost, IUrlThumbnailCaptureHost, IAddressBarHost, IBookmarkPreviewHost, IBookmarkControllerHost, ITabStripHost, ITabReorderHost, ITabMoveUndoHost, ITabDragHost, IFolderTabFileDropHost, ITabDropHost, ITabTransferHost, ITabSelectionHost, IYouTubeControlPanelHost, ITopToolbarHost, IChatGptReadabilityPanelHost, ITabAudioHost, ITabAudioBoostPopupHost, IStreamingPlaybackNoticeHost, IStatusPresentationHost, ITabThumbnailCaptureHost, IBackgroundTabWorkHost, IInactiveTabWorkHost, IWebViewRecoveryHost, ITabActivationHost, ISessionRestorationHost, IClosedTabLifecycleHost, ISessionWindowCaptureHost, IWorkspaceSessionHost, IWorkspaceTabHost, IRecentItemsHost, IWorkspaceNoteEditHost, IBrowsingHistoryHost, IYouTubePlaybackDiagnosticHost
+public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHost, IUrlThumbnailCaptureHost, IAddressBarHost, IBookmarkPreviewHost, IBookmarkControllerHost, ITabStripHost, ITabReorderHost, ITabMoveUndoHost, ITabDragHost, IFolderTabFileDropHost, ITabDropHost, ITabTransferHost, ITabSelectionHost, IYouTubeControlPanelHost, ITopToolbarHost,
+
+    ITabAudioHost, ITabAudioBoostPopupHost,
+    IStreamingPlaybackNoticeHost,
+    IStatusPresentationHost, ITabThumbnailCaptureHost, IBackgroundTabWorkHost, IInactiveTabWorkHost, IWebViewRecoveryHost, ITabActivationHost, ISessionRestorationHost, IClosedTabLifecycleHost, ISessionWindowCaptureHost, IWorkspaceSessionHost, IWorkspaceTabHost, IRecentItemsHost, IWorkspaceNoteEditHost, IBrowsingHistoryHost, IYouTubePlaybackDiagnosticHost
 
 {
     private static int s_nextWorkspaceWindowIndex;
@@ -286,7 +290,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private bool _isInteractiveWindowMoveResize;
     private bool _windowChangeWorkPending;
     private readonly YouTubeControlWorkCoordinator _youTubeControlWorkCoordinator = new();
-    private ChatGptReadabilityPanelController _chatGptReadabilityPanelController = null!;
+
     private readonly DownloadShelfController _downloadShelfController;
     private TimeSpan _startupActivationDelay;
 
@@ -332,7 +336,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         ApplySessionWindowIdentity(initialWindow.WindowId);
         ApplyWindowPlacement(initialWindow.Placement);
         ApplyAlwaysOnTop(initialWindow.IsAlwaysOnTop ?? _settings.AlwaysOnTop);
-        RestoreSession(CreateSessionData(initialWindow), restoreClosedTabs: false);
+        _startupWindowRestoreController.RestoreInitialWindowSession(
+            initialWindow, session => RestoreSession(session, restoreClosedTabs: false));
     }
 
     private MainWindow(
@@ -394,6 +399,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             10)
         {
             Interval = TimeSpan.FromMilliseconds(120)
+        });
+        var externalTabDropHoverTimer = RegisterWindowShutdownPhaseTimer(new OwnedDispatcherTimer(
+            DispatcherTimerOwner.MainWindow,
+            DispatcherTimerTerminationPhase.WindowShutdown)
+        {
+            Interval = TimeSpan.FromMilliseconds(TabDropController.ExternalTabDragHoverDelayMilliseconds)
         });
         var _folderTabFileDropHoverTimer = RegisterWindowShutdownTimer(new OwnedDispatcherTimer(
             DispatcherTimerOwner.MainWindow,
@@ -506,7 +517,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             _tabs, _tabStripController, _tabReorderController, _tabDragDropService, this);
         _folderTabFileDropController = new FolderTabFileDropController(_tabs, _folderTabFileDropHoverTimer, this);
         _tabDropController = new TabDropController(new TabDropElements(TabList, RootGrid), _tabs,
-            _tabReorderController, _tabDragController, _folderTabFileDropController, _tabDragDropService, this);
+            _tabReorderController, _tabDragController, _folderTabFileDropController, _tabDragDropService, externalTabDropHoverTimer, this);
         _tabTransferController = new TabTransferController(this, _splitViewService, _tabOperationService, s_tabRuntimeCoordinator);
         _bookmarkController = new BookmarkController(
             this,
@@ -589,7 +600,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         _downloadShelfController = new DownloadShelfController(
             _downloadService,
-            new DownloadShelfElements(DownloadKindFilterBox, DownloadSearchBox, DownloadList, DownloadsButton, DownloadShelfPopup),
+            new DownloadShelfElements(DownloadKindFilterBox, DownloadSearchBox, DownloadList, DownloadsButton, DownloadShelfPopup,
+                DownloadsButtonText, DownloadsButtonProgress),
             () => _settings.Downloads,
             QueueDownloadUiUpdate);
         _downloadShelfController.Initialize();
@@ -656,8 +668,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _settings.CommandPaletteUsage = CommandPaletteUsageSettingsProfile.Normalize(_settings.CommandPaletteUsage);
         VerticalTabSidebarWidth = _settings.TabLayout.VerticalSidebarWidth;
         _downloadService.ApplyHistoryRetentionLimit(_settings.Downloads.HistoryRetentionLimit);
-        _settings.ChatGptReadability = ChatGptReadabilityProfile.Normalize(_settings.ChatGptReadability);
-        InitializeChatGptReadabilityPanel();
+
         _youTubeControlService = new YouTubeControlService(
             () => _tabs,
             tab => _tabs.Contains(tab),
@@ -865,7 +876,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             this, _topToolbarAutoHideTimer);
 
         ApplyToolbarVisibility();
-        SyncXReadableModeMenuItem();
+
         UpdateWindowMaximizeRestoreButton();
         InitializeStreamingPlaybackNoticeWindowTracking();
         LocationChanged += (_, _) =>
@@ -1040,6 +1051,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     void IFolderTabFileDropHost.ClearStatus() => ClearStatus();
 
     Guid ITabDropHost.WindowId => _workspaceWindowId;
+
+    BrowserTab? ITabDropHost.ActiveTab => ActiveTab;
+
+    bool ITabDropHost.IsClosing => _isClosingWindow;
+
+    void ITabDropHost.SelectTab(BrowserTab tab) => SelectTab(tab);
+
+    void ITabDropHost.QueueSelectedTabActivation() => QueueSelectedTabActivation();
 
     Guid? ITabDropHost.ActiveBrowserCommandTargetId => GetActiveBrowserCommandTarget()?.Id;
 
@@ -1355,7 +1374,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         MarkStartupPerformance(StartupPerformanceStage.GestureScriptLoadStarted);
         var gestureScriptTask = LoadScriptAsync("GestureHost.js");
         Task<SessionData>? sessionLoadTask = null;
-        if (_tabs.Count == 0 && _initialTabs is null)
+        if (_startupWindowRestoreController.ShouldLoadSharedSession(_tabs.Count, _initialTabs))
         {
             MarkStartupPerformance(StartupPerformanceStage.SessionLoadStarted);
             sessionLoadTask = _sessionService.LoadAsync(
@@ -1368,7 +1387,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         try
         {
             SetStatus("セッション復元中");
-            if (_tabs.Count == 0)
+            if (_startupWindowRestoreController.ShouldRestoreSessionOnLoaded(_tabs.Count))
             {
                 SessionData session;
                 if (_initialTabs is not null)
@@ -1391,7 +1410,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                     RestoreSession(session);
                 }
             }
-            else if (ActiveTab is null)
+            else if (_tabs.Count > 0 && ActiveTab is null)
             {
                 SelectTab(_tabs[0]);
             }
@@ -4493,44 +4512,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         await ExecuteRegisteredCommandAsync(FeatureCommandProvider.OpenWorkspaceActionId);
     }
 
-    private void ChatGptReadabilityButton_Click(object sender, RoutedEventArgs e)
-    {
-        ToggleChatGptReadabilityPanel();
-    }
-
-    private void ToggleChatGptReadabilityPanel()
-    {
-        OpenChatGptReadabilityPanel(forceOpen: false);
-    }
-
-    private void OpenChatGptReadabilityPanel(bool forceOpen)
-    {
-        if (!IsActiveChatGptTab())
-        {
-            ChatGptReadabilityPopup.IsOpen = false;
-            SetStatus("ChatGPT ページでのみ使えます", autoClear: true);
-            return;
-        }
-
-        SyncChatGptReadabilityPanel();
-        ChatGptReadabilityPopup.IsOpen = forceOpen || !ChatGptReadabilityPopup.IsOpen;
-    }
-
-    private void ChatGptReadabilityOption_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        SaveChatGptReadabilitySettingsFromPanel();
-    }
-
-    private void ChatGptReadabilityCheckBox_Changed(object sender, RoutedEventArgs e)
-    {
-        SaveChatGptReadabilitySettingsFromPanel();
-    }
-
-    private void ChatGptReadabilityResetButton_Click(object sender, RoutedEventArgs e)
-    {
-        _chatGptReadabilityPanelController.Reset();
-    }
-
     private async void GestureSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         await OpenMouseGestureSettingsWindowAsync();
@@ -4743,9 +4724,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         bool showStatus)
     {
         var extensionSettingChanged = _settings.EnableBrowserExtensions != result.EnableBrowserExtensions;
-        var chatGptReadabilitySettings = ChatGptReadabilityProfile.Normalize(result.ChatGptReadability);
-        var chatGptReadabilityChanged = _settings.ChatGptReadability.IsEnabled != chatGptReadabilitySettings.IsEnabled;
-        var fiveChLiveReadabilitySettings = FiveChLiveReadabilityProfile.Normalize(result.FiveChLiveReadability);
 
         _settings.SearchEngine = result.SearchEngine;
         _settings.SearchUrlTemplate = result.SearchUrlTemplate;
@@ -4768,10 +4746,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _settings.EnableBrowserExtensions = result.EnableBrowserExtensions;
 
         _settings.PreservedCompatibilitySettings = PublicSettingsCompatibility.Clone(result.PreservedCompatibilitySettings);
-
-        _settings.EnableXReadableMode = result.EnableXReadableMode;
-        _settings.ChatGptReadability = chatGptReadabilitySettings;
-        _settings.FiveChLiveReadability = fiveChLiveReadabilitySettings;
 
         _settings.Downloads = DownloadSettingsProfile.Normalize(result.Downloads);
         _settings.TabLayout = TabLayoutSettingsProfile.Normalize(result.TabLayout);
@@ -4803,7 +4777,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         ApplyToolbarVisibility();
         ApplyTabLayoutSettings();
         _downloadService.ApplyHistoryRetentionLimit(_settings.Downloads.HistoryRetentionLimit);
-        SyncXReadableModeMenuItem();
+
         if (persistSettings)
         {
             SettingsService.Save(_settings);
@@ -4813,13 +4787,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         RefreshWorkspaceGestureSettings();
         await RefreshGestureScriptOnLoadedTabsAsync();
         await RefreshMediaWindowGestureSettingsAsync();
-        ApplyXReadableModeToLoadedTabs();
-        ApplyFiveChLiveReadabilityToLoadedTabs();
-        if (chatGptReadabilityChanged)
-        {
-            SyncChatGptReadabilityPanel();
-            ApplyChatGptReadabilityToLoadedTabs();
-        }
 
         if (showStatus)
         {
@@ -4828,19 +4795,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 : "設定をすべてのウィンドウへ適用しました";
             SetStatus(message, autoClear: true);
         }
-    }
-
-    private void XReadableModeMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        _settings.EnableXReadableMode = XReadableModeMenuItem.IsChecked;
-        SettingsService.Save(_settings);
-        ApplyXReadableModeToLoadedTabs();
-
-        SetStatus(
-            _settings.EnableXReadableMode
-                ? "X 整形モードを有効にしました"
-                : "X 整形モードを無効にしました",
-            autoClear: true);
     }
 
     private async Task NavigateFromAddressBarAsync(string input)
@@ -5916,16 +5870,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             if (args.IsSuccess)
             {
                 QueueAmazonPrimeVideoReadinessCheck(tab);
-                QueueRestoredTabBridgeCompatibilityProbe(tab);
+
             }
             else
             {
                 MarkAmazonPrimeVideoNavigationFailed(tab);
             }
-            CompleteStreamingPlaybackCompatibilityRetry(tab, args.IsSuccess);
-            QueueXReadableModeAttempt(tab);
-            QueueChatGptReadabilityAttempt(tab);
-            QueueFiveChLiveReadabilityAttempt(tab);
+
             QueueTabAudioPanApply(tab);
             CompletePageZoomNavigation(tab, GetCurrentPageUrl(tab) ?? tab.Url);
             if (!args.IsSuccess && ActiveTab == tab)
@@ -6029,15 +5980,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         try
         {
             WebViewLifecycleService.ApplyDefaultCoreSettings(core);
-
-            await CoreWebViewDocumentScriptRegistry.EnsureFixedAsync(
-                core,
-                "amazon-bridge-suppression",
-                AmazonPrimeVideoService.BuildWebViewBridgeSuppressionScript(GetTabWebMessageToken(tab)));
-            if (!IsInitializationCurrent())
-            {
-                return;
-            }
 
             await CoreWebViewDocumentScriptRegistry.EnsureFixedAsync(
                 core,
@@ -6205,9 +6147,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             QueueYouTubePlaybackStateBridgeAttempt(tab);
             UpdateYouTubePlaybackStateTracking(ActiveTab);
             QueueAmazonPrimeVideoReadinessCheck(tab);
-            QueueXReadableModeAttempt(tab);
-            QueueChatGptReadabilityAttempt(tab);
-            QueueFiveChLiveReadabilityAttempt(tab);
+
             QueueWorkspaceOpenTabsRefresh();
         };
 
@@ -7115,117 +7055,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         tab.IsMuted = isMuted;
         QueueSessionSave();
-    }
-
-    private void QueueXReadableModeAttempt(BrowserTab tab)
-    {
-        _ = ApplyXReadableModeAsync(tab);
-    }
-
-    private void QueueChatGptReadabilityAttempt(BrowserTab tab)
-    {
-        _ = ApplyChatGptReadabilityAsync(tab);
-    }
-
-    private void ApplyChatGptReadabilityToLoadedTabs()
-    {
-        foreach (var tab in _tabs.ToList())
-        {
-            _ = ApplyChatGptReadabilityAsync(tab);
-        }
-    }
-
-    private async Task ApplyChatGptReadabilityAsync(BrowserTab tab)
-    {
-        if (!_tabs.Contains(tab)
-            || tab.IsNativeContentTab
-            || GetTabWebView(tab)?.CoreWebView2 is not { } core
-            || !_readabilityController.IsChatGptUrl(GetCurrentPageUrl(tab)))
-        {
-            return;
-        }
-
-        try
-        {
-            _settings.ChatGptReadability = ChatGptReadabilityProfile.Normalize(_settings.ChatGptReadability);
-            await core.ExecuteScriptAsync(
-                _readabilityController.BuildInjectReadabilityStyleScript(_settings.ChatGptReadability));
-        }
-        catch
-        {
-            // ページ遷移直後など実行できない場合は、次回の NavigationCompleted / SourceChanged に任せます。
-        }
-    }
-
-    private void InitializeChatGptReadabilityPanel()
-    {
-        _chatGptReadabilityPanelController = new ChatGptReadabilityPanelController(
-            new ChatGptReadabilityPanelElements(
-                ChatGptReadabilityEnabledCheckBox,
-                ChatGptFontScaleBox,
-                ChatGptLineHeightBox,
-                ChatGptThemeBox,
-                ChatGptContentWidthBox,
-                ChatGptCodeFontScaleBox,
-                ChatGptCodeWrapCheckBox,
-                ChatGptLargeInputCheckBox,
-                ChatGptFocusHighlightCheckBox),
-            this);
-        _chatGptReadabilityPanelController.Initialize();
-    }
-
-    private void SyncChatGptReadabilityPanel()
-    {
-        _chatGptReadabilityPanelController.Sync();
-    }
-
-    private void SaveChatGptReadabilitySettingsFromPanel()
-    {
-        _chatGptReadabilityPanelController.SaveFromPanel();
-    }
-
-    ChatGptReadabilitySettings IChatGptReadabilityPanelHost.Settings
-    {
-        get => _settings.ChatGptReadability;
-        set => _settings.ChatGptReadability = value;
-    }
-
-    void IChatGptReadabilityPanelHost.SaveSettings() => SettingsService.Save(_settings);
-    void IChatGptReadabilityPanelHost.ApplyToLoadedTabs() => ApplyChatGptReadabilityToLoadedTabs();
-    void IChatGptReadabilityPanelHost.SetStatus(string message) => SetStatus(message, autoClear: true);
-
-    private bool IsActiveChatGptTab()
-    {
-        return ActiveTab is { IsNativeContentTab: false } activeTab
-            && _readabilityController.IsChatGptUrl(GetCurrentPageUrl(activeTab));
-    }
-
-    private void ApplyXReadableModeToLoadedTabs()
-    {
-        foreach (var tab in _tabs.ToList())
-        {
-            _ = ApplyXReadableModeAsync(tab);
-        }
-    }
-
-    private async Task ApplyXReadableModeAsync(BrowserTab tab)
-    {
-        if (!_tabs.Contains(tab)
-            || tab.IsNativeContentTab
-            || GetTabWebView(tab)?.CoreWebView2 is not { } core
-            || !IsXOrTwitterUrl(GetCurrentPageUrl(tab)))
-        {
-            return;
-        }
-
-        try
-        {
-            await core.ExecuteScriptAsync(BuildXReadableModeScript(_settings.EnableXReadableMode));
-        }
-        catch
-        {
-            // ページ遷移直後など実行できない場合は、次回の NavigationCompleted / SourceChanged に任せます。
-        }
     }
 
     private async Task ApplyYouTubeBestQualityForActiveTabAsync(bool showStatus)
@@ -8260,12 +8089,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
             switch (type)
             {
-                case AmazonPrimeVideoService.CompatibilityActiveMessageType:
-                    MarkAmazonPrimeVideoCompatibilityActive(sourceTab, args.Source);
-                    break;
-                case StreamingPlaybackCompatibilityService.CompatibilityActiveMessageType:
-                    MarkStreamingPlaybackCompatibilityActive(sourceTab, args.Source);
-                    break;
+
                 case "gestureVisualStart":
                     if (!TryClaimNativeWebGestureForPage(sourceTab))
                     {
@@ -10484,9 +10308,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private void QueueRestoredTabBridgeCompatibilityProbe(BrowserTab tab)
     {
-        _windowTaskSupervisor.TryRun(
-            "closed-tab-runtime-bridge-compatibility",
-            cancellationToken => RestoreWebViewBridgeCompatibilityStateAsync(tab, cancellationToken));
+
     }
 
     private void QueuePreservedClosedTabSuspension(BrowserTab tab)
@@ -11519,7 +11341,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             ApplyCurrentWebHostSize(webView);
             ParkWebViewInViewport(webView);
             _displayedTab = tab;
-            QueueFiveChLiveReadabilityActivation(tab, isActive: true);
+
             return;
         }
 
@@ -11536,7 +11358,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             MoveWebViewToBackground(previousTab);
         }
 
-        QueueFiveChLiveReadabilityActivation(tab, isActive: true);
     }
 
     private void ShowBlankView()
@@ -11585,7 +11406,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         ApplyCurrentWebHostSize(webView);
         Panel.SetZIndex(webView, 0);
         ParkWebViewOutsideViewport(webView);
-        QueueFiveChLiveReadabilityActivation(tab, isActive: false);
+
     }
 
     private void ShowPlaceholder(UIElement content)
@@ -12191,7 +12012,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private bool IsAnyTopToolbarPopupOpen()
     {
         return ClosedTabHistoryPopup.IsOpen
-            || ChatGptReadabilityPopup.IsOpen
+
             || DownloadShelfPopup.IsOpen
             || AddressSuggestionPopup.IsOpen
 
@@ -12253,11 +12074,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _topToolbarController.QueueOverflowUpdate(DispatcherPriority.Loaded);
     }
 
-    private void SyncXReadableModeMenuItem()
-    {
-        XReadableModeMenuItem.IsChecked = _settings.EnableXReadableMode;
-    }
-
     private static Visibility ToVisibility(bool isVisible)
     {
         return isVisible ? Visibility.Visible : Visibility.Collapsed;
@@ -12310,14 +12126,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         UpdateYouTubeControlPanelState(canControlYouTube);
         UpdatePageToolsForActiveTarget();
         UpdateSiteInformationButtonState();
-
-        var isChatGptTab = IsActiveChatGptTab();
-        ChatGptReadabilityButton.Visibility = isChatGptTab ? Visibility.Visible : Visibility.Collapsed;
-        ChatGptReadabilityButton.IsEnabled = isChatGptTab;
-        if (!isChatGptTab)
-        {
-            ChatGptReadabilityPopup.IsOpen = false;
-        }
 
         UpdateAmazonPrimeVideoNotice();
     }
@@ -12829,11 +12637,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 {{_gestureScript}}
             })();
             """;
-    }
-
-    private static string BuildXReadableModeScript(bool isEnabled)
-    {
-        return XReadableScriptBuilder.Build(isEnabled);
     }
 
     private string BuildNewTabHtml(BrowserTab tab)

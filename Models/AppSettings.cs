@@ -43,12 +43,6 @@ public sealed class AppSettings
 
     public bool EnableBrowserExtensions { get; set; } = true;
 
-    public bool EnableXReadableMode { get; set; } = true;
-
-    public ChatGptReadabilitySettings ChatGptReadability { get; set; } = new();
-
-    public FiveChLiveReadabilitySettings FiveChLiveReadability { get; set; } = new();
-
     public bool AlwaysOnTop { get; set; }
 
     // 既存の内部版の値を往復保存するだけで、公開版の機能や通信には使用しない。
@@ -80,6 +74,8 @@ public sealed class AppSettings
     public QuickLookSettings QuickLook { get; set; } = new();
 
     public bool EnableYouTubeMiniPlayerHoverAudioPreview { get; set; }
+
+    public bool EnableYouTubeMiniPlayerLiveContinuation { get; set; } = true;
 
     public bool EnableYouTubeMiniPlayerSizeBasedQuality { get; set; }
 
@@ -987,50 +983,6 @@ public static class DownloadSettingsProfile
     }
 }
 
-public sealed class ChatGptReadabilitySettings
-{
-    public bool IsEnabled { get; set; }
-
-    public int FontScalePercent { get; set; } = 100;
-
-    public double LineHeight { get; set; } = 1.6;
-
-    public string Theme { get; set; } = "standard";
-
-    public string ContentWidth { get; set; } = "standard";
-
-    public int CodeFontScalePercent { get; set; } = 100;
-
-    public bool WrapCodeBlocks { get; set; }
-
-    public bool LargeInput { get; set; }
-
-    public bool HighlightKeyboardFocus { get; set; }
-}
-
-public sealed class FiveChLiveReadabilitySettings
-{
-    public bool IsEnabled { get; set; } = true;
-
-    public bool HighlightNewPosts { get; set; } = true;
-
-    public bool AutoRefresh { get; set; } = true;
-
-    public int RefreshIntervalSeconds { get; set; } = 5;
-
-    public bool AutoOpenNextThread { get; set; } = true;
-
-    public bool AutoScroll { get; set; } = true;
-
-    public bool PreviewReplyAnchors { get; set; } = true;
-
-    public bool HighlightPosterIds { get; set; } = true;
-
-    public int FontSize { get; set; } = 16;
-
-    public int PostSpacing { get; set; } = 8;
-}
-
 public sealed class ToolbarVisibilitySettings
 
     : IJsonOnDeserialized, IJsonOnSerializing
@@ -1092,7 +1044,8 @@ internal static class PublicSettingsCompatibility
     [
         "enableOnePasswordIntegration", "onePasswordCliPath", "ytDlpPath",
         "enableYouTubePoTokenProvider", "youTubePoTokenPluginDirectory",
-        "youTubePoTokenProviderBaseUrl", "useMwebClient"
+        "youTubePoTokenProviderBaseUrl", "useMwebClient",
+        "chatGptReadability", "fiveChLiveReadability", "enableXReadableMode"
     ];
 
     internal static readonly string[] ToolbarKeys = ["showOnePasswordCandidateButton"];

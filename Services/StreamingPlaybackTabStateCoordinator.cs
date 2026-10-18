@@ -60,24 +60,12 @@ internal sealed class StreamingPlaybackTabStateCoordinator
             return;
         }
 
-        state.IsAmazonCompatibilityActive = false;
-        state.IsStreamingCompatibilityActive = false;
-        if (!string.Equals(state.CompatibilityAttemptKey, targetRetryKey, StringComparison.Ordinal))
-        {
-            state.CompatibilityAttemptKey = null;
-        }
-    }
+        state.HasPlaybackFailure = false;
+        state.Readiness = null;
+        state.ProbeVersion++;
+        state.IsNoticeExpanded = false;
+        state.IsNoticeDismissed = false;
 
-    public bool TryBeginStreamingCompatibilityRetry(Guid tabId, string retryKey)
-    {
-        var state = GetOrCreate(tabId);
-        if (string.Equals(state.CompatibilityAttemptKey, retryKey, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        state.CompatibilityAttemptKey = retryKey;
-        return true;
     }
 
     public AmazonPrimeVideoReadiness GetReadiness(Guid tabId)
@@ -87,35 +75,10 @@ internal sealed class StreamingPlaybackTabStateCoordinator
             : AmazonPrimeVideoReadiness.Unknown;
     }
 
-    public void MarkAmazonCompatibilityActive(Guid tabId)
-    {
-        GetOrCreate(tabId).IsAmazonCompatibilityActive = true;
-    }
+    public void MarkPlaybackFailed(Guid tabId) => GetOrCreate(tabId).HasPlaybackFailure = true;
 
-    public bool IsAmazonCompatibilityActive(Guid tabId)
-    {
-        return _states.TryGetValue(tabId, out var state)
-            && state.IsAmazonCompatibilityActive;
-    }
-
-    public void MarkStreamingCompatibilityActive(Guid tabId)
-    {
-        GetOrCreate(tabId).IsStreamingCompatibilityActive = true;
-    }
-
-    public void ClearStreamingCompatibility(Guid tabId)
-    {
-        if (_states.TryGetValue(tabId, out var state))
-        {
-            state.IsStreamingCompatibilityActive = false;
-        }
-    }
-
-    public bool IsStreamingCompatibilityActive(Guid tabId)
-    {
-        return _states.TryGetValue(tabId, out var state)
-            && state.IsStreamingCompatibilityActive;
-    }
+    public bool HasPlaybackFailure(Guid tabId)
+        => _states.TryGetValue(tabId, out var state) && state.HasPlaybackFailure;
 
     public void ExpandNotice(Guid tabId)
     {
@@ -162,11 +125,7 @@ internal sealed class StreamingPlaybackTabStateCoordinator
 
         public AmazonPrimeVideoReadiness? Readiness { get; set; }
 
-        public bool IsAmazonCompatibilityActive { get; set; }
-
-        public bool IsStreamingCompatibilityActive { get; set; }
-
-        public string? CompatibilityAttemptKey { get; set; }
+        public bool HasPlaybackFailure { get; set; }
 
         public bool IsNoticeExpanded { get; set; }
 

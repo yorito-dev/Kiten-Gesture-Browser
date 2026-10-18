@@ -28,6 +28,10 @@ internal interface ITabDropHost
 {
     Guid WindowId { get; }
     Guid? ActiveBrowserCommandTargetId { get; }
+    BrowserTab? ActiveTab { get; }
+    bool IsClosing { get; }
+    void SelectTab(BrowserTab tab);
+    void QueueSelectedTabActivation();
     ListBox GetActiveTabDragList();
     BrowserTab? FindTabFromOriginalSource(object originalSource);
     bool CanDropTabOnList(BrowserTab tab, ListBox tabList);
@@ -50,6 +54,7 @@ internal sealed record TabDropElements(ListBox DefaultList, FrameworkElement Roo
 // 受付順序と表示・確定の調停を所有し、データ検証と実転送は既存hostへ残す。
 internal sealed class TabDropController : IDisposable
 {
+    internal const int ExternalTabDragHoverDelayMilliseconds = 600;
     private readonly TabDropElements _elements;
     private readonly ObservableCollection<BrowserTab> _tabs;
     private readonly TabReorderController _reorder;
@@ -57,12 +62,14 @@ internal sealed class TabDropController : IDisposable
     private readonly FolderTabFileDropController _folderDrop;
     private readonly TabDragDropService _policy;
     private readonly ITabDropHost _host;
+    private readonly OwnedDispatcherTimer _externalHoverTimer;
+    private BrowserTab? _externalHoverTarget;
     private bool _workspaceHoverActivated;
     private bool _disposed;
 
     internal TabDropController(TabDropElements elements, ObservableCollection<BrowserTab> tabs,
         TabReorderController reorder, TabDragController drag, FolderTabFileDropController folderDrop,
-        TabDragDropService policy, ITabDropHost host)
+        TabDragDropService policy, OwnedDispatcherTimer externalHoverTimer, ITabDropHost host)
     {
         _elements = elements;
         _tabs = tabs;
@@ -71,6 +78,8 @@ internal sealed class TabDropController : IDisposable
         _folderDrop = folderDrop;
         _policy = policy;
         _host = host;
+        _externalHoverTimer = externalHoverTimer;
+        _externalHoverTimer.Tick += ExternalHoverTimer_Tick;
     }
 
     private ListBox TabList => _elements.DefaultList;
@@ -89,11 +98,13 @@ internal sealed class TabDropController : IDisposable
         var tabListPoint = e.GetPosition(tabList);
         if (_folderDrop.TryHandleDragOver(e))
         {
+            ResetExternalTabDragHover();
             return;
         }
 
         if (_host.TryGetSiteInformation(e, out var siteInformationDrag))
         {
+            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             ResetWorkspaceTabDragHover();
             _drag.ResetTabDetachCandidate();
             var targetTab = _host.FindTabFromOriginalSource(e.OriginalSource);
@@ -115,6 +126,7 @@ internal sealed class TabDropController : IDisposable
 
         if (_host.TryGetPayload(e, out var payload))
         {
+            ResetExternalTabDragHover();
             _drag.ResetTabDetachCandidate();
             _drag.QueueTabDragPreviewMove();
 
@@ -163,6 +175,7 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.TryGetSnapshot(e, out var snapshot))
         {
+            ResetExternalTabDragHover();
             _drag.ResetTabDetachCandidate();
             if (UpdateWorkspaceTabDragHover(tabList, tabListPoint, e.OriginalSource, snapshot.IsWorkspaceTab))
             {
@@ -184,6 +197,7 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.TryGetExternalDrop(e, out _))
         {
+            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             ResetWorkspaceTabDragHover();
             _drag.ResetTabDetachCandidate();
             _reorder.UpdateDropPreview(tabList, tabListPoint, e.OriginalSource);
@@ -191,6 +205,7 @@ internal sealed class TabDropController : IDisposable
         }
         else
         {
+            ResetExternalTabDragHover();
             ResetWorkspaceTabDragHover();
             _reorder.ClearDropPreview();
             e.Effects = DragDropEffects.None;
@@ -227,6 +242,7 @@ internal sealed class TabDropController : IDisposable
             _drag.ResetTabDetachCandidate();
             var targetTab = _host.FindTabFromOriginalSource(e.OriginalSource);
             var tabListPoint = e.GetPosition(tabList);
+            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             if (targetTab is { IsNativeContentTab: false })
             {
                 _reorder.ClearDropPreview();
@@ -249,6 +265,7 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.TryGetPayload(e, out var payload))
         {
+            ResetExternalTabDragHover();
             _drag.QueueTabDragPreviewMove();
             var tabListPoint = e.GetPosition(tabList);
 
@@ -310,6 +327,7 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.TryGetSnapshot(e, out var snapshot))
         {
+            ResetExternalTabDragHover();
             var tabListPoint = e.GetPosition(tabList);
             if (UpdateWorkspaceTabDragHover(tabList, tabListPoint, e.OriginalSource, snapshot.IsWorkspaceTab))
             {
@@ -343,6 +361,7 @@ internal sealed class TabDropController : IDisposable
         {
             ResetWorkspaceTabDragHover();
             var tabListPoint = e.GetPosition(tabList);
+            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             if (!IsPointOutsideTabReorderDropZone(tabList, tabListPoint))
             {
                 _reorder.UpdateDropPreview(tabList, tabListPoint, tabList);
@@ -358,15 +377,21 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.HasFileDrop(e))
         {
+            ResetExternalTabDragHover();
             _folderDrop.ResetHover();
             e.Effects = DragDropEffects.None;
             e.Handled = true;
+        }
+        else
+        {
+            ResetExternalTabDragHover();
         }
     }
 
     internal async Task RootGrid_DropAsync(object sender, DragEventArgs e)
     {
         if (_disposed) return;
+        ResetExternalTabDragHover();
         var tabList = _host.GetActiveTabDragList();
         ResetWorkspaceTabDragHover();
         _reorder.ClearDropPreviewWithFollowUp(animateExternalPreview: false);
@@ -470,6 +495,7 @@ internal sealed class TabDropController : IDisposable
     internal void RootGrid_DragLeave(object sender, DragEventArgs e)
     {
         if (_disposed) return;
+        ResetExternalTabDragHover();
         _folderDrop.ResetHover();
         ResetWorkspaceTabDragHover();
         if (_reorder.ShouldKeepExternalTabDropPreviewAtCursor())
@@ -484,6 +510,7 @@ internal sealed class TabDropController : IDisposable
     internal void TabList_DragLeave(object sender, DragEventArgs e)
     {
         if (_disposed) return;
+        ResetExternalTabDragHover();
         if (_host.HasFileDrop(e))
         {
             _folderDrop.ResetHover();
@@ -509,6 +536,7 @@ internal sealed class TabDropController : IDisposable
     internal async Task TabList_DropAsync(object sender, DragEventArgs e)
     {
         if (_disposed) return;
+        ResetExternalTabDragHover();
         var tabList = sender as ListBox ?? TabList;
         if (await _folderDrop.TryHandleDropAsync(e))
         {
@@ -587,6 +615,42 @@ internal sealed class TabDropController : IDisposable
         e.Handled = true;
     }
 
+    private void UpdateExternalTabDragHover(ListBox tabList, Point point, object originalSource)
+    {
+        var target = _host.FindTabFromOriginalSource(originalSource);
+        if (_host.IsClosing
+            || point.X < 0 || point.Y < 0 || point.X > tabList.ActualWidth || point.Y > tabList.ActualHeight
+            || target is null || !_tabs.Contains(target) || ReferenceEquals(target, _host.ActiveTab))
+        {
+            ResetExternalTabDragHover();
+            return;
+        }
+
+        // 同じ見出しのDragOverで待ち時間を延ばさず、対象が変わったときだけ予約し直す。
+        if (ReferenceEquals(_externalHoverTarget, target)) return;
+        ResetExternalTabDragHover();
+        _externalHoverTarget = target;
+        _externalHoverTimer.Start();
+    }
+
+    private void ExternalHoverTimer_Tick(object? sender, EventArgs e) => ActivateHoveredExternalTab();
+
+    internal void ActivateHoveredExternalTab()
+    {
+        var target = _externalHoverTarget;
+        ResetExternalTabDragHover();
+        if (_disposed || _host.IsClosing || target is null || !_tabs.Contains(target)
+            || ReferenceEquals(target, _host.ActiveTab)) return;
+        _host.SelectTab(target);
+        _host.QueueSelectedTabActivation();
+    }
+
+    private void ResetExternalTabDragHover()
+    {
+        _externalHoverTimer.Stop();
+        _externalHoverTarget = null;
+    }
+
     private bool UpdateWorkspaceTabDragHover(
         ListBox tabList,
         Point tabListPoint,
@@ -649,6 +713,8 @@ internal sealed class TabDropController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _externalHoverTimer.Tick -= ExternalHoverTimer_Tick;
+        ResetExternalTabDragHover();
         ResetWorkspaceTabDragHover();
     }
 }

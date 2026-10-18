@@ -1,0 +1,2 @@
+# Windowsのcmdをgit archiveでもCRLFのまま保持する。実際の末尾空白等の検査は維持する。
+tools/Backup-KitenData.cmd -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

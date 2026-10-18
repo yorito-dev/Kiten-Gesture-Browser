@@ -19,8 +19,9 @@ public partial class SettingsWindow : Window
     private const int GeneralSettingsTabIndex = 0;
     private const int AppearanceSettingsTabIndex = 1;
     private const int MediaSettingsTabIndex = 2;
-    private const int SiteSettingsTabIndex = 3;
-    private const int IntegrationSettingsTabIndex = 4;
+
+    private const int IntegrationSettingsTabIndex = 3;
+
     private const double MinimumCpuSaverDelaySeconds = 15;
     private const double MaximumCpuSaverDelaySeconds = 3600;
 
@@ -68,6 +69,8 @@ public partial class SettingsWindow : Window
         QuickLookTextFontSizeBox.Text = _workingSettings.QuickLook.TextFontSize.ToString(CultureInfo.CurrentCulture);
         QuickLookTextWrapCheckBox.IsChecked = _workingSettings.QuickLook.TextWrap;
         QuickLookAutoPlayMediaCheckBox.IsChecked = _workingSettings.QuickLook.AutoPlayMedia;
+        EnableYouTubeMiniPlayerLiveContinuationCheckBox.IsChecked =
+            _workingSettings.EnableYouTubeMiniPlayerLiveContinuation;
         EnableYouTubeMiniPlayerHoverAudioPreviewCheckBox.IsChecked =
             _workingSettings.EnableYouTubeMiniPlayerHoverAudioPreview;
         EnableYouTubeMiniPlayerSizeBasedQualityCheckBox.IsChecked =
@@ -91,8 +94,6 @@ public partial class SettingsWindow : Window
             Environment.NewLine,
             _workingSettings.BrowsingHistory.ExcludedHosts);
         EnableExtensionsCheckBox.IsChecked = _workingSettings.EnableBrowserExtensions;
-        EnableChatGptReadabilityCheckBox.IsChecked = _workingSettings.ChatGptReadability.IsEnabled;
-        ApplyFiveChLiveReadabilityToInputs(_workingSettings.FiveChLiveReadability);
 
         ApplyDownloadSettingsToInputs(_workingSettings.Downloads);
         ApplyToolbarVisibilityToInputs(_workingSettings.ToolbarVisibility);
@@ -521,9 +522,6 @@ public partial class SettingsWindow : Window
 
             DownloadSettingsSection);
 
-        SetSectionVisibility(selectedIndex == SiteSettingsTabIndex,
-            FiveChSettingsSection,
-            ChatGptSettingsSection);
         SetSectionVisibility(selectedIndex == IntegrationSettingsTabIndex,
             ClipboardHistorySettingsSection,
             BrowsingHistorySettingsSection,
@@ -622,32 +620,6 @@ public partial class SettingsWindow : Window
             return false;
         }
 
-        if (!TryReadInt(
-                FiveChFontSizeBox,
-                "5ch本文文字サイズ",
-                FiveChLiveReadabilityProfile.MinimumFontSize,
-                FiveChLiveReadabilityProfile.MaximumFontSize,
-                out var fiveChFontSize)
-            || !TryReadInt(
-                FiveChPostSpacingBox,
-                "5chレス間隔",
-                FiveChLiveReadabilityProfile.MinimumPostSpacing,
-                FiveChLiveReadabilityProfile.MaximumPostSpacing,
-                out var fiveChPostSpacing))
-        {
-            return false;
-        }
-
-        if (!TryReadInt(
-                FiveChRefreshIntervalBox,
-                "5ch自動更新間隔",
-                FiveChLiveReadabilityProfile.MinimumRefreshIntervalSeconds,
-                FiveChLiveReadabilityProfile.MaximumRefreshIntervalSeconds,
-                out var fiveChRefreshIntervalSeconds))
-        {
-            return false;
-        }
-
         result.SearchEngine = searchEngine;
         result.SearchUrlTemplate = searchUrlTemplate;
         if (!TryBuildSearchAliases(out var searchAliases))
@@ -665,6 +637,8 @@ public partial class SettingsWindow : Window
         result.QuickLook.TextWrap = QuickLookTextWrapCheckBox.IsChecked == true;
         result.QuickLook.AutoPlayMedia = QuickLookAutoPlayMediaCheckBox.IsChecked == true;
         result.QuickLook = QuickLookSettingsProfile.Normalize(result.QuickLook);
+        result.EnableYouTubeMiniPlayerLiveContinuation =
+            EnableYouTubeMiniPlayerLiveContinuationCheckBox.IsChecked == true;
         result.EnableYouTubeMiniPlayerHoverAudioPreview =
             EnableYouTubeMiniPlayerHoverAudioPreviewCheckBox.IsChecked == true;
         result.EnableYouTubeMiniPlayerSizeBasedQuality =
@@ -703,20 +677,6 @@ public partial class SettingsWindow : Window
                 .ToList()
         });
         result.EnableBrowserExtensions = EnableExtensionsCheckBox.IsChecked == true;
-        result.ChatGptReadability.IsEnabled = EnableChatGptReadabilityCheckBox.IsChecked == true;
-        result.FiveChLiveReadability = FiveChLiveReadabilityProfile.Normalize(new FiveChLiveReadabilitySettings
-        {
-            IsEnabled = EnableFiveChLiveReadabilityCheckBox.IsChecked == true,
-            HighlightNewPosts = HighlightFiveChNewPostsCheckBox.IsChecked == true,
-            AutoRefresh = EnableFiveChAutoRefreshCheckBox.IsChecked == true,
-            RefreshIntervalSeconds = fiveChRefreshIntervalSeconds,
-            AutoOpenNextThread = EnableFiveChAutoOpenNextThreadCheckBox.IsChecked == true,
-            AutoScroll = EnableFiveChAutoScrollCheckBox.IsChecked == true,
-            PreviewReplyAnchors = PreviewFiveChReplyAnchorsCheckBox.IsChecked == true,
-            HighlightPosterIds = HighlightFiveChPosterIdsCheckBox.IsChecked == true,
-            FontSize = fiveChFontSize,
-            PostSpacing = fiveChPostSpacing
-        });
 
         result.Downloads = DownloadSettingsProfile.Normalize(new DownloadSettings
         {
@@ -1118,12 +1078,6 @@ public partial class SettingsWindow : Window
             return MediaSettingsTabIndex;
         }
 
-        if (IsWithinSection(target, FiveChSettingsSection)
-            || IsWithinSection(target, ChatGptSettingsSection))
-        {
-            return SiteSettingsTabIndex;
-        }
-
         if (IsWithinSection(target, ClipboardHistorySettingsSection)
             || IsWithinSection(target, BrowsingHistorySettingsSection)
             || IsWithinSection(target, ContainerSettingsSection)
@@ -1175,9 +1129,6 @@ public partial class SettingsWindow : Window
 
             PreservedCompatibilitySettings = PublicSettingsCompatibility.Clone(settings.PreservedCompatibilitySettings),
 
-            EnableXReadableMode = settings.EnableXReadableMode,
-            ChatGptReadability = CloneChatGptReadability(settings.ChatGptReadability),
-            FiveChLiveReadability = CloneFiveChLiveReadability(settings.FiveChLiveReadability),
             AlwaysOnTop = settings.AlwaysOnTop,
 
             Downloads = DownloadSettingsProfile.Normalize(settings.Downloads),
@@ -1187,6 +1138,8 @@ public partial class SettingsWindow : Window
                 settings.FolderTabPinnedPlaces),
             ShowHiddenFolderTabItems = settings.ShowHiddenFolderTabItems,
             QuickLook = QuickLookSettingsProfile.Normalize(settings.QuickLook),
+            EnableYouTubeMiniPlayerLiveContinuation =
+                settings.EnableYouTubeMiniPlayerLiveContinuation,
             EnableYouTubeMiniPlayerHoverAudioPreview =
                 settings.EnableYouTubeMiniPlayerHoverAudioPreview,
             EnableYouTubeMiniPlayerSizeBasedQuality =
@@ -1232,43 +1185,6 @@ public partial class SettingsWindow : Window
             ShowTabSearch = settings.ShowTabSearch,
             ShowPinnedTabsSection = settings.ShowPinnedTabsSection
         };
-    }
-
-    private static ChatGptReadabilitySettings CloneChatGptReadability(ChatGptReadabilitySettings? settings)
-    {
-        settings = ChatGptReadabilityProfile.Normalize(settings);
-        return new ChatGptReadabilitySettings
-        {
-            IsEnabled = settings.IsEnabled,
-            FontScalePercent = settings.FontScalePercent,
-            LineHeight = settings.LineHeight,
-            Theme = settings.Theme,
-            ContentWidth = settings.ContentWidth,
-            CodeFontScalePercent = settings.CodeFontScalePercent,
-            WrapCodeBlocks = settings.WrapCodeBlocks,
-            LargeInput = settings.LargeInput,
-            HighlightKeyboardFocus = settings.HighlightKeyboardFocus
-        };
-    }
-
-    private static FiveChLiveReadabilitySettings CloneFiveChLiveReadability(FiveChLiveReadabilitySettings? settings)
-    {
-        return FiveChLiveReadabilityProfile.Normalize(settings);
-    }
-
-    private void ApplyFiveChLiveReadabilityToInputs(FiveChLiveReadabilitySettings? settings)
-    {
-        settings = FiveChLiveReadabilityProfile.Normalize(settings);
-        EnableFiveChLiveReadabilityCheckBox.IsChecked = settings.IsEnabled;
-        HighlightFiveChNewPostsCheckBox.IsChecked = settings.HighlightNewPosts;
-        EnableFiveChAutoRefreshCheckBox.IsChecked = settings.AutoRefresh;
-        FiveChRefreshIntervalBox.Text = settings.RefreshIntervalSeconds.ToString(CultureInfo.CurrentCulture);
-        EnableFiveChAutoOpenNextThreadCheckBox.IsChecked = settings.AutoOpenNextThread;
-        EnableFiveChAutoScrollCheckBox.IsChecked = settings.AutoScroll;
-        PreviewFiveChReplyAnchorsCheckBox.IsChecked = settings.PreviewReplyAnchors;
-        HighlightFiveChPosterIdsCheckBox.IsChecked = settings.HighlightPosterIds;
-        FiveChFontSizeBox.Text = settings.FontSize.ToString(CultureInfo.CurrentCulture);
-        FiveChPostSpacingBox.Text = settings.PostSpacing.ToString(CultureInfo.CurrentCulture);
     }
 
     private static ToolbarVisibilitySettings CloneToolbarVisibility(ToolbarVisibilitySettings? settings)

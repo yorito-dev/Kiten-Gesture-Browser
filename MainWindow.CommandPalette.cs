@@ -241,7 +241,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
                      OpenDownloadsFromCommandPaletteAsync,
                      OpenBrowsingHistoryWindowAsync,
                      OpenUserGuideAsync,
-                     OpenChatGptReadabilityFromCommandPaletteAsync,
+
                      OpenSettingsFromCommandPaletteAsync,
                      () => ExecuteBrowserCommandAsync("NewTab", null),
                      () => ExecuteBrowserCommandAsync("DuplicateTab", null),
@@ -394,7 +394,6 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
         _ = LoadCommandPaletteSelectionContextAsync(
             GetCommandPaletteContextTab(),
             contextGeneration);
-        QueueCommandPaletteSearchFocus();
     }
 
     private void OpenCommandPaletteForLink(
@@ -1567,10 +1566,10 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
     }
 
     private void InsertCommandPaletteSearchText(string text)
-        => _commandPaletteViewController?.InsertCommandPaletteSearchText(text);
+        => _commandPaletteViewController?.QueueCommandPaletteTextInput(text);
 
     private void BackspaceCommandPaletteSearchText()
-        => _commandPaletteViewController?.BackspaceCommandPaletteSearchText();
+        => _commandPaletteViewController?.QueueCommandPaletteTextInput(null);
 
     private Task CopyCurrentPageFromCommandPaletteAsync(LinkCopyFormat format)
     {
@@ -1588,12 +1587,6 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
     {
         _downloadShelfController?.Open();
         SetStatus("ダウンロード一覧を開きました", autoClear: true);
-        return Task.CompletedTask;
-    }
-
-    private Task OpenChatGptReadabilityFromCommandPaletteAsync()
-    {
-        OpenChatGptReadabilityPanel(forceOpen: true);
         return Task.CompletedTask;
     }
 

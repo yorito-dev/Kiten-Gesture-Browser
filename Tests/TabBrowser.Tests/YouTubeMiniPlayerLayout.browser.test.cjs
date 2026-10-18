@@ -7,8 +7,10 @@ const { readFile, mkdtemp, rm } = require('node:fs/promises');
 const { join, resolve, basename } = require('node:path');
 const { tmpdir } = require('node:os');
 const { once } = require('node:events');
+const { waitForChromeEndpoint } = require('./ChromeTestLauncher.cjs');
 
 let browser, socket, profile, sessionId;
+let chromeEndpointSource, chromeStderrBytes = 0;
 let nextId = 0;
 const pending = new Map();
 const call = (method, params = {}, targetSession = sessionId) => new Promise((resolve, reject) => {
@@ -46,16 +48,10 @@ before(async () => {
         '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
         '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'
     ], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
-    const endpoint = await new Promise((resolve, reject) => {
-        let stderr = '';
-        const timeout = setTimeout(() => reject(new Error(`Chrome起動待ち: ${stderr}`)), 15000);
-        browser.once('error', reject);
-        browser.stderr.on('data', chunk => {
-            stderr += chunk;
-            const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);
-            if (match) { clearTimeout(timeout); resolve(match[1]); }
-        });
-    });
+    browser.stderr.on('data', chunk => { chromeStderrBytes += chunk.length; });
+    const { endpoint, source: endpointSource, stderrBytes, exitCode, signal } = await waitForChromeEndpoint(browser, profile);
+    chromeEndpointSource = endpointSource;
+    console.log(`Chrome接続先: source=${endpointSource} stderrBytes=${stderrBytes} exitCode=${exitCode ?? '未終了'} signal=${signal ?? 'なし'}`);
     socket = new WebSocket(endpoint);
     await new Promise((resolve, reject) => {
         socket.addEventListener('open', resolve, { once: true });
@@ -76,6 +72,7 @@ before(async () => {
 }, { timeout: 30000 });
 
 after(async () => {
+    console.log(`Chrome起動診断: source=${chromeEndpointSource ?? '未取得'} stderrBytesTotal=${chromeStderrBytes} exitCode=${browser?.exitCode ?? '未終了'} signal=${browser?.signalCode ?? 'なし'}`);
     if (socket?.readyState === WebSocket.OPEN) {
         const exited = browser.exitCode === null ? once(browser, 'exit') : Promise.resolve();
         await call('Browser.close', {}, null).catch(() => {});
@@ -111,6 +108,93 @@ async function bounds() {
     })()`);
 }
 const fitted = { x: 0, y: 0, width: 960, height: 540 };
+
+test('正常な拡大表示の再確認では寸法やstyleを書き直さず、各描画の倍率とパンを維持する', async () => {
+    for (const zoom of [1, 1.5, 2, 4]) {
+        await reset();
+        await evaluate(`window.__tabBrowserYouTubeMiniPlayerSetContentTransform('test-token', ${zoom}, 0.4, -0.3, false)`);
+        await frames();
+        const expected = await bounds();
+        const result = await evaluate(`new Promise(resolve => {
+            const video = document.querySelector('video');
+            const before = window.layoutCalls;
+            let writes = 0;
+            const observer = new MutationObserver(records => writes += records.length);
+            observer.observe(document.getElementById('movie_player'), {
+                attributes: true, attributeFilter: ['style'], subtree: true
+            });
+            const samples = [];
+            const tick = () => {
+                const rect = video.getBoundingClientRect();
+                samples.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+                if (samples.length < 8) {
+                    requestAnimationFrame(tick);
+                } else {
+                    observer.disconnect();
+                    resolve({ calls: window.layoutCalls - before, writes, samples });
+                }
+            };
+            window.__tabBrowserYouTubeMiniPlayerLayoutBridge.beginVerification(true);
+            video.dispatchEvent(new Event('playing'));
+            requestAnimationFrame(tick);
+        })`);
+        assert.equal(result.calls, 0, `zoom=${zoom}: 正常時のsetSize`);
+        assert.equal(result.writes, 0, `zoom=${zoom}: 正常時のstyle変更`);
+        for (const sample of result.samples) assert.deepEqual(sample, expected);
+    }
+});
+
+test('拡大transformの書き戻しは次の描画前に直し、寸法補正を呼ばない', async () => {
+    for (const zoom of [1.5, 2, 4]) {
+        await reset();
+        await evaluate(`window.__tabBrowserYouTubeMiniPlayerSetContentTransform('test-token', ${zoom}, -0.4, 0.3, false)`);
+        await frames();
+        const expected = await bounds();
+        const before = await evaluate('window.layoutCalls');
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const samples = await evaluate(`new Promise(resolve => {
+                const video = document.querySelector('video');
+                const samples = [];
+                video.style.setProperty('transform', 'none', 'important');
+                video.style.setProperty('transform-origin', '0px 0px', 'important');
+                const tick = () => {
+                    const rect = video.getBoundingClientRect();
+                    samples.push({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+                    if (samples.length < 4) requestAnimationFrame(tick);
+                    else resolve(samples);
+                };
+                requestAnimationFrame(tick);
+            })`);
+            for (const sample of samples) assert.deepEqual(sample, expected, `zoom=${zoom}, attempt=${attempt}`);
+        }
+        assert.equal(await evaluate('window.layoutCalls'), before);
+    }
+});
+
+test('拡大中の2秒後と5秒後の再確認でも正常な表示を書き直さない', async () => {
+    await reset();
+    await evaluate(`window.__tabBrowserYouTubeMiniPlayerSetContentTransform('test-token', 2, 0.4, -0.3, false)`);
+    await frames();
+    const expected = await bounds();
+    const before = await evaluate(`(() => {
+        window.zoomStyleWrites = 0;
+        window.zoomStyleObserver = new MutationObserver(records => window.zoomStyleWrites += records.length);
+        window.zoomStyleObserver.observe(document.getElementById('movie_player'), {
+            attributes: true, attributeFilter: ['style'], subtree: true
+        });
+        window.__tabBrowserYouTubeMiniPlayerLayoutBridge.beginVerification(true);
+        return window.layoutCalls;
+    })()`);
+    await new Promise(resolve => setTimeout(resolve, 5200));
+    await frames();
+    const result = await evaluate(`(() => {
+        window.zoomStyleObserver.disconnect();
+        return { calls: window.layoutCalls, writes: window.zoomStyleWrites,
+            timers: window.__tabBrowserYouTubeMiniPlayerLayoutBridge.delayedVerificationTimers.length };
+    })()`);
+    assert.deepEqual(result, { calls: before, writes: 0, timers: 0 });
+    assert.deepEqual(await bounds(), expected);
+});
 
 test('公式設定メニューを開くと独自操作バーを退避し、メニュー上では再表示しない', async () => {
     await reset();

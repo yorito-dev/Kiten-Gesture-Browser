@@ -38,8 +38,22 @@ internal sealed class StartupWindowRestoreController(
     private readonly List<PendingWindowRestore> _pendingWindows = [];
     private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync = delayAsync ?? Task.Delay;
     private bool _isRestoring;
+    private bool _hasRestoredInitialWindowSession;
 
     public int PendingCount => _pendingWindows.Count;
+
+    public void RestoreInitialWindowSession(SessionWindowState state, Action<SessionData> restoreSession)
+    {
+        restoreSession(SessionSnapshotService.FromWindow(state));
+        // 通常タブ0件も復元済み。Loadedで別Windowの共通セッションを読み直さない。
+        _hasRestoredInitialWindowSession = true;
+    }
+
+    public bool ShouldRestoreSessionOnLoaded(int tabCount)
+        => !_hasRestoredInitialWindowSession && tabCount == 0;
+
+    public bool ShouldLoadSharedSession(int tabCount, IReadOnlyList<SessionTabState>? initialTabs)
+        => ShouldRestoreSessionOnLoaded(tabCount) && initialTabs is null;
 
     public void Queue(SessionWindowState state, TimeSpan activationDelay)
         => _pendingWindows.Add(new PendingWindowRestore(state, activationDelay));

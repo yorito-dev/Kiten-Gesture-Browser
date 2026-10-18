@@ -72,6 +72,33 @@ public static class YouTubeMiniPlayerNavigationService
         return true;
     }
 
+    internal static bool TryCreateLiveContinuationUri(
+        YouTubeMiniPlayerState state,
+        string currentSource,
+        string? sourceVideoId,
+        string? nextVideoId,
+        out Uri uri)
+    {
+        uri = null!;
+        if (state.SourceKind != MiniPlayerSourceKind.YouTube
+            || state.IsLooping == true || state.IsAbRepeatEnabled
+            || !Uri.TryCreate(currentSource, UriKind.Absolute, out var currentUri)
+            || currentUri.Scheme != Uri.UriSchemeHttps
+            || !YouTubeUrlService.TryGetVideoId(currentSource, out var currentId)
+            || !YouTubeUrlService.TryGetVideoId(state.Url, out var stateId)
+            || !string.Equals(currentId, sourceVideoId, StringComparison.Ordinal)
+            || !string.Equals(stateId, sourceVideoId, StringComparison.Ordinal)
+            || string.Equals(sourceVideoId, nextVideoId, StringComparison.Ordinal)
+            || !Regex.IsMatch(nextVideoId ?? string.Empty, @"\A[A-Za-z0-9_-]{11}\z"))
+        {
+            return false;
+        }
+
+        // ミュート・音量を復元してから、既存の保存状態復元処理で再生する。
+        uri = new Uri("https://www.youtube.com/watch?v=" + nextVideoId + "&autoplay=0");
+        return true;
+    }
+
     public static string CreateReturnTabUrl(YouTubeMiniPlayerState state, string videoId)
     {
         var queryItems = new List<(string Name, string Value)>();

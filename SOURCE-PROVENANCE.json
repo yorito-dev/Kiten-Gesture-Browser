@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
-  "created": "2026-10-14",
-  "upstreamCommit": "6dfd28fb7cab52a2f6a26c343c33c9d9978b31de",
+  "created": "2026-10-19",
+  "upstreamCommit": "43d6a084ae005b46ddbc676e99c41e861ab3b948",
   "publicRepositoryCommit": null,
   "buildVerification": "unverified",
-  "csharpExport": "公開用Releaseで有効な396ファイルのトークン一致を確認。無効な条件分岐と一部コメントを除外。",
+  "csharpExport": "公開用Releaseで有効な394ファイルのトークン一致を確認。無効な条件分岐と一部コメントを除外。",
   "xamlExport": "既存の公開用XAML生成を使用。4件を元の相対パスへ配置。",
   "projectChanges": "公開専用に整理。実際の公開用パッケージ版・出力metadata・XAML不足検査は維持。",
   "unitTestFiles": [
@@ -23,13 +23,15 @@
     "ContainerProfileStoreTests",
     "SessionDiagnosticSummaryFormatterTests",
     "BrowserUrlRulesServiceTests",
-    "WorkspaceTrashWindowTests"
+    "WorkspaceTrashWindowTests",
+    "LinkPreviewSiteUrlRulesTests"
   ],
   "unitTestsAreSubset": true,
   "browserSuiteMinimumCounts": [
     6,
     9,
-    22
+    9,
+    25
   ],
   "productGuiTested": false,
   "realPlaybackTested": false

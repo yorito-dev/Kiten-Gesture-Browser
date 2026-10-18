@@ -143,7 +143,7 @@ internal static class AuxiliarySurfaceOwnershipPolicy
         XamlPopup("YouTubeControlPopup"),
         XamlPopup("SplitLeftYouTubeControlPopup"),
         XamlPopup("SplitRightYouTubeControlPopup"),
-        XamlPopup("ChatGptReadabilityPopup"),
+
         XamlPopup("DownloadShelfPopup"),
         XamlPopup("AddressSuggestionPopup"),
 

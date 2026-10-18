@@ -71,7 +71,7 @@
             <TabItem Header="一般" Style="{StaticResource SettingsTabItemStyle}" />
             <TabItem Header="表示・操作" Style="{StaticResource SettingsTabItemStyle}" />
             <TabItem Header="メディア" Style="{StaticResource SettingsTabItemStyle}" />
-            <TabItem Header="サイト" Style="{StaticResource SettingsTabItemStyle}" />
+
             <TabItem Header="連携・プライバシー" Style="{StaticResource SettingsTabItemStyle}" />
         </TabControl>
 
@@ -193,42 +193,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="FiveChSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="150" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10" FontWeight="SemiBold" Text="5ch実況表示" />
-                        <CheckBox x:Name="EnableFiveChLiveReadabilityCheckBox" Grid.Row="1" Grid.ColumnSpan="2" Content="5ch実況向け表示を有効にする" />
-                        <CheckBox x:Name="HighlightFiveChNewPostsCheckBox" Grid.Row="2" Grid.ColumnSpan="2" Content="新着レスを強調する" />
-                        <CheckBox x:Name="EnableFiveChAutoRefreshCheckBox" Grid.Row="3" Grid.ColumnSpan="2" Content="表示中に新着レスを自動取得する" />
-                        <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,10,8" VerticalAlignment="Center" Foreground="#D1D5DB" Text="自動更新間隔（秒）" />
-                        <TextBox x:Name="FiveChRefreshIntervalBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" />
-                        <CheckBox x:Name="EnableFiveChAutoOpenNextThreadCheckBox" Grid.Row="5" Grid.ColumnSpan="2" Content="次スレを同じタブで自動的に開く" />
-                        <CheckBox x:Name="EnableFiveChAutoScrollCheckBox" Grid.Row="6" Grid.ColumnSpan="2" Content="最下部付近では新着レスへ自動追従する" />
-                        <CheckBox x:Name="PreviewFiveChReplyAnchorsCheckBox" Grid.Row="7" Grid.ColumnSpan="2" Content="返信アンカーをマウスオーバーでプレビューする" />
-                        <CheckBox x:Name="HighlightFiveChPosterIdsCheckBox" Grid.Row="8" Grid.ColumnSpan="2" Content="投稿者IDを色分けし、クリックで絞り込む" />
-                        <TextBlock Grid.Row="9" Grid.Column="0" Margin="0,0,10,8" VerticalAlignment="Center" Foreground="#D1D5DB" Text="本文文字サイズ" />
-                        <TextBox x:Name="FiveChFontSizeBox" Grid.Row="9" Grid.Column="1" Margin="0,0,0,8" />
-                        <TextBlock Grid.Row="10" Grid.Column="0" VerticalAlignment="Center" Foreground="#D1D5DB" Text="レス間隔" />
-                        <TextBox x:Name="FiveChPostSpacingBox" Grid.Row="10" Grid.Column="1" />
-                    </Grid>
-                </Border>
 
                 <Border x:Name="BehaviorSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
                     <Grid>
@@ -256,6 +221,8 @@
                 <Border x:Name="YouTubeMiniPlayerSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
                     <StackPanel>
                         <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="YouTubeミニプレイヤー" />
+                        <CheckBox x:Name="EnableYouTubeMiniPlayerLiveContinuationCheckBox" Content="ライブ終了後、同じ配信者の次のライブへ自動で移動する" />
+                        <TextBlock Margin="20,4,0,12" Foreground="#9CA3AF" FontSize="11" TextWrapping="Wrap" Text="配信中の別枠を確認できた場合だけ移動します。保存すると、開いているプレイヤーにも反映されます。" />
                         <CheckBox x:Name="EnableYouTubeMiniPlayerHoverAudioPreviewCheckBox" Content="一覧でマウスオーバー中の動画だけを一時視聴する" />
                         <TextBlock Margin="20,4,0,0" Foreground="#9CA3AF" FontSize="11" Text="短時間マウスを止めた場合だけ再生し、一覧から外れると元の音声・再生状態へ戻します。" />
                         <CheckBox x:Name="EnableYouTubeMiniPlayerSizeBasedQualityCheckBox" Margin="0,12,0,0" Content="表示サイズに合わせて画質上限を調整する" />
@@ -338,12 +305,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="ChatGptSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="ChatGPT" />
-                        <CheckBox x:Name="EnableChatGptReadabilityCheckBox" Foreground="#D1D5DB" Content="ChatGPT 読みやすさモードを有効にする" />
-                    </StackPanel>
-                </Border>
+
 
                 <Border x:Name="ContainerSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
                     <Grid>

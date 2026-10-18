@@ -272,7 +272,9 @@ public partial class MainWindow
             YouTubeControlPopup.IsOpen,
             SplitLeftYouTubeControlPopup.IsOpen,
             SplitRightYouTubeControlPopup.IsOpen,
-            ChatGptReadabilityPopup.IsOpen,
+
+            false,
+
             DownloadShelfPopup.IsOpen,
             AddressSuggestionPopup.IsOpen,
 

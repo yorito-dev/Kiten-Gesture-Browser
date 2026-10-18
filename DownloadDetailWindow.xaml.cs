@@ -81,8 +81,8 @@ public partial class DownloadDetailWindow : Window
         AppendLine(builder, "URL", item.SourceUrl);
         AppendLine(builder, "Content-Type", item.ContentType);
         AppendLine(builder, "Content-Disposition", item.ContentDisposition);
-        AppendLine(builder, "開始", item.StartedAt.ToString("yyyy-MM-dd HH:mm:ss zzz"));
-        AppendLine(builder, "完了", item.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss zzz") ?? string.Empty);
+        AppendLine(builder, "開始", item.StartedAtText);
+        AppendLine(builder, item.State == DownloadItemState.Completed ? "完了" : "終了", item.CompletedAtText);
         AppendLine(builder, "外部終了コード", item.ExternalExitCode?.ToString() ?? string.Empty);
         AppendLine(builder, "警告", item.SafetyWarning);
         AppendLine(builder, "エラー", item.ErrorText);

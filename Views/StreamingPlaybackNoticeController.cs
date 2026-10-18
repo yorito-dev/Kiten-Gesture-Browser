@@ -97,7 +97,9 @@ internal sealed class StreamingPlaybackNoticeController : IDisposable
                 or AmazonPrimeVideoReadiness.ProbeFailed;
         var shouldShow = !_host.IsPrivateWindow
             && tab is { IsNativeContentTab: false }
-            && hasAmazonPlaybackFailure
+
+            && (hasAmazonPlaybackFailure || HasGenericPlaybackFailure(tab))
+
             && !_streamingPlaybackTabStateCoordinator.IsNoticeDismissed(tab.Id);
         _elements.AmazonPrimeVideoNotice.IsOpen = shouldShow;
         if (!shouldShow || tab is null)
@@ -106,8 +108,12 @@ internal sealed class StreamingPlaybackNoticeController : IDisposable
         }
 
         var detailsExpanded = _streamingPlaybackTabStateCoordinator.IsNoticeExpanded(tab.Id);
+
         _elements.AmazonPrimeVideoNoticeTitle.Text = AmazonPrimeVideoService.PreparationFailureTitle;
-        _elements.AmazonPrimeVideoNoticeText.Text = AmazonPrimeVideoService.PreparationFailureExplanation;
+        _elements.AmazonPrimeVideoNoticeText.Text =
+            "このタブでは映像を再生できませんでした。外部ブラウザーで視聴できます。" +
+            "Edgeコンパクト表示、またはEdgeが利用できない場合は既定ブラウザーで同じページを開きます。";
+
         _elements.AmazonPrimeVideoNoticeText.Visibility = detailsExpanded
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -224,6 +230,11 @@ internal sealed class StreamingPlaybackNoticeController : IDisposable
         await _host.ReloadActiveTabAsync(tab);
     }
 
+    private bool HasGenericPlaybackFailure(BrowserTab? tab)
+        => tab is { IsNativeContentTab: false }
+            && StreamingPlaybackCompatibilityService.IsEligiblePageUrl(_host.GetCurrentPageUrl(tab) ?? tab.Url)
+            && _streamingPlaybackTabStateCoordinator.HasPlaybackFailure(tab.Id);
+
     private bool IsStreamingPlaybackFallbackAvailable(BrowserTab tab)
     {
         var readiness = _streamingPlaybackTabStateCoordinator.GetReadiness(tab.Id);
@@ -232,6 +243,8 @@ internal sealed class StreamingPlaybackNoticeController : IDisposable
                 or AmazonPrimeVideoReadiness.EmeUnavailable
                 or AmazonPrimeVideoReadiness.NavigationFailed
                 or AmazonPrimeVideoReadiness.ProbeFailed;
-        return hasAmazonPlaybackFailure;
+
+        return hasAmazonPlaybackFailure || HasGenericPlaybackFailure(tab);
+
     }
 }

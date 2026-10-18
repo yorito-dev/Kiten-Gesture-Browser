@@ -676,6 +676,16 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
 
     private async Task ApplyFloatingMediaSettingsAsync(AppSettings result)
     {
+        _settings.EnableYouTubeMiniPlayerLiveContinuation = result.EnableYouTubeMiniPlayerLiveContinuation;
+        var runtimes = _youTubeMiniPlayerRuntimes.Values
+            .Where(static runtime => runtime.State.SourceKind == MiniPlayerSourceKind.YouTube)
+            .ToArray();
+        // ページ側の変更を待つ前に、遅れて届く移動要求をすべて止める。
+        foreach (var runtime in runtimes)
+        {
+            runtime.IsLiveContinuationEnabled = _settings.EnableYouTubeMiniPlayerLiveContinuation;
+        }
+
         _settings.EnableYouTubeMiniPlayerHoverAudioPreview =
             result.EnableYouTubeMiniPlayerHoverAudioPreview;
         _settings.EnableYouTubeMiniPlayerSizeBasedQuality =
@@ -693,9 +703,21 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
             await StopYouTubeMiniPlayerHoverAudioPreviewAsync();
         }
 
-        foreach (var runtime in _youTubeMiniPlayerRuntimes.Values
-                     .Where(static runtime => runtime.State.SourceKind == MiniPlayerSourceKind.YouTube))
+        foreach (var runtime in runtimes)
         {
+            if (YouTubeMiniPlayerRuntimeLifecycleService.TryGetCoreWebView2(runtime) is { } core)
+            {
+                try
+                {
+                    await core.ExecuteScriptAsync(YouTubeMiniPlayerWebViewService.BuildLiveContinuationBridgeScript(
+                        runtime.WebMessageToken, runtime.IsLiveContinuationEnabled));
+                }
+                catch
+                {
+                    // 遷移中の個体は次の表示補正で最新設定を受け取る。native側では既に無効化済み。
+                }
+            }
+
             QueueYouTubeMiniPlayerSizeBasedQualityUpdate(runtime, immediate: true, force: true);
         }
     }
@@ -1645,7 +1667,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
             ApplyDetectedYouTubeMiniPlayerVideoDimensions,
             _settings.GestureMappings,
             _settings.GestureStartThreshold,
-            _settings.GestureDirectionThreshold);
+            _settings.GestureDirectionThreshold,
+            _settings.EnableYouTubeMiniPlayerLiveContinuation);
     }
 
     private async Task RefreshMediaWindowGestureSettingsAsync()

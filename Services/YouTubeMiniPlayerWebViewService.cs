@@ -425,6 +425,180 @@ internal static class YouTubeMiniPlayerWebViewService
             """;
     }
 
+    public static string BuildLiveContinuationBridgeScript(string token, bool enabled = true)
+    {
+        var serializedToken = JsonSerializer.Serialize(token);
+        var enabledJson = JsonSerializer.Serialize(enabled);
+        return $$"""
+            (() => {
+                if (location.protocol !== "https:"
+                    || !["www.youtube.com", "youtube.com", "m.youtube.com"].includes(location.hostname)
+                    || window.top !== window) {
+                    return { ok: false };
+                }
+                const key = "__tabBrowserMiniPlayerLiveContinuation";
+                const enabled = {{enabledJson}};
+                if (window[key]) {
+                    window[key].setEnabled(enabled);
+                    return { ok: true };
+                }
+                const token = {{serializedToken}};
+                const state = { enabled, source: null, generation: 0, timer: null, request: null, player: null, disposed: false };
+                const getPlayer = () => document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                const getVideo = () => getPlayer()?.querySelector("video");
+                const videoId = () => new URL(location.href).searchParams.get("v") || "";
+                const isAd = () => getPlayer()?.classList.contains("ad-showing") || getPlayer()?.classList.contains("ad-interrupting");
+                const isLive = response => {
+                    const details = response?.videoDetails;
+                    const broadcast = response?.microformat?.playerMicroformatRenderer?.liveBroadcastDetails;
+                    return details?.isUpcoming !== true && !broadcast?.endTimestamp
+                        && (broadcast?.isLiveNow === true || (broadcast?.isLiveNow !== false && details?.isLive === true))
+                        && (!broadcast?.startTimestamp || Date.parse(broadcast.startTimestamp) <= Date.now());
+                };
+                const cancel = () => {
+                    state.generation++;
+                    clearTimeout(state.timer);
+                    state.timer = null;
+                    state.request?.abort();
+                    state.request = null;
+                };
+                const isEnded = () => Boolean(getVideo()?.ended) || getPlayer()?.getPlayerState?.() === 0;
+                const isCurrent = (source, generation) => state.enabled && !state.disposed
+                    && state.generation === generation && state.source === source
+                    && videoId() === source.videoId && isEnded() && !isAd() && !getVideo()?.loop;
+                // HTML内の公開プレイヤー情報だけをJSONとして読む。取得したscriptは実行しない。
+                const readResponse = html => {
+                    const match = /\bytInitialPlayerResponse\s*=\s*\{/.exec(html);
+                    if (!match) return null;
+                    const start = match.index + match[0].length - 1;
+                    let depth = 0, quoted = false, escaped = false;
+                    for (let i = start; i < html.length; i++) {
+                        const ch = html[i];
+                        if (quoted) {
+                            if (escaped) escaped = false;
+                            else if (ch === "\\") escaped = true;
+                            else if (ch === '"') quoted = false;
+                        } else if (ch === '"') quoted = true;
+                        else if (ch === "{") depth++;
+                        else if (ch === "}" && --depth === 0) return JSON.parse(html.slice(start, i + 1));
+                    }
+                    return null;
+                };
+                const check = async (source, generation, attempt) => {
+                    state.timer = null;
+                    if (!isCurrent(source, generation)) return;
+                    const request = new AbortController();
+                    state.request = request;
+                    const timeout = setTimeout(() => request.abort(), 5000);
+                    try {
+                        const result = await fetch("https://www.youtube.com/channel/" + source.channelId + "/live", {
+                            credentials: "omit", cache: "no-store", signal: request.signal
+                        });
+                        const responseUrl = new URL(result.url);
+                        if (!result.ok || responseUrl.protocol !== "https:" || responseUrl.hostname !== "www.youtube.com") return;
+                        const html = await result.text();
+                        const response = html.length <= 4 * 1024 * 1024 ? readResponse(html) : null;
+                        const details = response?.videoDetails;
+                        const nextVideoId = String(details?.videoId || "");
+                        if (isCurrent(source, generation) && isLive(response)
+                            && response?.playabilityStatus?.status === "OK"
+                            && details?.channelId === source.channelId && nextVideoId !== source.videoId
+                            && /^[A-Za-z0-9_-]{11}$/.test(nextVideoId)) {
+                            const post = window.chrome?.webview?.postMessage;
+                            if (typeof post === "function") {
+                                post.call(window.chrome.webview, {
+                                    type: "youtubeMiniPlayerLiveContinuation", token,
+                                    sourceVideoId: source.videoId, nextVideoId
+                                });
+                                source.completed = true;
+                            }
+                        }
+                    } catch {
+                        // 公開情報が確認できない場合は現在の動画に留まる。
+                    } finally {
+                        clearTimeout(timeout);
+                        if (state.request === request) state.request = null;
+                        if (!source.completed && attempt === 0 && isCurrent(source, generation)) {
+                            state.timer = setTimeout(() => check(source, generation, 1), 10000);
+                        }
+                    }
+                };
+                const begin = () => {
+                    const source = state.source;
+                    if (!source || source.started || !isCurrent(source, state.generation)) return;
+                    source.started = true;
+                    const generation = state.generation;
+                    // YouTube自身の遷移を先に待ち、終了したライブだけ最大2回確認する。
+                    state.timer = setTimeout(() => check(source, generation, 0), 2000);
+                };
+                const onPlayerState = event => {
+                    refresh();
+                    if (Number(event?.data ?? event) === 0) begin();
+                };
+                const refresh = () => {
+                    if (state.disposed || !state.enabled) return;
+                    const player = getPlayer();
+                    if (player !== state.player) {
+                        state.player?.removeEventListener?.("onStateChange", onPlayerState);
+                        state.player = player;
+                        player?.addEventListener?.("onStateChange", onPlayerState);
+                    }
+                    const id = videoId();
+                    if (state.source && state.source.videoId !== id) {
+                        cancel();
+                        state.source = null;
+                    }
+                    const response = player?.getPlayerResponse?.() || window.ytInitialPlayerResponse;
+                    const details = response?.videoDetails;
+                    if (!state.source && details?.videoId === id && isLive(response)
+                        && /^UC[A-Za-z0-9_-]{22}$/.test(String(details?.channelId || "")) && !isAd()) {
+                        state.source = { videoId: id, channelId: details.channelId, started: false, completed: false };
+                    }
+                    if (isEnded()) begin();
+                };
+                const onEnded = event => { if (event.target === getVideo()) { refresh(); begin(); } };
+                const onReplay = event => {
+                    if (event.target === getVideo() && !isEnded()) {
+                        cancel();
+                        state.source = null;
+                    }
+                    refresh();
+                };
+                const onNavigate = () => { cancel(); state.source = null; };
+                const readyEvents = ["loadedmetadata", "canplay", "playing", "yt-player-updated", "yt-navigate-finish"];
+                for (const name of readyEvents) document.addEventListener(name, refresh, true);
+                document.addEventListener("ended", onEnded, true);
+                document.addEventListener("play", onReplay, true);
+                document.addEventListener("seeking", onReplay, true);
+                document.addEventListener("yt-navigate-start", onNavigate, true);
+                const dispose = () => {
+                    state.disposed = true;
+                    cancel();
+                    state.player?.removeEventListener?.("onStateChange", onPlayerState);
+                    for (const name of readyEvents) document.removeEventListener(name, refresh, true);
+                    document.removeEventListener("ended", onEnded, true);
+                    document.removeEventListener("play", onReplay, true);
+                    document.removeEventListener("seeking", onReplay, true);
+                    document.removeEventListener("yt-navigate-start", onNavigate, true);
+                    window.removeEventListener("pagehide", dispose);
+                    delete window[key];
+                };
+                const setEnabled = value => {
+                    if (state.enabled !== value) {
+                        state.enabled = value;
+                        cancel();
+                        state.source = null;
+                    }
+                    if (state.enabled) refresh();
+                };
+                window[key] = { refresh, dispose, setEnabled };
+                window.addEventListener("pagehide", dispose, { once: true });
+                refresh();
+                return { ok: true };
+            })();
+            """;
+    }
+
     public static string BuildLiveStatusScript(string expectedVideoId)
     {
         var serializedVideoId = JsonSerializer.Serialize(expectedVideoId);

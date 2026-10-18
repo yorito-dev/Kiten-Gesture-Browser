@@ -92,6 +92,33 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
             return;
         }
 
+        if (message.Kind == YouTubeMiniPlayerWebMessageKind.LiveContinuation)
+        {
+            if (!runtime.IsLiveContinuationEnabled || runtime.IsDisposed || runtime.IsNavigationLoading
+                || runtime.WebView?.CoreWebView2 is not { } core
+                || !string.Equals(source, core.Source, StringComparison.Ordinal)
+                || !YouTubeMiniPlayerNavigationService.TryCreateLiveContinuationUri(
+                    state, core.Source, message.SourceVideoId, message.NextVideoId, out var uri))
+            {
+                return;
+            }
+
+            var previousPaused = state.IsPaused;
+            var previousLiveResolved = runtime.IsInitialLivePlaybackResolved;
+            state.IsPaused = false;
+            runtime.IsInitialLivePlaybackResolved = false;
+            try
+            {
+                YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(core, uri);
+            }
+            catch
+            {
+                state.IsPaused = previousPaused;
+                runtime.IsInitialLivePlaybackResolved = previousLiveResolved;
+            }
+            return;
+        }
+
         if (message.Kind == YouTubeMiniPlayerWebMessageKind.HideToolbar)
         {
             YouTubeMiniPlayerOverlayVisibilityService.HideToolbarImmediately(runtime);

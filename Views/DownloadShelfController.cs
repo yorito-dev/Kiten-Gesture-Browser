@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
@@ -14,7 +15,9 @@ internal sealed record DownloadShelfElements(
     TextBox DownloadSearchBox,
     ItemsControl DownloadList,
     Button DownloadsButton,
-    Popup DownloadShelfPopup);
+    Popup DownloadShelfPopup,
+    TextBlock DownloadsButtonText,
+    ProgressBar DownloadsButtonProgress);
 
 // 一覧表示とその購読を所有する。取得処理、危険ファイル確認、実ファイル操作は担当しない。
 internal sealed class DownloadShelfController : IDisposable
@@ -103,7 +106,8 @@ internal sealed class DownloadShelfController : IDisposable
 
     private void DownloadItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(DownloadItem.State) or nameof(DownloadItem.CanResumeOperation))
+        if (e.PropertyName is nameof(DownloadItem.State) or nameof(DownloadItem.CanResumeOperation)
+            or nameof(DownloadItem.ProgressPercent))
         {
             UpdateButtonState();
         }
@@ -138,14 +142,24 @@ internal sealed class DownloadShelfController : IDisposable
     internal void UpdateButtonState()
     {
         if (_disposed) return;
-        var activeCount = _downloadService.Items.Count(static item =>
-            item.State is DownloadItemState.Pending or DownloadItemState.InProgress or DownloadItemState.Paused);
-        _elements.DownloadsButton.Content = activeCount > 0
-            ? $"DL{Math.Min(activeCount, 9)}"
-            : "DL";
-        _elements.DownloadsButton.ToolTip = activeCount > 0
-            ? $"ダウンロード中: {activeCount} 件"
-            : "ダウンロード";
+        var activeItems = _downloadService.Items.Where(static item =>
+            item.State is DownloadItemState.Pending or DownloadItemState.InProgress or DownloadItemState.Paused).ToArray();
+        var unknownCount = activeItems.Count(static item =>
+            (item.ProgressPercentOverride is null && item.TotalBytesToReceive <= 0)
+            || !double.IsFinite(item.ProgressPercent));
+        var hasProgress = activeItems.Length > 0 && unknownCount == 0;
+        var average = hasProgress ? activeItems.Average(static item => item.ProgressPercent) : 0;
+        var progressText = hasProgress ? $"{average:0}%" : "…";
+        var label = activeItems.Length > 0 ? $"DL{Math.Min(activeItems.Length, 9)} {progressText}" : "DL";
+        var toolTip = activeItems.Length == 0
+            ? "ダウンロード"
+            : $"ダウンロード中: {activeItems.Length} 件\n"
+                + (hasProgress ? $"平均進捗: {progressText}" : $"進捗不明: {unknownCount} 件");
+        if (_elements.DownloadsButtonText.Text != label) _elements.DownloadsButtonText.Text = label;
+        if (!Equals(_elements.DownloadsButton.ToolTip, toolTip)) _elements.DownloadsButton.ToolTip = toolTip;
+        _elements.DownloadsButtonProgress.Value = average;
+        _elements.DownloadsButtonProgress.IsIndeterminate = activeItems.Length > 0 && !hasProgress;
+        _elements.DownloadsButtonProgress.Visibility = activeItems.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     internal void Refresh()
@@ -202,6 +216,8 @@ internal sealed class DownloadShelfController : IDisposable
         _elements.DownloadList.ItemsSource = null;
         _downloadItemsView = null;
         _elements.DownloadShelfPopup.IsOpen = false;
+        _elements.DownloadsButtonProgress.IsIndeterminate = false;
+        _elements.DownloadsButtonProgress.Visibility = Visibility.Collapsed;
     }
 
     private sealed class DownloadFilterOption(string label, string value)

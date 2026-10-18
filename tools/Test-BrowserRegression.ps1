@@ -14,8 +14,9 @@ $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($f
 # 既存の必須回帰件数を下限とし、空の試験やskipだけの成功を拒否する。
 $suites = @(
     @{ Name = 'GestureHost.browser.test.cjs'; MinimumTests = 6 },
+    @{ Name = 'ChromeTestLauncher.browser.test.cjs'; MinimumTests = 9 },
     @{ Name = 'NativeBridge.browser.test.cjs'; MinimumTests = 9 },
-    @{ Name = 'YouTubeMiniPlayerLayout.browser.test.cjs'; MinimumTests = 22 }
+    @{ Name = 'YouTubeMiniPlayerLayout.browser.test.cjs'; MinimumTests = 25 }
 )
 $sourceRoot = [System.IO.Path]::GetFullPath($SourceDirectory)
 foreach ($suite in $suites) {

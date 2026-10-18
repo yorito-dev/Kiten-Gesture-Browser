@@ -13,14 +13,22 @@ internal static class YouTubeMiniPlayerStateRestoreService
         Action<YouTubeMiniPlayerState, double, double>? applyVideoDimensions = null,
         IEnumerable<GestureMappingSettings>? gestureMappings = null,
         double gestureStartThreshold = 14,
-        double gestureDirectionThreshold = 22)
+        double gestureDirectionThreshold = 22,
+        bool enableLiveContinuation = true)
     {
         if (!TryGetLoadedRuntime(state, runtimes, out var runtime))
         {
             return null;
         }
 
+        runtime.IsLiveContinuationEnabled = enableLiveContinuation;
         var generation = runtime.DisplayHealth.BeginApply();
+        await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(
+            state,
+            runtimes,
+            YouTubeMiniPlayerWebViewService.BuildLiveContinuationBridgeScript(runtime.WebMessageToken, enableLiveContinuation),
+            showStatus: false,
+            _ => { });
         await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(
             state,
             runtimes,

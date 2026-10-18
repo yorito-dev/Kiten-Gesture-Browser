@@ -7,7 +7,7 @@ public static class BrowserCommandProvider
     public const string OpenDownloadsActionId = "browser.openDownloads";
     public const string OpenBrowsingHistoryActionId = "browser.openBrowsingHistory";
     public const string OpenUserGuideActionId = "browser.openUserGuide";
-    public const string OpenChatGptReadabilityActionId = "browser.openChatGptReadability";
+
     public const string OpenSettingsActionId = "browser.openSettings";
     public const string FocusLocationActionId = "browser.focusLocation";
     public const string NewTabActionId = "browser.newTab";
@@ -41,7 +41,7 @@ public static class BrowserCommandProvider
         Func<Task> openDownloadsAsync,
         Func<Task> openBrowsingHistoryAsync,
         Func<Task> openUserGuideAsync,
-        Func<Task> openChatGptReadabilityAsync,
+
         Func<Task> openSettingsAsync,
         Func<Task> newTabAsync,
         Func<Task> duplicateTabAsync,
@@ -279,12 +279,7 @@ public static class BrowserCommandProvider
             openUserGuideAsync,
             ["help", "manual", "guide", "説明書", "ヘルプ", "操作ガイド"],
             category: "ヘルプ");
-        yield return Create(
-            OpenChatGptReadabilityActionId,
-            "ChatGPT読みやすさ設定を開く",
-            openChatGptReadabilityAsync,
-            ["chatgpt", "gpt", "readability", "読みやすさ"],
-            category: "設定");
+
         yield return Create(
             OpenSettingsActionId,
             "設定画面を開く",

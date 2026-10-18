@@ -7,8 +7,7 @@ namespace TabBrowser;
 
 public partial class MainWindow
 {
-    private const string StreamingPlaybackCompatibilityScriptKey =
-        "streaming-playback-compatibility-retry";
+
     private readonly StreamingPlaybackReadinessController _streamingPlaybackReadinessController;
     private static readonly TimeSpan StreamingPlaybackNoticeWindowChangeDelay =
         TimeSpan.FromMilliseconds(200);
@@ -50,67 +49,9 @@ public partial class MainWindow
 
     private void MarkAmazonPrimeVideoNavigationStarting(BrowserTab tab, string? targetUrl)
     {
-        var targetRetryKey = StreamingPlaybackCompatibilityService.TryGetCompatibilityRetryTarget(
-                targetUrl,
-                out _,
-                out var targetKey)
-            ? targetKey
-            : null;
-        _streamingPlaybackTabStateCoordinator.MarkNavigationStarting(tab.Id, targetRetryKey);
-    }
 
-    private void MarkAmazonPrimeVideoCompatibilityActive(BrowserTab tab, string? source)
-    {
-        if (!_tabs.Contains(tab)
-            || !AmazonPrimeVideoService.IsPotentialPlaybackPageUrl(source))
-        {
-            return;
-        }
+        _streamingPlaybackTabStateCoordinator.MarkNavigationStarting(tab.Id, null);
 
-        _streamingPlaybackTabStateCoordinator.MarkAmazonCompatibilityActive(tab.Id);
-    }
-
-    private async Task RestoreWebViewBridgeCompatibilityStateAsync(
-        BrowserTab tab,
-        CancellationToken cancellationToken)
-    {
-        var url = GetCurrentPageUrl(tab) ?? tab.Url;
-        if (!_tabs.Contains(tab)
-            || (!AmazonPrimeVideoService.IsPotentialPlaybackPageUrl(url)
-                && !StreamingPlaybackCompatibilityService.IsEligiblePageUrl(url))
-            || GetTabWebView(tab)?.CoreWebView2 is not { } core)
-        {
-            return;
-        }
-
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var result = await core.ExecuteScriptAsync(
-                AmazonPrimeVideoService.BuildWebViewBridgeSuppressionProbeScript());
-            cancellationToken.ThrowIfCancellationRequested();
-            if (_tabs.Contains(tab)
-                && ReferenceEquals(GetTabWebView(tab)?.CoreWebView2, core)
-                && string.Equals(GetCurrentPageUrl(tab) ?? tab.Url, url, StringComparison.Ordinal)
-                && AmazonPrimeVideoService.IsWebViewBridgeSuppressedProbeResult(result))
-            {
-                if (AmazonPrimeVideoService.IsPotentialPlaybackPageUrl(url))
-                {
-                    _streamingPlaybackTabStateCoordinator.MarkAmazonCompatibilityActive(tab.Id);
-                }
-                else
-                {
-                    _streamingPlaybackTabStateCoordinator.MarkStreamingCompatibilityActive(tab.Id);
-                }
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            // 復元と同時にページが遷移した場合は、次の文書生成通知に任せる。
-        }
     }
 
     private void UpdateAmazonPrimeVideoNotice()
@@ -128,7 +69,7 @@ public partial class MainWindow
     private void ClearAmazonPrimeVideoState(BrowserTab tab)
     {
         _streamingPlaybackTabStateCoordinator.Remove(tab.Id);
-        RemoveStreamingPlaybackCompatibilityScript(tab);
+
         UpdateAmazonPrimeVideoNotice();
     }
 
@@ -137,168 +78,10 @@ public partial class MainWindow
         StreamingPlaybackFailureMessage failure)
     {
         _ = failure;
-        _windowTaskSupervisor.TryRun(
-            "streaming-playback-compatibility-retry",
-            cancellationToken => RetryStreamingPlaybackCompatibilityAsync(tab, cancellationToken));
-    }
 
-    private async Task RetryStreamingPlaybackCompatibilityAsync(
-        BrowserTab tab,
-        CancellationToken cancellationToken)
-    {
-        var pageUrl = GetCurrentPageUrl(tab) ?? tab.Url;
-        if (!_tabs.Contains(tab)
-            || GetTabWebView(tab)?.CoreWebView2 is not { } core
-            || !StreamingPlaybackCompatibilityService.TryGetCompatibilityRetryTarget(
-                pageUrl,
-                out var origin,
-                out var retryKey))
-        {
-            if (ActiveTab == tab)
-            {
-                SetStatus(
-                    StreamingPlaybackCompatibilityService.RetryUnavailableMessage,
-                    autoClear: true);
-            }
+        _streamingPlaybackTabStateCoordinator.MarkPlaybackFailed(tab.Id);
+        UpdateAmazonPrimeVideoNotice();
 
-            return;
-        }
-
-        if (!_streamingPlaybackTabStateCoordinator.TryBeginStreamingCompatibilityRetry(
-                tab.Id,
-                retryKey))
-        {
-            return;
-        }
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await CoreWebViewDocumentScriptRegistry.UpdateVariableAsync(
-                core,
-                StreamingPlaybackCompatibilityScriptKey,
-                StreamingPlaybackCompatibilityService.BuildCompatibilityRetryScript(
-                    GetTabWebMessageToken(tab) ?? string.Empty,
-                    origin));
-            cancellationToken.ThrowIfCancellationRequested();
-            var currentUrl = GetCurrentPageUrl(tab) ?? tab.Url;
-            if (!_tabs.Contains(tab)
-                || GetTabWebView(tab)?.CoreWebView2 != core
-                || !StreamingPlaybackCompatibilityService.TryGetCompatibilityRetryTarget(
-                    currentUrl,
-                    out _,
-                    out var currentKey)
-                || !string.Equals(currentKey, retryKey, StringComparison.Ordinal))
-            {
-                CoreWebViewDocumentScriptRegistry.RemoveVariable(
-                    core,
-                    StreamingPlaybackCompatibilityScriptKey);
-                return;
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            _streamingPlaybackTabStateCoordinator.ClearStreamingCompatibility(tab.Id);
-            if (ActiveTab == tab)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                SetStatus(
-                    StreamingPlaybackCompatibilityService.RetryStartingMessage,
-                    autoClear: true);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            await ReloadActiveTabAsync(tab);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                CoreWebViewDocumentScriptRegistry.RemoveVariable(
-                    core,
-                    StreamingPlaybackCompatibilityScriptKey);
-            }
-            catch
-            {
-                // WebView2終了中は一時スクリプトの解放をRuntime破棄に任せる。
-            }
-        }
-        catch
-        {
-            try
-            {
-                CoreWebViewDocumentScriptRegistry.RemoveVariable(
-                    core,
-                    StreamingPlaybackCompatibilityScriptKey);
-            }
-            catch
-            {
-                // WebView2終了中は一時スクリプトの解放をRuntime破棄に任せる。
-            }
-
-            if (ActiveTab == tab)
-            {
-                SetStatus(
-                    StreamingPlaybackCompatibilityService.RetryUnavailableMessage,
-                    autoClear: true);
-            }
-        }
-    }
-
-    private void MarkStreamingPlaybackCompatibilityActive(BrowserTab tab, string? source)
-    {
-        var pageUrl = GetCurrentPageUrl(tab) ?? tab.Url;
-        if (!_tabs.Contains(tab)
-            || !StreamingPlaybackCompatibilityService.IsEligiblePageUrl(pageUrl)
-            || !StreamingPlaybackCompatibilityService.IsTrustedTopLevelSource(pageUrl, source))
-        {
-            return;
-        }
-
-        _streamingPlaybackTabStateCoordinator.MarkStreamingCompatibilityActive(tab.Id);
-    }
-
-    private void CompleteStreamingPlaybackCompatibilityRetry(
-        BrowserTab tab,
-        bool navigationSucceeded)
-    {
-        if (GetTabWebView(tab)?.CoreWebView2 is not { } core
-            || !CoreWebViewDocumentScriptRegistry.ContainsVariable(
-                core,
-                StreamingPlaybackCompatibilityScriptKey))
-        {
-            return;
-        }
-
-        RemoveStreamingPlaybackCompatibilityScript(tab);
-        if (ActiveTab != tab)
-        {
-            return;
-        }
-
-        SetStatus(
-            navigationSucceeded
-                && _streamingPlaybackTabStateCoordinator.IsStreamingCompatibilityActive(tab.Id)
-                ? StreamingPlaybackCompatibilityService.RetryCompletedMessage
-                : StreamingPlaybackCompatibilityService.RetryUnavailableMessage,
-            autoClear: true);
-    }
-
-    private void RemoveStreamingPlaybackCompatibilityScript(BrowserTab tab)
-    {
-        if (GetTabWebView(tab)?.CoreWebView2 is not { } core)
-        {
-            return;
-        }
-
-        try
-        {
-            CoreWebViewDocumentScriptRegistry.RemoveVariable(
-                core,
-                StreamingPlaybackCompatibilityScriptKey);
-        }
-        catch
-        {
-            // WebView2終了中は文書生成スクリプトもRuntimeと一緒に破棄される。
-        }
     }
 
     private void AmazonPrimeVideoDetailsButton_Click(object sender, RoutedEventArgs e)
@@ -310,11 +93,6 @@ public partial class MainWindow
     private bool IsConfirmedAmazonPrimeVideoTab(BrowserTab tab)
     {
         var url = GetCurrentPageUrl(tab) ?? tab.Url;
-        if (_streamingPlaybackTabStateCoordinator.IsAmazonCompatibilityActive(tab.Id)
-            && AmazonPrimeVideoService.IsPotentialPlaybackPageUrl(url))
-        {
-            return true;
-        }
 
         if (AmazonPrimeVideoService.IsPlaybackPageUrl(url))
         {
@@ -325,14 +103,6 @@ public partial class MainWindow
         return AmazonPrimeVideoService.IsPotentialPlaybackPageUrl(url)
             && readiness is not AmazonPrimeVideoReadiness.Unknown
             and not AmazonPrimeVideoReadiness.Pending;
-    }
-
-    private bool UsesNativeWebGestureInput(BrowserTab tab)
-    {
-        return IsConfirmedAmazonPrimeVideoTab(tab)
-            || (_streamingPlaybackTabStateCoordinator.IsStreamingCompatibilityActive(tab.Id)
-                && StreamingPlaybackCompatibilityService.IsEligiblePageUrl(
-                    GetCurrentPageUrl(tab) ?? tab.Url));
     }
 
     private void AmazonPrimeVideoOpenButton_Click(object sender, RoutedEventArgs e)

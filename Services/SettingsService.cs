@@ -322,11 +322,6 @@ public sealed class SettingsService
                 settings.EnableBrowserExtensions = enableBrowserExtensions;
             }
 
-            if (TryExtractBooleanSetting(text, "enableXReadableMode", out var enableXReadableMode))
-            {
-                settings.EnableXReadableMode = enableXReadableMode;
-            }
-
             if (TryExtractBooleanSetting(text, "alwaysOnTop", out var alwaysOnTop))
             {
                 settings.AlwaysOnTop = alwaysOnTop;
@@ -411,6 +406,23 @@ public sealed class SettingsService
         var recovered = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var key in keys)
         {
+            // 除外した表示設定は、完全なobjectが残る場合だけ原形で救済する。
+            if (key is "chatGptReadability" or "fiveChLiveReadability"
+                && System.Text.RegularExpressions.Regex.IsMatch(
+                    text, "\"" + key + "\"\\s*:\\s*\\{"))
+            {
+                try
+                {
+                    using var section = JsonDocument.Parse(ExtractObjectSection(text, key));
+                    recovered[key] = section.RootElement.Clone();
+                }
+                catch (JsonException)
+                {
+                    // 不完全なobjectは、既存のbroken backupに残す。
+                }
+                continue;
+            }
+
             // 旧設定のscalarだけを救済し、不完全なJSON値や一時検証情報を保存しない。
             var scalar = """("(?:\\.|[^"\\])*"|true|false|null)(?=\s*[,}])""";
             var match = System.Text.RegularExpressions.Regex.Match(

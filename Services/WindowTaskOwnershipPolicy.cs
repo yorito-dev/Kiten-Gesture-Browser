@@ -26,7 +26,7 @@ internal static class WindowTaskOwnershipPolicy
         Drain("bookmark-open"),
         Drain("bookmark-preview-show"),
         Drain("browser-shortcut-command"),
-        Drain("closed-tab-runtime-bridge-compatibility"),
+
         Drain("closed-tab-runtime-suspend"),
         Drain("closed-tab-thumbnail-capture"),
         Drain("command-palette-tab-thumbnail"),
@@ -50,7 +50,7 @@ internal static class WindowTaskOwnershipPolicy
         Drain("split-youtube-control-pane-update"),
         Drain("split-youtube-control-panel-refresh-delays"),
         Drain("startup-selected-tab-activation"),
-        Drain("streaming-playback-compatibility-retry"),
+
         Drain("tab-audio-pan-apply"),
         Drain("tab-audio-pan-close-reset"),
         Drain("tab-audio-pan-frame-apply"),
@@ -87,19 +87,6 @@ internal static class WindowTaskOwnershipPolicy
             1,
             "CommandPaletteQuickLookHost / QuickLookService",
             "QuickLookHost.ShowAsyncが_loadVersion、_isDisposed、IsOpenとservice cancellationで古い読込結果を破棄し、専用hostが表示Taskの寿命を所有する。"),
-
-        AuditedDiscard(
-            "MainWindow.FiveChLive.cs",
-            "ApplyFiveChLiveReadabilityAsync",
-            2,
-            "対象WebView Core",
-            "対象tab、Core、URLを実行前に確認する一回限りの表示scriptでawait後のMainWindow変更はなく、遷移・破棄失敗を許容して次の完了通知で再適用する。"),
-        AuditedDiscard(
-            "MainWindow.FiveChLive.cs",
-            "SetFiveChLiveReadabilityActivationAsync",
-            1,
-            "対象WebView Core",
-            "対象tab、Core、URLを実行前に確認する一回限りのactive状態scriptでawait後のMainWindow変更はなく、遷移・破棄失敗を許容して次の表示切替で再同期する。"),
 
         Continue("MainWindow.FolderTabs.cs", "Dispatcher.InvokeAsync", 3,
             "WPF Dispatcher", "別threadからのUI marshalであり、Dispatcherがoperationの実行可否と寿命を所有する。"),
@@ -160,18 +147,7 @@ internal static class WindowTaskOwnershipPolicy
             2,
             "YouTubeControlService / 対象WebView Core",
             "active tab切替時の一回限りのbridge scriptでawait後のMainWindow変更はなく、遷移・Core破棄失敗をserviceが許容し次のactivationで状態を再設定する。"),
-        AuditedDiscard(
-            "MainWindow.xaml.cs",
-            "ApplyChatGptReadabilityAsync",
-            2,
-            "対象WebView Core",
-            "対象tab、Core、URLを実行前に確認する一回限りの表示scriptでawait後のMainWindow変更はなく、遷移・破棄失敗を許容して次のNavigationCompletedまたはSourceChangedで再適用する。"),
-        AuditedDiscard(
-            "MainWindow.xaml.cs",
-            "ApplyXReadableModeAsync",
-            2,
-            "対象WebView Core",
-            "対象tab、Core、URLを実行前に確認する一回限りの表示scriptでawait後のMainWindow変更はなく、遷移・破棄失敗を許容して次のNavigationCompletedまたはSourceChangedで再適用する。"),
+
         AuditedDiscard(
             "MainWindow.xaml.cs",
             "CancelActiveGestureOverlayAsync",

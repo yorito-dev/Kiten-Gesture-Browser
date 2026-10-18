@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 
@@ -131,6 +132,8 @@ public sealed class DownloadItem : INotifyPropertyChanged
                 OnPropertyChanged(nameof(CanRemoveHistory));
                 OnPropertyChanged(nameof(PauseResumeButtonText));
                 OnPropertyChanged(nameof(CanSaveAndContinue));
+                OnPropertyChanged(nameof(CompletedAtText));
+                OnPropertyChanged(nameof(TimestampText));
             }
         }
     }
@@ -253,14 +256,43 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public DateTimeOffset StartedAt
     {
         get => _startedAt;
-        set => SetField(ref _startedAt, value);
+        set
+        {
+            if (SetField(ref _startedAt, value))
+            {
+                OnPropertyChanged(nameof(StartedAtText));
+                OnPropertyChanged(nameof(TimestampText));
+            }
+        }
     }
 
     public DateTimeOffset? CompletedAt
     {
         get => _completedAt;
-        set => SetField(ref _completedAt, value);
+        set
+        {
+            if (SetField(ref _completedAt, value))
+            {
+                OnPropertyChanged(nameof(CompletedAtText));
+                OnPropertyChanged(nameof(TimestampText));
+            }
+        }
     }
+
+    public string StartedAtText => FormatTimestamp(StartedAt);
+
+    public string CompletedAtText => CompletedAt is { } completed
+        ? FormatTimestamp(completed)
+        : State is DownloadItemState.Completed or DownloadItemState.Failed or DownloadItemState.Canceled ? "不明" : "未終了";
+
+    public string TimestampText => $"開始: {StartedAtText}"
+        + (CompletedAt.HasValue || State is DownloadItemState.Completed or DownloadItemState.Failed or DownloadItemState.Canceled
+            ? $"  {(State == DownloadItemState.Completed ? "完了" : "終了")}: {CompletedAtText}"
+            : string.Empty);
+
+    private static string FormatTimestamp(DateTimeOffset timestamp) => timestamp == default
+        ? "不明"
+        : timestamp.ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
 
     public int? ExternalExitCode
     {
@@ -477,7 +509,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
             ErrorText = entry.State is DownloadItemState.Pending or DownloadItemState.InProgress or DownloadItemState.Paused
                 ? "アプリ終了で中断"
                 : entry.ErrorText,
-            StartedAt = entry.StartedAt == default ? DateTimeOffset.Now : entry.StartedAt,
+            StartedAt = entry.StartedAt,
             CompletedAt = entry.CompletedAt,
             ProgressPercentOverride = entry.ProgressPercentOverride,
             DetailOverrideText = entry.DetailOverrideText,
@@ -578,7 +610,7 @@ public sealed class DownloadHistoryEntry
 
     public string ErrorText { get; set; } = string.Empty;
 
-    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.Now;
+    public DateTimeOffset StartedAt { get; set; }
 
     public DateTimeOffset? CompletedAt { get; set; }
 

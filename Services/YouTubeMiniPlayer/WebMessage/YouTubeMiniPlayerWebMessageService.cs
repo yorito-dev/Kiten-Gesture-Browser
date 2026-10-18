@@ -14,7 +14,8 @@ internal enum YouTubeMiniPlayerWebMessageKind
     RightWheel,
     SideButton,
     ContentTransform,
-    CloseGesture
+    CloseGesture,
+    LiveContinuation
 }
 
 internal enum YouTubeMiniPlayerDragPhase
@@ -64,7 +65,9 @@ internal readonly record struct YouTubeMiniPlayerWebMessage(
     double ContentAnchorX = 0,
     double ContentAnchorY = 0,
     YouTubeMiniPlayerSideButton SideButton = YouTubeMiniPlayerSideButton.Unknown,
-    bool IsResize = false);
+    bool IsResize = false,
+    string? SourceVideoId = null,
+    string? NextVideoId = null);
 
 internal static class YouTubeMiniPlayerWebMessageService
 {
@@ -76,6 +79,21 @@ internal static class YouTubeMiniPlayerWebMessageService
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             var type = GetJsonString(root, "type");
+            if (string.Equals(type, "youtubeMiniPlayerLiveContinuation", StringComparison.Ordinal))
+            {
+                message = new YouTubeMiniPlayerWebMessage(
+                    YouTubeMiniPlayerWebMessageKind.LiveContinuation,
+                    YouTubeMiniPlayerDragPhase.Unknown,
+                    YouTubeMiniPlayerRightInputPhase.Unknown,
+                    WheelDelta: 0,
+                    Hovered: false,
+                    TitleHovered: false,
+                    Token: GetJsonString(root, "token"),
+                    SourceVideoId: GetJsonString(root, "sourceVideoId"),
+                    NextVideoId: GetJsonString(root, "nextVideoId"));
+                return true;
+            }
+
             if (string.Equals(type, "youtubeMiniPlayerDrag", StringComparison.Ordinal))
             {
                 message = new YouTubeMiniPlayerWebMessage(

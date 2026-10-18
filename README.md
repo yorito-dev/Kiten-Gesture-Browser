@@ -7,7 +7,7 @@
 
 Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブブラウザです。本体ソースはMIT Licenseで提供します。
 
-**[無料の公開アルファをダウンロード（v0.1.0-preview.1）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)**
+**[無料の公開アルファをダウンロード（v0.1.0-preview.2）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.2)**
 
 **[初めて使う方へ：ダウンロード・起動・基本操作・バックアップ](docs/getting-started.md)**
 
@@ -31,16 +31,16 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 - Windows 11 x64
 - Microsoft Edge WebView2 Evergreen Runtimeは、Windows 11には通常、最初から入っています。Webページが表示されない場合だけ、[動作条件](docs/distribution-guide.md#2-動作条件)の手順で導入してください
 - 実行用Releaseは.NET RuntimeをZIPへ自己完結同梱しています。ソースからのビルドには末尾のSDK要件を参照
-- [0.1.0-preview.1向けのバックアップ補助ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/blob/161dcc0b01e7fc80395a75ada83728fb709c5eb3/tools/Backup-KitenData.cmd)の入手方法とSHA-256の照合は[利用案内](docs/getting-started.md#4-バックアップを作る)を参照。公開済みZIPには未同梱
+- バックアップはZIPの`Maintenance\Backup-KitenData.cmd`をダブルクリックして作成できます。[手順と旧版0.1.0-preview.1向けの補足](docs/backup-restore-guide.md#31-ダブルクリックで作成する)を参照
 - PowerShellスクリプトによるバックアップ／復元にはPowerShell 7以上が必要。ダブルクリック版のバックアップでは不要
-- 初回は未署名。入手元とSHA-256を確認し、Windowsのセキュリティ機能を無効にしない
+- この版は未署名。入手元とSHA-256を確認し、Windowsのセキュリティ機能を無効にしない
 - 自動更新はありません。修正版は新しい版番号のZIPで案内します
 
 すべてのWindows環境、動画形式、GPU、画面構成での動作を確認したものではありません。
 
 ## ダウンロードと導入
 
-[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)のAssetsにある[Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.1/Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
+[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.2)のAssetsにある[Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.2/Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.2/Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
 
 1. 入手元とZIPのSHA-256を確認します。
 2. 新しい空フォルダーへZIPをすべて展開します。
@@ -66,7 +66,7 @@ AIに聞けばすぐに答えが返ってくる時代になりました。それ
 
 本体のダウンロードと利用は無料です。開発支援は任意で、支援の有無による機能差はありません。
 
-本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.1)で無料提供しています。
+本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.2)で無料提供しています。
 
 ## 利用条件・プライバシー・報告
 

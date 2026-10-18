@@ -20,7 +20,7 @@ public partial class MainWindow : IPageGestureVisualHost, INativeWebGestureHost
 
     bool INativeWebGestureHost.ContainsTab(BrowserTab tab) => _tabs.Contains(tab);
 
-    bool INativeWebGestureHost.UsesNativeWebGestureInput(BrowserTab sourceTab) => UsesNativeWebGestureInput(sourceTab);
+    bool INativeWebGestureHost.UsesNativeWebGestureInput(BrowserTab sourceTab) => false;
 
     bool INativeWebGestureHost.TryGetWindowPoint(Point devicePoint, out Point windowPoint)
     {

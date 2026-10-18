@@ -1026,7 +1026,7 @@
                             <MenuItem Header="Chrome/Edge の拡張機能を取り込む" Click="ImportExtensionButton_Click" />
                             <MenuItem Header="拡張機能を管理" Click="ManageExtensionsButton_Click" />
                             <Separator />
-                            <MenuItem x:Name="XReadableModeMenuItem" Header="X 整形モード" IsCheckable="True" Click="XReadableModeMenuItem_Click" />
+
                             <Separator />
                             <MenuItem Header="ページ情報をコピー">
                                 <MenuItem Header="URLをコピー" Tag="Url" Click="CopyCurrentPageLinkMenuItem_Click" />
@@ -1051,8 +1051,13 @@
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
-                <Button x:Name="ChatGptReadabilityButton" Grid.Column="18" Width="44" Height="30" Margin="0,0,8,0" Content="GPT" Click="ChatGptReadabilityButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ChatGPT 読みやすさ" Visibility="Collapsed" />
-                <Button x:Name="DownloadsButton" Grid.Column="19" Width="44" Height="30" Margin="0,0,8,0" Content="DL" Click="DownloadsButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ダウンロード" />
+
+                <Button x:Name="DownloadsButton" Grid.Column="19" Width="Auto" MinWidth="44" Height="30" Margin="0,0,8,0" Padding="6,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" AutomationProperties.Name="ダウンロード" Click="DownloadsButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ダウンロード">
+                    <Grid IsHitTestVisible="False">
+                        <TextBlock x:Name="DownloadsButtonText" Margin="0,0,0,3" HorizontalAlignment="Center" VerticalAlignment="Center" Text="DL" />
+                        <ProgressBar x:Name="DownloadsButtonProgress" Height="3" Margin="0,0,0,2" VerticalAlignment="Bottom" Background="#1F2937" BorderThickness="0" Foreground="#22D3EE" Minimum="0" Maximum="100" Value="0" Focusable="False" Visibility="Collapsed" AutomationProperties.Name="ダウンロードの平均進捗" />
+                    </Grid>
+                </Button>
                 <Button x:Name="TabLayoutModeButton" Grid.Column="23" Width="44" Height="30" Margin="0,0,8,0" Content="縦" Click="TabLayoutModeButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="縦タブに切り替え" />
                 <Button x:Name="YouTubeMiniPlayerListButton" Grid.Column="24" Width="44" Height="30" Margin="0,0,8,0" Content="YT" Click="YouTubeMiniPlayerListButton_Click" AllowDrop="True" DragOver="YouTubeMiniPlayerLocalVideo_DragOver" Drop="YouTubeMiniPlayerLocalVideo_Drop" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="YouTube ミニプレイヤー一覧" />
                 <Button x:Name="PageZoomButton" Grid.Column="25" Width="54" Height="30" Margin="0" HorizontalAlignment="Right" Content="100%" Click="PageZoomButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ページの表示倍率" Visibility="Collapsed" />
@@ -2091,51 +2096,7 @@
             </Border>
         </Popup>
 
-        <Popup x:Name="ChatGptReadabilityPopup" AllowsTransparency="True" Focusable="True" Placement="Bottom" PlacementTarget="{Binding ElementName=ChatGptReadabilityButton}" StaysOpen="False" PopupAnimation="Fade">
-            <Border Width="360" Padding="12" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1">
-                <StackPanel>
-                    <DockPanel Margin="0,0,0,8">
-                        <Button Width="72" Height="26" DockPanel.Dock="Right" Content="リセット" Click="ChatGptReadabilityResetButton_Click" Style="{StaticResource ToolbarButtonStyle}" />
-                        <TextBlock Foreground="#E5E7EB" FontSize="13" FontWeight="SemiBold" Text="ChatGPT 読みやすさ" />
-                    </DockPanel>
 
-                    <CheckBox x:Name="ChatGptReadabilityEnabledCheckBox" Margin="0,0,0,8" Checked="ChatGptReadabilityCheckBox_Changed" Content="読みやすさモードを有効にする" Style="{StaticResource ReadabilityCheckBoxStyle}" Unchecked="ChatGptReadabilityCheckBox_Changed" />
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="118" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,10,7" Style="{StaticResource ReadabilityPanelLabelStyle}" Text="文字サイズ" />
-                        <ComboBox x:Name="ChatGptFontScaleBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,7" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="ChatGptReadabilityOption_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,0,10,7" Style="{StaticResource ReadabilityPanelLabelStyle}" Text="行間" />
-                        <ComboBox x:Name="ChatGptLineHeightBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,7" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="ChatGptReadabilityOption_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,10,7" Style="{StaticResource ReadabilityPanelLabelStyle}" Text="テーマ" />
-                        <ComboBox x:Name="ChatGptThemeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,7" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="ChatGptReadabilityOption_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
-
-                        <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,10,7" Style="{StaticResource ReadabilityPanelLabelStyle}" Text="本文幅" />
-                        <ComboBox x:Name="ChatGptContentWidthBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,7" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="ChatGptReadabilityOption_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
-
-                        <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,10,0" Style="{StaticResource ReadabilityPanelLabelStyle}" Text="コード文字" />
-                        <ComboBox x:Name="ChatGptCodeFontScaleBox" Grid.Row="4" Grid.Column="1" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="ChatGptReadabilityOption_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
-                    </Grid>
-
-                    <CheckBox x:Name="ChatGptCodeWrapCheckBox" Checked="ChatGptReadabilityCheckBox_Changed" Content="コードブロックを折り返す" Style="{StaticResource ReadabilityCheckBoxStyle}" Unchecked="ChatGptReadabilityCheckBox_Changed" />
-                    <CheckBox x:Name="ChatGptLargeInputCheckBox" Checked="ChatGptReadabilityCheckBox_Changed" Content="入力欄を大きく表示" Style="{StaticResource ReadabilityCheckBoxStyle}" Unchecked="ChatGptReadabilityCheckBox_Changed" />
-                    <CheckBox x:Name="ChatGptFocusHighlightCheckBox" Checked="ChatGptReadabilityCheckBox_Changed" Content="キーボードフォーカスを強調" Style="{StaticResource ReadabilityCheckBoxStyle}" Unchecked="ChatGptReadabilityCheckBox_Changed" />
-                </StackPanel>
-            </Border>
-        </Popup>
 
         <Popup x:Name="DownloadShelfPopup" AllowsTransparency="True" Focusable="True" Placement="Bottom" PlacementTarget="{Binding ElementName=DownloadsButton}" StaysOpen="False" PopupAnimation="Fade">
             <Border Width="540" MaxHeight="560" Padding="12" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1">
@@ -2165,6 +2126,7 @@
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -2175,8 +2137,9 @@
                                             <TextBlock Grid.Row="0" Grid.Column="1" Foreground="#CBD5E1" FontSize="12" Text="{Binding StateText}" />
                                              <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Height="7" Margin="0,7,0,4" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}" />
                                             <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Foreground="#9CA3AF" FontSize="11" Text="{Binding DetailText}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="#FCA5A5" FontSize="11" Text="{Binding SafetyWarning}" TextWrapping="Wrap" />
-                                            <WrapPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,8,0,0">
+                                            <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="#9CA3AF" FontSize="11" Text="{Binding TimestampText}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="#FCA5A5" FontSize="11" Text="{Binding SafetyWarning}" TextWrapping="Wrap" />
+                                            <WrapPanel Grid.Row="5" Grid.ColumnSpan="2" Margin="0,8,0,0">
                                                 <Button Width="58" Height="24" Margin="0,0,6,0" Content="中止" Click="DownloadCancelButton_Click" IsEnabled="{Binding CanCancel}" Style="{StaticResource ToolbarButtonStyle}" />
                                                 <Button Width="92" Height="24" Margin="0,0,6,0" Content="保存して継続" Click="DownloadSaveAndContinueButton_Click" IsEnabled="{Binding CanSaveAndContinue}" ToolTip="ここまでを保存し、現在のライブ位置から新しいファイルへ継続します">
                                                     <Button.Style>

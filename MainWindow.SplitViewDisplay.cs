@@ -34,7 +34,7 @@ public partial class MainWindow : ISplitViewDisplayHost
     void ISplitViewDisplayHost.SetAddressText(string text) => SetAddressText(text);
     void ISplitViewDisplayHost.SetDisplayedTab(BrowserTab? tab) => _displayedTab = tab;
     void ISplitViewDisplayHost.SetLastActiveBrowserTabId(Guid tabId) => _lastActiveBrowserTabId = tabId;
-    void ISplitViewDisplayHost.QueueFiveChLiveReadabilityActivation(BrowserTab tab, bool isActive) => QueueFiveChLiveReadabilityActivation(tab, isActive);
+
     void ISplitViewDisplayHost.UpdateSplitYouTubeControlPanels(string reason) => UpdateSplitYouTubeControlPanels(reason);
     void ISplitViewDisplayHost.HideSplitYouTubeControlPopups() => HideSplitYouTubeControlPopups();
     void ISplitViewDisplayHost.QueueSplitYouTubeControlPanelRefresh() => QueueSplitYouTubeControlPanelRefresh();

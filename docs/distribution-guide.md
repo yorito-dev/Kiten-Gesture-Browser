@@ -6,26 +6,26 @@
 
 作者表示名は「ヨリト」。本体は、試したい人が事前招待や人数制限なく、無償で、用途と期間を限定せず利用できる公開アルファ版である。本体ソースを公開し、[MIT License](../LICENSE.txt)で商用利用・改変・再配布を認める。著作権表示と許諾文を保持する。第三者ソフトウェアには各第三者ライセンスが適用される。
 
-初回公開アルファは未署名で提供するため、Windowsの警告が出る可能性がある。入手元と公開されたSHA-256を確認し、DefenderやSmartScreenを無効にしない。SHA-256の一致だけでは配布元の信頼性を保証しない。
+この版は未署名で提供するため、Windowsの警告が出る可能性がある。入手元と公開されたSHA-256を確認し、DefenderやSmartScreenを無効にしない。SHA-256の一致だけでは配布元の信頼性を保証しない。
 
 ## 1. 対象となる配布物
 
-初回Previewで案内する実行用ZIPは次の1種類である。
+この版で案内する実行用ZIPは次の1種類である。
 
 ```text
-Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip
+Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip
 ```
 
-GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPではない。ダウンロード後は、配布ページに記載されたSHA-256と、ZIPと隣にある同名の`Kiten-Gesture-Browser-0.1.0-preview.1-win-x64.zip.sha256`の値が一致することを確認する。実行ファイルとmanifestに記録されるソースSHAは開発用リポジトリのcommitである。Releaseページには、そのSHAと、同じ内容を公開しているKiten-Gesture-Browserのcommit（Releaseタグの指す先）の対応を記載する。
+GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPではない。ダウンロード後は、配布ページに記載されたSHA-256と、ZIPと隣にある同名の`Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip.sha256`の値が一致することを確認する。実行ファイルとmanifestに記録されるソースSHAは開発用リポジトリのcommitである。Releaseページには、そのSHAと、同じ内容を公開しているKiten-Gesture-Browserのcommit（Releaseタグの指す先）の対応を記載する。
 
 ## 2. 動作条件
 
 - 検証対象: Windows 11 x64
 - 必要な外部Runtime: Microsoft Edge WebView2 Evergreen Runtime
 - .NET: 実行用ZIPへ同梱する自己完結型。利用者による.NET SDKの導入は不要
-- バックアップ: [ダブルクリック用の補助ファイルを追加する方法](backup-restore-guide.md#31-ダブルクリックで作成する)ではPowerShell 7不要。公開済みZIPには補助ファイルを同梱していない
+- バックアップ: [同梱の補助ファイルで作成する方法](backup-restore-guide.md#31-ダブルクリックで作成する)ではPowerShell 7不要。公開済みZIPには補助ファイルを同梱していない
 - PowerShellスクリプトによるバックアップ／復元: PowerShell 7以上（`pwsh`）。未導入の場合はMicrosoft公式の[WindowsへのPowerShell導入手順](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows)に従う
-- インストーラー、自動更新、Microsoft Store版: 初回Previewの対象外
+- インストーラー、自動更新、Microsoft Store版: この版の対象外
 
 ローカル動画はWPF標準MediaElement方式で、対応形式はWindowsのコーデック環境に依存する。YouTubeミニプレイヤーと既存ミニプレイヤー内のローカル動画再生も利用できる。LibVLCは同梱しない。
 

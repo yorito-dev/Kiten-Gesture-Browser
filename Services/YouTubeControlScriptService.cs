@@ -983,7 +983,12 @@ public static class YouTubeControlScriptService
                     }
                     return parents;
                 };
-                const setImportant = (element, name, value) => element.style.setProperty(name, value, "important");
+                const setImportant = (element, name, value) => {
+                    if (element.style.getPropertyValue(name) !== value
+                        || element.style.getPropertyPriority(name) !== "important") {
+                        element.style.setProperty(name, value, "important");
+                    }
+                };
                 const fullScreenMessageToken = __TAB_BROWSER_YOUTUBE_MINI_PLAYER_MESSAGE_TOKEN__;
                 const contentTransformKey = "__tabBrowserYouTubeMiniPlayerContentTransform";
                 const contentTransformHudId = "tabbrowser-youtube-mini-player-content-transform-hud";
@@ -1023,7 +1028,9 @@ public static class YouTubeControlScriptService
                 };
                 const hasContentTransformDrift = video => video instanceof HTMLVideoElement
                     && (video.style.getPropertyValue("transform") !== getContentTransformCss()
-                        || video.style.getPropertyPriority("transform") !== "important");
+                        || video.style.getPropertyPriority("transform") !== "important"
+                        || video.style.getPropertyValue("transform-origin") !== "center center"
+                        || video.style.getPropertyPriority("transform-origin") !== "important");
                 const hasImportantVideoStyleDrift = (video, name, value) => video instanceof HTMLVideoElement
                     && (video.style.getPropertyValue(name) !== value
                         || video.style.getPropertyPriority(name) !== "important");
@@ -1565,7 +1572,7 @@ public static class YouTubeControlScriptService
                 };
 
                 const layoutBridgeKey = "__tabBrowserYouTubeMiniPlayerLayoutBridge";
-                const layoutBridgeVersion = 19;
+                const layoutBridgeVersion = 20;
                 const existingLayoutBridge = window[layoutBridgeKey];
                 if (existingLayoutBridge?.version === layoutBridgeVersion) {
                     existingLayoutBridge.beginVerification?.(true);
@@ -1629,7 +1636,7 @@ public static class YouTubeControlScriptService
                             && layoutState.appliedVideo === video
                             && layoutState.appliedWidth === width
                             && layoutState.appliedHeight === height
-                            && !hasVideoLayoutDrift(player, video, width, height)) {
+                            && !hasLayoutStyleDrift()) {
                             layoutState.layoutVerified = Boolean(player && video) && !hasLayoutStyleDrift();
                             return;
                         }
@@ -1693,9 +1700,16 @@ public static class YouTubeControlScriptService
                     };
                     const scheduleVideoStyleRepair = () => {
                         if (layoutState.interactiveResize
-                            || layoutState.applying
-                            || layoutState.contentTransformRepairScheduled
-                            || !hasLayoutStyleDrift()) {
+                            || layoutState.applying) {
+                            return;
+                        }
+
+                        // 拡大だけの書き戻しは監視通知内で直し、100%のまま次の描画へ渡さない。
+                        const video = getVideo();
+                        if (!isContentAtOriginalSize() && hasContentTransformDrift(video)) {
+                            applyContentTransform(video);
+                        }
+                        if (layoutState.contentTransformRepairScheduled || !hasLayoutStyleDrift()) {
                             return;
                         }
 
@@ -1741,7 +1755,9 @@ public static class YouTubeControlScriptService
                     };
                     layoutState.beginVerification = (includeDelayed = false) => {
                         layoutState.verificationAttemptsRemaining = 3;
-                        attachAndSchedule();
+                        layoutState.attachObservers?.();
+                        // 再確認の要求だけでは正常なプレイヤーの寸法を作り直さない。
+                        layoutState.scheduleApply(false);
                         if (includeDelayed) {
                             scheduleDelayedVerifications();
                         }
@@ -4022,7 +4038,7 @@ public static class YouTubeControlScriptService
             isAbRepeatEnabled
         }));
         var volumeScript = volume.HasValue
-            ? BuildVolumeScript(volume.Value, respectMiniPlayerUserOverride: true)
+            ? BuildVolumeScript(volume.Value, respectMiniPlayerUserOverride: true, unmuteOnVolumeChange: false)
             : "({ ok: true, skipped: true })";
         var muteScript = BuildMuteScript(
             isMuted,
@@ -4121,15 +4137,24 @@ public static class YouTubeControlScriptService
 
                     state.applying = true;
                     try {
-                        await ({{volumeScript}});
-                        await ({{muteScript}});
-                        const playbackResult = await ({{playbackScript}});
+                        const muteResult = await {{muteScript}};
+                        if (!muteResult?.ok || !muteResult.found) {
+                            return false;
+                        }
+
+                        await {{volumeScript}};
+                        const playbackResult = await {{playbackScript}};
                         if (!playbackResult?.ok || !playbackResult.found) {
                             return false;
                         }
 
-                        await ({{initialLivePlaybackScript}});
-                        await ({{abRepeatScript}});
+                        await {{initialLivePlaybackScript}};
+                        await {{abRepeatScript}};
+                        const finalMuteResult = await {{muteScript}};
+                        if (!finalMuteResult?.ok || !finalMuteResult.found) {
+                            return false;
+                        }
+
                         state.applied = true;
                         removeListeners();
                         return true;
@@ -4798,17 +4823,20 @@ public static class YouTubeControlScriptService
     public static string BuildVolumeScript(
         double volume,
         bool markMiniPlayerUserOverride = false,
-        bool respectMiniPlayerUserOverride = false)
+        bool respectMiniPlayerUserOverride = false,
+        bool unmuteOnVolumeChange = true)
     {
         var volumeText = Math.Max(0, Math.Min(1, volume)).ToString(CultureInfo.InvariantCulture);
         var markUserOverrideText = markMiniPlayerUserOverride ? "true" : "false";
         var respectUserOverrideText = respectMiniPlayerUserOverride ? "true" : "false";
+        var unmuteOnVolumeChangeText = unmuteOnVolumeChange ? "true" : "false";
 
         return $$"""
             (() => {
                 const volume = {{volumeText}};
                 const markMiniPlayerUserOverride = {{markUserOverrideText}};
                 const respectMiniPlayerUserOverride = {{respectUserOverrideText}};
+                const unmuteOnVolumeChange = {{unmuteOnVolumeChangeText}};
                 const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
                 const video = document.querySelector("video");
                 if (!video) {
@@ -4840,7 +4868,7 @@ public static class YouTubeControlScriptService
                     player.setVolume(Math.round(volume * 100));
                 }
 
-                if (volume > 0) {
+                if (volume > 0 && unmuteOnVolumeChange) {
                     video.muted = false;
                     if (player && typeof player.unMute === "function") {
                         player.unMute();

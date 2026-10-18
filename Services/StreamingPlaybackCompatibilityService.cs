@@ -7,23 +7,14 @@ public readonly record struct StreamingPlaybackFailureMessage(int MediaErrorCode
 public static class StreamingPlaybackCompatibilityService
 {
     public const string MessageType = "streamingPlaybackFailure";
-    public const string CompatibilityActiveMessageType = "streamingPlaybackCompatibilityActive";
-
-    public const string RetryStartingMessage =
-        "映像再生エラーを検出。互換再試行中: この再読み込みだけページとのTabBrowser連携を一時停止します（User-Agent・Cookie・DRM設定は変更しません）";
-
-    public const string RetryCompletedMessage =
-        "ページとのTabBrowser連携を一時停止した互換モードで再読み込みしました";
-
-    public const string RetryUnavailableMessage =
-        "映像の互換モード再試行を開始できませんでした";
 
     public static bool IsEligiblePageUrl(string? value)
     {
         if (!TryGetWebUri(value, out var uri)
             || uri.IsLoopback
             || YouTubeUrlService.IsYouTubeUrl(value!)
-            || AmazonPrimeVideoService.IsPotentialPlaybackPageUrl(value))
+
+            )
         {
             return false;
         }
@@ -38,24 +29,6 @@ public static class StreamingPlaybackCompatibilityService
             && string.Equals(pageUri.Scheme, sourceUri.Scheme, StringComparison.OrdinalIgnoreCase)
             && string.Equals(pageUri.Host, sourceUri.Host, StringComparison.OrdinalIgnoreCase)
             && pageUri.Port == sourceUri.Port;
-    }
-
-    public static bool TryGetCompatibilityRetryTarget(
-        string? pageUrl,
-        out string origin,
-        out string retryKey)
-    {
-        origin = string.Empty;
-        retryKey = string.Empty;
-        if (!IsEligiblePageUrl(pageUrl)
-            || !TryGetWebUri(pageUrl, out var uri))
-        {
-            return false;
-        }
-
-        origin = uri.GetLeftPart(UriPartial.Authority);
-        retryKey = uri.GetLeftPart(UriPartial.Query);
-        return true;
     }
 
     public static string BuildFailureBridgeScript(string webMessageToken)
@@ -127,57 +100,6 @@ public static class StreamingPlaybackCompatibilityService
                     configurable: true
                 });
             })();
-            """;
-    }
-
-    public static string BuildCompatibilityRetryScript(
-        string webMessageToken,
-        string expectedOrigin)
-    {
-        var serializedToken = JsonSerializer.Serialize(webMessageToken ?? string.Empty);
-        var serializedOrigin = JsonSerializer.Serialize(expectedOrigin ?? string.Empty);
-        var serializedMessageType = JsonSerializer.Serialize(CompatibilityActiveMessageType);
-        return $$"""
-            (() => {
-                if (window.top !== window || location.origin !== {{serializedOrigin}}) {
-                    return;
-                }
-
-                const token = {{serializedToken}};
-                const messageType = {{serializedMessageType}};
-                const nativePostMessage = globalThis.chrome?.webview?.postMessage?.bind(globalThis.chrome.webview);
-                const hasWebViewBridge = () => !!globalThis.chrome
-                    && Object.prototype.hasOwnProperty.call(globalThis.chrome, 'webview');
-                const started = Date.now();
-                let bridgeWasFound = false;
-                let absentChecks = 0;
-                const removeBridge = () => {
-                    try {
-                        if (hasWebViewBridge()) {
-                            if (!bridgeWasFound) {
-                                nativePostMessage?.({
-                                    type: messageType,
-                                    tabBrowserToken: token
-                                });
-                            }
-
-                            bridgeWasFound = true;
-                            absentChecks = 0;
-                            delete globalThis.chrome.webview;
-                        } else if (bridgeWasFound) {
-                            absentChecks++;
-                        }
-                    } catch {
-                        // WebView2がブリッジを追加するまで、短時間だけ再試行する。
-                    }
-
-                    if (absentChecks >= 2 || Date.now() - started >= 10000) {
-                        clearInterval(timer);
-                    }
-                };
-                const timer = setInterval(removeBridge, 0);
-                removeBridge();
-            })()
             """;
     }
 

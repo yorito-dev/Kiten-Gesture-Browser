@@ -67,6 +67,12 @@ internal static class YouTubeMiniPlayerPositionCallbackFactory
             FrameworkElement root,
             bool ensureVisible)
         {
+            // 動画切替後の通常サイズ補正で、全画面の自動伸縮を固定サイズに戻さない。
+            if (runtimes.TryGetValue(state.Id, out var runtime) && runtime.IsFullScreen)
+            {
+                return;
+            }
+
             YouTubeMiniPlayerPositionService.ClampToHost(
                 state,
                 root,
