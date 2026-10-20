@@ -45,11 +45,19 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                 YouTubeMiniPlayerRuntimeLifecycleService.AttachFullScreenHandler(
                     runtimes[currentState.Id]);
             },
-            (currentState, webView) =>
+            (currentState, webView, args) =>
             {
                 if (IsCurrentWebView(currentState, webView, runtimes))
                 {
                     var runtime = runtimes[currentState.Id];
+                    if (args.IsUserInitiated)
+                    {
+                        runtime.LiveContinuationNavigation = null;
+                    }
+                    if (runtime.LiveContinuationNavigation is { } continuation)
+                    {
+                        continuation.NavigationId = args.NavigationId;
+                    }
                     runtime.InactiveSuspendGeneration++;
                     runtime.IsNavigationLoading = true;
                     runtime.IsSuspendedForInactivity = false;
@@ -68,6 +76,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
             {
                 if (!IsCurrentWebView(currentState, webView, runtimes)
                     || webView.CoreWebView2 is not { } core
+                    || runtimes[currentState.Id].LiveContinuationNavigation is not null
                     || !YouTubeMiniPlayerNavigationService.TryApplyCurrentVideoUrl(
                         currentState,
                         core.Source))
@@ -106,8 +115,81 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                 }
 
                 var runtime = runtimes[currentState.Id];
+                if (runtime.LiveContinuationNavigation is { NavigationId: { } navigationId }
+                    && navigationId != args.NavigationId)
+                {
+                    return;
+                }
                 runtime.InactiveSuspendGeneration++;
                 runtime.IsNavigationLoading = false;
+
+                if (runtime.LiveContinuationNavigation is { } continuation)
+                {
+                    if (continuation.NavigationId != args.NavigationId
+                        || webView.CoreWebView2 is not { } continuationCore)
+                    {
+                        return;
+                    }
+
+                    var destination = continuationCore.Source;
+                    string? destinationResult = null;
+                    if (args.IsSuccess && runtime.IsLiveContinuationEnabled
+                        && YouTubeUrlService.TryGetVideoId(destination, out var destinationVideoId))
+                    {
+                        try
+                        {
+                            // 現在表示しているページの既存の状態取得を再利用する。別ページは取得しない。
+                            destinationResult = await continuationCore.ExecuteScriptAsync(
+                                YouTubeMiniPlayerWebViewService.BuildLiveStatusScript(destinationVideoId));
+                        }
+                        catch
+                        {
+                            // 確認できない移動先は、下で元の動画へ一度だけ戻す。
+                        }
+                    }
+
+                    if (!IsCurrentWebView(currentState, webView, runtimes)
+                        || runtime.IsDisposed
+                        || !ReferenceEquals(YouTubeMiniPlayerRuntimeLifecycleService.TryGetCoreWebView2(runtime), continuationCore)
+                        || !ReferenceEquals(runtime.LiveContinuationNavigation, continuation)
+                        || runtime.IsNavigationLoading || continuation.NavigationId != args.NavigationId
+                        || !string.Equals(continuationCore.Source, destination, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    if (!runtime.IsLiveContinuationEnabled)
+                    {
+                        destinationResult = null;
+                    }
+                    if (!continuation.TryResolve(destination, destinationResult, out var returnTo))
+                    {
+                        return;
+                    }
+
+                    runtime.LiveContinuationNavigation = null;
+                    if (returnTo is not null)
+                    {
+                        setStatus("続きのライブは見つかりませんでした");
+                        try
+                        {
+                            YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(continuationCore, returnTo);
+                        }
+                        catch
+                        {
+                            setStatus("元の動画へ戻れませんでした");
+                        }
+                        return;
+                    }
+
+                    currentState.IsPaused = false;
+                    runtime.IsInitialLivePlaybackResolved = false;
+                    if (YouTubeMiniPlayerNavigationService.TryApplyCurrentVideoUrl(currentState, destination))
+                    {
+                        beginLiveChatTransition(currentState);
+                        queueSave();
+                    }
+                }
 
                 if (!args.IsSuccess)
                 {

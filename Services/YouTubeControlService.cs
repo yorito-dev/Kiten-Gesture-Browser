@@ -291,6 +291,12 @@ public sealed class YouTubeControlService
             tab,
             YouTubeControlScriptService.BuildSpeedScript(delta, targetSpeed: null),
             true);
+        if (YouTubeControlScriptService.IsAdvertisementBlockedResult(resultJson))
+        {
+            _setStatus(YouTubeControlScriptService.AdvertisementBlockedMessage, true);
+            return;
+        }
+
         var changed = ShowSpeedStatus(tab, resultJson);
         changed |= await CapturePlaybackStateAsync(tab);
         if (changed)
@@ -305,6 +311,12 @@ public sealed class YouTubeControlService
             tab,
             YouTubeControlScriptService.BuildSpeedScript(delta: null, speed),
             true);
+        if (YouTubeControlScriptService.IsAdvertisementBlockedResult(resultJson))
+        {
+            _setStatus(YouTubeControlScriptService.AdvertisementBlockedMessage, true);
+            return;
+        }
+
         var changed = ShowSpeedStatus(tab, resultJson);
         changed |= await CapturePlaybackStateAsync(tab);
         if (changed)

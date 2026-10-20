@@ -13,17 +13,17 @@
 この版で案内する実行用ZIPは次の1種類である。
 
 ```text
-Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip
+Kiten-Gesture-Browser-0.1.0-preview.3-win-x64.zip
 ```
 
-GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPではない。ダウンロード後は、配布ページに記載されたSHA-256と、ZIPと隣にある同名の`Kiten-Gesture-Browser-0.1.0-preview.2-win-x64.zip.sha256`の値が一致することを確認する。実行ファイルとmanifestに記録されるソースSHAは開発用リポジトリのcommitである。Releaseページには、そのSHAと、同じ内容を公開しているKiten-Gesture-Browserのcommit（Releaseタグの指す先）の対応を記載する。
+GitHub等が自動生成する`Source code` ZIPは、Kitenの実行用ZIPではない。ダウンロード後は、配布ページに記載されたSHA-256と、ZIPと隣にある同名の`Kiten-Gesture-Browser-0.1.0-preview.3-win-x64.zip.sha256`の値が一致することを確認する。実行ファイルとmanifestに記録されるソースSHAは開発用リポジトリのcommitである。Releaseページには、そのSHAと、同じ内容を公開しているKiten-Gesture-Browserのcommit（Releaseタグの指す先）の対応を記載する。
 
 ## 2. 動作条件
 
 - 検証対象: Windows 11 x64
 - 必要な外部Runtime: Microsoft Edge WebView2 Evergreen Runtime
 - .NET: 実行用ZIPへ同梱する自己完結型。利用者による.NET SDKの導入は不要
-- バックアップ: `0.1.0-preview.2`には`Maintenance\Backup-KitenData.cmd`を同梱している。[同梱の補助ファイルで作成する方法](backup-restore-guide.md#31-ダブルクリックで作成する)ではPowerShell 7不要。`0.1.0-preview.1`には同梱していないため、同じページの旧版向け補足を参照する
+- バックアップ: `0.1.0-preview.3`には`Maintenance\Backup-KitenData.cmd`を同梱している。[同梱の補助ファイルで作成する方法](backup-restore-guide.md#31-ダブルクリックで作成する)ではPowerShell 7不要。`0.1.0-preview.1`には同梱していないため、同じページの旧版向け補足を参照する
 - PowerShellスクリプトによるバックアップ／復元: PowerShell 7以上（`pwsh`）。未導入の場合はMicrosoft公式の[WindowsへのPowerShell導入手順](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows)に従う
 - インストーラー、自動更新、Microsoft Store版: この版の対象外
 

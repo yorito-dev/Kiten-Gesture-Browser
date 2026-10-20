@@ -48,7 +48,8 @@ internal static class YouTubeMiniPlayerTitleService
 
     public static bool TryApplyDocumentTitle(YouTubeMiniPlayerRuntime runtime)
     {
-        if (runtime.WebView?.CoreWebView2 is not { } core)
+        if (runtime.LiveContinuationNavigation is not null
+            || runtime.WebView?.CoreWebView2 is not { } core)
         {
             return false;
         }

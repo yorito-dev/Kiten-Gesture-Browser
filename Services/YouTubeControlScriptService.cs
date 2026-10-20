@@ -10,6 +10,35 @@ public static class YouTubeControlScriptService
     public const double MinimumSpeed = 0.25;
     public const double MaximumSpeed = 2.0;
     private const double SpeedComparisonTolerance = 0.01;
+    internal const string AdvertisementBlockedMessage = "広告の再生中は操作できません";
+    internal const string AdvertisementPlayingExpression = """
+        (() => {
+            const adPlayer = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+            return Boolean(adPlayer?.classList?.contains("ad-showing")
+                || adPlayer?.classList?.contains("ad-interrupting"));
+        })()
+        """;
+
+    internal static bool IsAdvertisementBlockedResult(string? resultJson)
+    {
+        if (string.IsNullOrWhiteSpace(resultJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(resultJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("reason", out var reason)
+                && reason.ValueKind == JsonValueKind.String
+                && reason.GetString() == "advertisement";
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     public static double? NormalizePlaybackPosition(double? positionSeconds)
     {
@@ -2535,6 +2564,7 @@ public static class YouTubeControlScriptService
                     const miniPlayerGestureGuideMovementTolerance = 4;
                     const rewindStepSeconds = 0.5;
                     const rewindIntervalMilliseconds = 250;
+                    const isAdvertisementPlaying = () => __TAB_BROWSER_YOUTUBE_MINI_PLAYER_AD_PLAYING__;
                     const getHoldSeekIndicator = () => {
                         let indicator = document.getElementById("tabbrowser-youtube-mini-player-hold-seek-indicator");
                         if (indicator) {
@@ -2780,6 +2810,11 @@ public static class YouTubeControlScriptService
                             return;
                         }
 
+                        if (isAdvertisementPlaying()) {
+                            showHoldSeekIndicator("広告の再生中は操作できません");
+                            return { ok: false, skipped: true, reason: "advertisement" };
+                        }
+
                         if (holdSeekState.direction < 0 && applyRewindStep) {
                             video.currentTime = Math.max(0, video.currentTime - rewindStepSeconds);
                         }
@@ -2796,7 +2831,7 @@ public static class YouTubeControlScriptService
                         }
 
                         const video = holdSeekState.video;
-                        if (video) {
+                        if (video && !isAdvertisementPlaying()) {
                             video.playbackRate = holdSeekState.previousPlaybackRate;
                             if (holdSeekState.wasPaused) {
                                 video.pause();
@@ -2809,6 +2844,11 @@ public static class YouTubeControlScriptService
                         hideHoldSeekIndicator();
                     };
                     const applyHoldSeekDirection = direction => {
+                        if (isAdvertisementPlaying()) {
+                            showHoldSeekIndicator("広告の再生中は操作できません");
+                            return { ok: false, skipped: true, reason: "advertisement" };
+                        }
+
                         const video = holdSeekState.video;
                         if (!video) {
                             return;
@@ -2829,6 +2869,11 @@ public static class YouTubeControlScriptService
                         updateHoldSeekIndicator(false);
                     };
                     const activateHoldSeek = (direction, event) => {
+                        if (isAdvertisementPlaying()) {
+                            showHoldSeekIndicator("広告の再生中は操作できません");
+                            return { ok: false, skipped: true, reason: "advertisement" };
+                        }
+
                         const video = getVideo();
                         if (!video) {
                             return;
@@ -3164,6 +3209,10 @@ public static class YouTubeControlScriptService
                 .Replace(
                     "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_AUDIO_BOOST_DECIBELS__",
                     serializedAudioBoostDecibels,
+                    StringComparison.Ordinal)
+                .Replace(
+                    "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_AD_PLAYING__",
+                    AdvertisementPlayingExpression,
                     StringComparison.Ordinal)
                 .Replace(
                     "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_AUDIO_BOOST_GAIN__",
@@ -3738,6 +3787,9 @@ public static class YouTubeControlScriptService
                 const targetLooping = {{loopingText}};
                 const targetTheaterMode = {{theaterModeText}};
                 const respectMiniPlayerUserOverride = {{respectUserOverrideText}};
+                if ({{AdvertisementPlayingExpression}}) {
+                    return { ok: false, found: true, skipped: true, reason: "advertisement" };
+                }
                 const savedStateRestoreGuard = window.__tabBrowserYouTubeMiniPlayerSavedStateRestoreGuard;
                 const userOverrodePlayback = respectMiniPlayerUserOverride
                     && Boolean(savedStateRestoreGuard?.playback);
@@ -3880,6 +3932,8 @@ public static class YouTubeControlScriptService
                     requestKey,
                     applied: false,
                     applying: false,
+                    adPlayer: null,
+                    adObserver: null,
                     theaterObserver: null,
                     attempt: null,
                     dispose: null
@@ -3911,12 +3965,22 @@ public static class YouTubeControlScriptService
                     }
                 };
                 const isExpectedVideoReady = () => {
+                    const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                    if (state.adPlayer !== player) {
+                        state.adObserver?.disconnect();
+                        state.adPlayer = player;
+                        state.adObserver = player ? new MutationObserver(() => state.attempt()) : null;
+                        state.adObserver?.observe(player, { attributes: true, attributeFilter: ["class"] });
+                    }
+                    if ({{AdvertisementPlayingExpression}}) {
+                        return false;
+                    }
                     if (readLocationVideoId() !== expectedVideoId) {
                         return false;
                     }
 
                     const playerVideoId = readPlayerVideoId();
-                    if (playerVideoId && playerVideoId !== expectedVideoId) {
+                    if (playerVideoId !== expectedVideoId) {
                         return false;
                     }
 
@@ -3944,8 +4008,11 @@ public static class YouTubeControlScriptService
                     return false;
                 };
                 const removeListeners = () => {
+                    state.adObserver?.disconnect();
+                    state.adObserver = null;
                     document.removeEventListener("loadedmetadata", state.attempt, true);
                     document.removeEventListener("canplay", state.attempt, true);
+                    document.removeEventListener("playing", state.attempt, true);
                     document.removeEventListener("durationchange", state.attempt, true);
                     document.removeEventListener("yt-navigate-finish", state.attempt, true);
                     state.theaterObserver?.disconnect();
@@ -3991,6 +4058,7 @@ public static class YouTubeControlScriptService
 
                 document.addEventListener("loadedmetadata", state.attempt, true);
                 document.addEventListener("canplay", state.attempt, true);
+                document.addEventListener("playing", state.attempt, true);
                 document.addEventListener("durationchange", state.attempt, true);
                 document.addEventListener("yt-navigate-finish", state.attempt, true);
                 if (targetTheaterMode !== null) {
@@ -4080,6 +4148,8 @@ public static class YouTubeControlScriptService
                     requestKey,
                     applied: false,
                     applying: false,
+                    adPlayer: null,
+                    adObserver: null,
                     attempt: null,
                     dispose: null
                 };
@@ -4110,12 +4180,22 @@ public static class YouTubeControlScriptService
                     }
                 };
                 const isExpectedVideoReady = () => {
+                    const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                    if (state.adPlayer !== player) {
+                        state.adObserver?.disconnect();
+                        state.adPlayer = player;
+                        state.adObserver = player ? new MutationObserver(() => state.attempt()) : null;
+                        state.adObserver?.observe(player, { attributes: true, attributeFilter: ["class"] });
+                    }
+                    if ({{AdvertisementPlayingExpression}}) {
+                        return false;
+                    }
                     if (readLocationVideoId() !== expectedVideoId) {
                         return false;
                     }
 
                     const playerVideoId = readPlayerVideoId();
-                    if (playerVideoId && playerVideoId !== expectedVideoId) {
+                    if (playerVideoId !== expectedVideoId) {
                         return false;
                     }
 
@@ -4123,6 +4203,8 @@ public static class YouTubeControlScriptService
                     return Boolean(video && video.readyState >= HTMLMediaElement.HAVE_METADATA);
                 };
                 const removeListeners = () => {
+                    state.adObserver?.disconnect();
+                    state.adObserver = null;
                     document.removeEventListener("loadedmetadata", state.attempt, true);
                     document.removeEventListener("canplay", state.attempt, true);
                     document.removeEventListener("durationchange", state.attempt, true);
@@ -4148,7 +4230,9 @@ public static class YouTubeControlScriptService
                             return false;
                         }
 
+                        if (!isExpectedVideoReady()) return false;
                         await {{initialLivePlaybackScript}};
+                        if (!isExpectedVideoReady()) return false;
                         await {{abRepeatScript}};
                         const finalMuteResult = await {{muteScript}};
                         if (!finalMuteResult?.ok || !finalMuteResult.found) {
@@ -4188,6 +4272,10 @@ public static class YouTubeControlScriptService
                 const targetSpeed = {{targetText}};
                 const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
                 const video = document.querySelector("video");
+                if ({{AdvertisementPlayingExpression}}) {
+                    return { ok: false, found: true, skipped: true, reason: "advertisement" };
+                }
+
                 let current = 1;
                 if (player && typeof player.getPlaybackRate === "function") {
                     current = Number(player.getPlaybackRate()) || 1;
@@ -4406,6 +4494,10 @@ public static class YouTubeControlScriptService
                     return { ok: false, found: false };
                 }
 
+                if ({{AdvertisementPlayingExpression}}) {
+                    return { ok: false, found: true, skipped: true, reason: "advertisement" };
+                }
+
                 const duration = Number.isFinite(video.duration) ? video.duration : 0;
                 const maximum = duration > 0 ? duration : Number.MAX_SAFE_INTEGER;
                 const position = Math.max(0, Math.min(maximum, (Number(video.currentTime) || 0) + deltaSeconds));
@@ -4443,6 +4535,10 @@ public static class YouTubeControlScriptService
                     return { ok: false, found: false };
                 }
 
+                if ({{AdvertisementPlayingExpression}}) {
+                    return { ok: false, found: true, skipped: true, reason: "advertisement" };
+                }
+
                 const duration = Number(video.duration);
                 if (!Number.isFinite(duration) || duration <= 0) {
                     return { ok: false, found: true, reason: "duration-unavailable" };
@@ -4473,12 +4569,16 @@ public static class YouTubeControlScriptService
 
     public static string BuildSeekToLiveEdgeScript()
     {
-        return """
+        return $$"""
             (() => {
                 const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
                 const video = document.querySelector("video");
                 if (!video) {
                     return { ok: false, found: false };
+                }
+
+                if ({{AdvertisementPlayingExpression}}) {
+                    return { ok: false, found: true, skipped: true, reason: "advertisement" };
                 }
 
                 const videoData = player && typeof player.getVideoData === "function"
@@ -4705,7 +4805,7 @@ public static class YouTubeControlScriptService
                     bridge.onBoundary = () => {
                         if (!bridge.enabled
                             || bridge.seeking
-                            || player?.classList?.contains("ad-showing")) {
+                            || {{AdvertisementPlayingExpression}}) {
                             return;
                         }
 

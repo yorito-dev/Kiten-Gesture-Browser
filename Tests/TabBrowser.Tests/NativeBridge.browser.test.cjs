@@ -23,7 +23,9 @@ function script(file, method, messageType, values = {}) {
     const text = readFileSync(resolve(__dirname, '../../' + file), 'utf8');
     const methodText = text.slice(text.indexOf('public static string ' + method + '('));
     const raw = methodText.match(/return (?:\$\$)?"""\r?\n([\s\S]*?)\r?\n\s*""";/)[1];
-    return raw.replaceAll('{{serializedToken}}', '"fixture-token"')
+    const adExpression = readFileSync(resolve(sourceRoot, 'Services/YouTubeControlScriptService.cs'), 'utf8')
+        .match(/const string AdvertisementPlayingExpression = """\r?\n([\s\S]*?)\r?\n\s*""";/)[1];
+    return raw.replaceAll('{{adPlayingExpression}}', adExpression).replaceAll('{{serializedToken}}', '"fixture-token"')
         .replaceAll('{{enabledJson}}', JSON.stringify(values.enabled ?? true))
         .replaceAll('{{tokenJson}}', '"fixture-token"')
         .replaceAll('{{messageTypeJson}}', JSON.stringify(messageType))
@@ -156,6 +158,7 @@ function miniPlayerScript(method, values) {
     const start = source.indexOf('static string ' + method + '(');
     assert.ok(start >= 0, method);
     const raw = source.slice(start).match(/return (?:\$\$)?"""\r?\n([\s\S]*?)\r?\n\s*""";/)[1];
+    values = { AdvertisementPlayingExpression: source.match(/const string AdvertisementPlayingExpression = """\r?\n([\s\S]*?)\r?\n\s*""";/)[1], ...values };
     return raw.replace(/\{\{(\w+)\}\}/g, (_, key) => {
         assert.ok(Object.hasOwn(values, key), method + ': ' + key);
         return values[key];
@@ -163,7 +166,7 @@ function miniPlayerScript(method, values) {
 }
 function muteRestoreHost({ muted = true, savedMuted = true, userOverride = false, playbackUnmutes = false,
     fullPlayback = false } = {}) {
-    const handlers = new Map(), transitions = [];
+    const handlers = new Map(), transitions = [], adClasses = new Set(), adObservers = new Set();
     let currentMuted = muted;
     const video = {
         readyState: 2, paused: false, volume: 0.4, playbackRate: 1, loop: false, duration: 100, currentTime: 0,
@@ -171,7 +174,7 @@ function muteRestoreHost({ muted = true, savedMuted = true, userOverride = false
         get muted() { return currentMuted; },
         set muted(value) { currentMuted = value; transitions.push(value); }
     };
-    const player = { mute() { video.muted = true; }, unMute() { video.muted = false; },
+    const player = { classList: { contains: name => adClasses.has(name) }, mute() { video.muted = true; }, unMute() { video.muted = false; },
         setVolume(value) { video.volume = value / 100; }, getVideoData() { return { video_id: 'fixture-video' }; },
         seekTo(value) { video.currentTime = value; if (playbackUnmutes) video.muted = false; } };
     const context = {
@@ -181,7 +184,9 @@ function muteRestoreHost({ muted = true, savedMuted = true, userOverride = false
             addEventListener(name, handler) { handlers.set(name, handler); },
             removeEventListener(name) { handlers.delete(name); }
         },
-        location: { href: 'https://www.youtube.com/watch?v=fixture-video' },
+        location: { protocol: 'https:', hostname: 'www.youtube.com', href: 'https://www.youtube.com/watch?v=fixture-video' },
+        MutationObserver: class { constructor(callback) { this.callback = callback; }
+            observe() { adObservers.add(this); } disconnect() { adObservers.delete(this); } },
         URL, HTMLMediaElement: { HAVE_METADATA: 1 }, videoAvailable: true,
         __tabBrowserYouTubeMiniPlayerSavedStateRestoreGuard: { audio: userOverride },
         playbackRestore() { if (playbackUnmutes) video.muted = false; return { ok: true, found: true }; }
@@ -209,7 +214,7 @@ function muteRestoreHost({ muted = true, savedMuted = true, userOverride = false
         videoIdJson: '"fixture-video"', requestKeyJson: '"fixture-request"', volumeScript, muteScript,
         playbackScript, initialLivePlaybackScript, abRepeatScript
     });
-    return { context, video, handlers, transitions, volumeScript, restoreScript };
+    return { context, video, player, handlers, transitions, volumeScript, restoreScript, adClasses, adObservers };
 }
 test('保存音量を復元してもミュートを一瞬解除しない', async () => {
     const h = muteRestoreHost();
@@ -290,8 +295,77 @@ test('保存状態が音声ありならミュートへ変更しない', async ()
 });
 
 // ライブ継続枠の通信・時計・ページは架空のものだけを使う。
+// 広告状態のclassだけを変えた場合も、本編IDを確認して一度だけ復元する。
+for (const adClass of ['ad-showing', 'ad-interrupting']) {
+    for (const normalTab of [false, true]) {
+        test(`広告中は保存状態を適用せず、本編で一度だけ復元する: ${adClass}/${normalTab ? 'tab' : 'mini'}`, async () => {
+            const h = muteRestoreHost({ fullPlayback: true });
+            h.adClasses.add(adClass);
+            let seeks = 0;
+            h.player.seekTo = value => { seeks++; h.video.currentTime = value; };
+            const restore = miniPlayerScript('BuildPlaybackStateRestoreScript', {
+                positionText: '30', speedText: '1.5', pauseText: 'false', loopingText: 'true',
+                theaterModeText: 'null', respectUserOverrideText: 'true'
+            });
+            const code = normalTab ? miniPlayerScript('BuildPlaybackStateRestoreReadyBridgeScript', {
+                webMessageTokenJson: '"test-token"', videoIdJson: '"fixture-video"', requestKeyJson: '"normal"',
+                theaterModeText: 'null', restoreScript: restore
+            }) : h.restoreScript;
+            h.context.chrome = { webview: { postMessage() {} } };
+            vm.runInContext(code, h.context);
+            await new Promise(setImmediate);
+            assert.equal(seeks, 0); assert.equal(h.video.currentTime, 0);
+            assert.equal(h.video.playbackRate, 1); assert.equal(h.video.loop, false);
+            // 広告classが消えても、playerが広告の動画IDの間は待つ。
+            h.adClasses.clear(); h.player.getVideoData = () => ({ video_id: 'advertisement' });
+            for (const observer of [...h.adObservers]) observer.callback();
+            await new Promise(setImmediate); assert.equal(seeks, 0);
+            h.player.getVideoData = () => ({ video_id: 'fixture-video' });
+            h.handlers.get('playing')?.();
+            await new Promise(setImmediate);
+            assert.equal(seeks, 1); assert.equal(h.video.currentTime, 30); assert.equal(h.video.playbackRate, 1.5);
+            h.handlers.get('canplay')?.(); h.handlers.get('playing')?.();
+            await new Promise(setImmediate); assert.equal(seeks, 1);
+        });
+    }
+    test('広告中の速度・各シークは何も変更せず理由を返す: ' + adClass, () => {
+        const h = muteRestoreHost(); h.adClasses.add(adClass);
+        for (const [method, values] of [
+            ['BuildSpeedScript', { deltaText: '0.25', targetText: 'null' }],
+            ['BuildSeekRelativeScript', { deltaText: '10' }],
+            ['BuildSeekToRatioScript', { ratioText: '0.5' }],
+            ['BuildSeekToLiveEdgeScript', {}],
+            ['BuildPlaybackStateRestoreScript', { positionText: '30', speedText: '1.5', pauseText: 'true',
+                loopingText: 'true', theaterModeText: 'true', respectUserOverrideText: 'false' }]
+        ]) {
+            const valuesWithBounds = { 'MinimumSpeed.ToString(CultureInfo.InvariantCulture)': '0.25',
+                'MaximumSpeed.ToString(CultureInfo.InvariantCulture)': '2', ...values };
+            // C#の数値定数を展開し、それ以外は既存の抽出器で実スクリプトを使う。
+            let code = miniPlayerScript(method, valuesWithBounds)
+                .replaceAll('{{MinimumSpeed.ToString(CultureInfo.InvariantCulture)}}', '0.25')
+                .replaceAll('{{MaximumSpeed.ToString(CultureInfo.InvariantCulture)}}', '2');
+            const result = vm.runInContext(code, h.context);
+            assert.equal(result.ok, false, method); assert.equal(result.reason, 'advertisement', method);
+            assert.equal(h.video.currentTime, 0, method); assert.equal(h.video.playbackRate, 1, method);
+            assert.equal(h.video.loop, false, method); assert.equal(h.video.paused, false, method);
+        }
+    });
+    test('広告中も再生・一時停止・音量・ミュートを使える: ' + adClass, async () => {
+        const h = muteRestoreHost({ muted: false }); h.adClasses.add(adClass);
+        h.video.pause = () => { h.video.paused = true; };
+        h.video.play = () => { h.video.paused = false; return Promise.resolve(); };
+        assert.equal((await vm.runInContext(miniPlayerScript('BuildPlayPauseScript', {}), h.context)).ok, true);
+        assert.equal(h.video.paused, true);
+        assert.equal((await vm.runInContext(miniPlayerScript('BuildPlayPauseScript', {}), h.context)).ok, true);
+        assert.equal(h.video.paused, false);
+        vm.runInContext(h.volumeScript, h.context); assert.equal(h.video.volume, 0.4);
+        vm.runInContext(miniPlayerScript('BuildMuteScript', { targetText: 'true', markUserOverrideText: 'true',
+            respectUserOverrideText: 'false' }), h.context); assert.equal(h.video.muted, true);
+    });
+}
+
 function continuationHost() {
-    const events = new Map(), timers = new Map(), posts = [], requests = [];
+    const events = new Map(), timers = new Map(), posts = [], requests = [], adClasses = new Set();
     const channelId = 'UC' + 'a'.repeat(22);
     const response = (id = 'oldLive1234') => ({
         videoDetails: { videoId: id, channelId, isLiveContent: true },
@@ -301,7 +375,7 @@ function continuationHost() {
     });
     const video = { ended: false, loop: false, muted: true, volume: 0.3 };
     let playerState = 1, timerId = 0, onState;
-    const player = { querySelector: () => video, classList: { contains: () => false },
+    const player = { querySelector: () => video, classList: { contains: name => adClasses.has(name) },
         getPlayerResponse: () => h.currentResponse, getPlayerState: () => playerState,
         addEventListener(name, handler) { if (name === 'onStateChange') onState = handler; },
         removeEventListener() { onState = null; } };
@@ -314,19 +388,14 @@ function continuationHost() {
         location: { protocol: 'https:', hostname: 'www.youtube.com', href: 'https://www.youtube.com/watch?v=oldLive1234' },
         document: { getElementById: () => player, querySelector: () => player,
             addEventListener: add, removeEventListener: remove },
-        addEventListener: add, removeEventListener: remove, URL, AbortController, Date,
+        addEventListener: add, removeEventListener: remove, URL, Date,
         setTimeout(callback, ms) { const id = ++timerId; timers.set(id, { callback, ms }); return id; },
         clearTimeout(id) { timers.delete(id); },
         chrome: { webview: { postMessage: value => posts.push(value) } },
-        async fetch(url, options) {
-            requests.push({ url, options });
-            if (h.fetchOverride) return h.fetchOverride(options);
-            return { ok: true, url: 'https://www.youtube.com/watch?v=newLive1234',
-                text: async () => 'var ytInitialPlayerResponse = ' + JSON.stringify(h.nextResponse) + '; otherScript();' };
-        }
+        fetch(...args) { requests.push(args); throw new Error('継続bridgeはfetchを呼んではならない'); }
     };
-    const h = { context, events, timers, posts, requests, video, player, response,
-        currentResponse: response(), nextResponse: response('newLive1234'),
+    const h = { context, events, timers, posts, requests, adClasses, video, player, response,
+        currentResponse: response(),
         fire(name, target = video) { for (const handler of [...events.get(name) || []]) handler({ target }); },
         end() { video.ended = true; playerState = 0; h.fire('ended'); },
         playerEnd() { playerState = 0; onState(0); },
@@ -334,9 +403,7 @@ function continuationHost() {
         async tick(ms) {
             const entry = [...timers].find(([, timer]) => timer.ms === ms);
             assert.ok(entry, 'timer: ' + ms);
-            timers.delete(entry[0]);
-            await entry[1].callback();
-            await new Promise(setImmediate);
+            timers.delete(entry[0]); await entry[1].callback(); await new Promise(setImmediate);
         },
         install(enabled = true) { return vm.runInContext(script('Services/YouTubeMiniPlayerWebViewService.cs',
             'BuildLiveContinuationBridgeScript', '', { enabled }), context); }
@@ -345,91 +412,61 @@ function continuationHost() {
     return h;
 }
 
-test('ライブ終了時だけ同じ配信者の別枠を通知し、音声設定を変更しない', async () => {
-    const h = continuationHost();
-    h.nextResponse.videoDetails.title = 'JSON内の { 括弧 } と "引用"';
-    h.install();
-    assert.equal(h.requests.length, 0);
-    assert.equal(h.timers.size, 0);
-    h.end();
-    assert.equal(h.requests.length, 0);
+test('ライブ終了2秒後にチャンネルIDだけを一度通知し、fetchもHTML解析もしない', async () => {
+    const h = continuationHost(); h.install();
+    assert.equal(h.timers.size, 0); h.end(); h.fire('ended'); h.install();
+    assert.equal(h.posts.length, 0); assert.equal(h.timers.size, 1);
     await h.tick(2000);
-    assert.equal(h.requests.length, 1);
-    assert.equal(h.requests[0].url, 'https://www.youtube.com/channel/' + h.currentResponse.videoDetails.channelId + '/live');
-    assert.equal(h.requests[0].options.credentials, 'omit');
-    assert.equal(h.requests[0].options.cache, 'no-store');
-    assert.equal(h.posts.length, 1);
-    assert.equal(h.posts[0].type, 'youtubeMiniPlayerLiveContinuation');
-    assert.equal(h.posts[0].token, 'fixture-token');
-    assert.equal(h.posts[0].sourceVideoId, 'oldLive1234');
-    assert.equal(h.posts[0].nextVideoId, 'newLive1234');
-    assert.equal(h.video.muted, true);
-    assert.equal(h.video.volume, 0.3);
-    assert.equal(h.timers.size, 0);
+    assert.equal(h.posts.length, 1); assert.equal(h.posts[0].type, 'youtubeMiniPlayerLiveContinuation');
+    assert.equal(h.posts[0].channelId, h.currentResponse.videoDetails.channelId);
+    assert.equal(h.posts[0].sourceVideoId, 'oldLive1234'); assert.equal(h.posts[0].token, 'fixture-token');
+    assert.equal(Object.hasOwn(h.posts[0], 'nextVideoId'), false); assert.equal(Object.hasOwn(h.posts[0], 'url'), false);
+    h.fire('ended'); h.fire('canplay'); h.install();
+    assert.equal(h.posts.length, 1); assert.equal(h.requests.length, 0); assert.equal(h.timers.size, 0);
+    assert.equal(h.video.muted, true); assert.equal(h.video.volume, 0.3);
+    const code = script('Services/YouTubeMiniPlayerWebViewService.cs', 'BuildLiveContinuationBridgeScript', '');
+    assert.doesNotMatch(code, /\bfetch\s*\(|readResponse|JSON\.parse|10000|AbortController/);
 });
 
-for (const mode of ['通常動画', 'アーカイブ', '予約枠', '別動画の古いメタデータ']) {
-    test('継続確認を開始しない: ' + mode, () => {
+for (const mode of ['通常動画', 'アーカイブ', '予約枠', '別動画の古いメタデータ', '未来の開始時刻', '不正チャンネル', 'チャンネルなし']) {
+    test('ライブ終了通知を開始しない: ' + mode, () => {
         const h = continuationHost();
         if (mode === '通常動画') h.currentResponse = { videoDetails: { videoId: 'oldLive1234', channelId: h.currentResponse.videoDetails.channelId } };
         if (mode === 'アーカイブ') h.currentResponse.microformat.playerMicroformatRenderer.liveBroadcastDetails.isLiveNow = false;
         if (mode === '予約枠') h.currentResponse.videoDetails.isUpcoming = true;
         if (mode === '別動画の古いメタデータ') h.currentResponse.videoDetails.videoId = 'another1234';
+        if (mode === '未来の開始時刻') h.currentResponse.microformat.playerMicroformatRenderer.liveBroadcastDetails.startTimestamp = '2999-01-01T00:00:00Z';
+        if (mode === '不正チャンネル') h.currentResponse.videoDetails.channelId = 'UCbad/../../';
+        if (mode === 'チャンネルなし') delete h.currentResponse.videoDetails.channelId;
         h.install(); h.end();
-        assert.equal(h.requests.length, 0);
-        assert.equal(h.timers.size, 0);
-    });
-}
-for (const mode of ['終了済み', '予約枠', '別配信者', '同じ動画', '不正ID', '再生不可', '未来の開始時刻']) {
-    test('移動先から除外し、最大2回で確認を終える: ' + mode, async () => {
-        const h = continuationHost();
-        const candidate = h.nextResponse;
-        if (mode === '終了済み') candidate.microformat.playerMicroformatRenderer.liveBroadcastDetails.endTimestamp = '2026-01-02T00:00:00Z';
-        if (mode === '予約枠') candidate.videoDetails.isUpcoming = true;
-        if (mode === '別配信者') candidate.videoDetails.channelId = 'UC' + 'b'.repeat(22);
-        if (mode === '同じ動画') candidate.videoDetails.videoId = 'oldLive1234';
-        if (mode === '不正ID') candidate.videoDetails.videoId = 'id&evil=1';
-        if (mode === '再生不可') candidate.playabilityStatus.status = 'LOGIN_REQUIRED';
-        if (mode === '未来の開始時刻') candidate.microformat.playerMicroformatRenderer.liveBroadcastDetails.startTimestamp = '2999-01-01T00:00:00Z';
-        h.install(); h.end(); h.fire('ended'); h.install();
-        assert.equal(h.timers.size, 1);
-        await h.tick(2000); await h.tick(10000);
-        assert.equal(h.requests.length, 2);
-        assert.equal(h.posts.length, 0);
-        assert.equal(h.timers.size, 0);
+        assert.equal(h.requests.length, 0); assert.equal(h.posts.length, 0); assert.equal(h.timers.size, 0);
     });
 }
 
-test('継続枠の開始が遅れた場合は2回目に確認できる', async () => {
-    const h = continuationHost();
-    h.nextResponse = h.response();
-    h.install(); h.end(); await h.tick(2000);
-    h.nextResponse = h.response('newLive1234');
-    await h.tick(10000);
-    assert.equal(h.requests.length, 2);
-    assert.equal(h.posts.length, 1);
+test('YouTube自身が2秒以内に次へ移動した場合は通知を取り消す', () => {
+    const h = continuationHost(); h.install(); h.end();
+    h.context.location.href = 'https://www.youtube.com/watch?v=newLive1234'; h.fire('yt-navigate-start');
+    h.currentResponse = h.response('newLive1234');
+    h.replay(); // 新しい動画の再生状態を準備し、古い動画のended/state=0を引き継がない。
+    h.fire('yt-navigate-finish');
+    assert.equal(h.posts.length, 0); assert.equal(h.requests.length, 0); assert.equal(h.timers.size, 0);
 });
 
-test('YouTubeプレイヤーの終了通知でも確認を開始する', async () => {
-    const h = continuationHost();
-    h.install(); h.playerEnd(); await h.tick(2000);
-    assert.equal(h.posts.length, 1);
+test('YouTubeプレイヤーの終了通知からも2秒待って通知する', async () => {
+    const h = continuationHost(); h.install(); h.playerEnd();
+    assert.equal(h.posts.length, 0); await h.tick(2000);
+    assert.equal(h.posts.length, 1); assert.equal(h.requests.length, 0);
 });
 
-for (const reason of ['手動遷移', 'ページ破棄']) {
-    test('確認中の' + reason + 'で通信を中止し、遅れた結果を破棄する', async () => {
-        const h = continuationHost();
-        let complete;
-        h.fetchOverride = () => new Promise(resolve => { complete = resolve; });
-        h.install(); h.end();
-        const checking = h.tick(2000);
-        h.fire(reason === '手動遷移' ? 'yt-navigate-start' : 'pagehide');
-        assert.equal(h.requests[0].options.signal.aborted, true);
-        complete({ ok: true, url: 'https://www.youtube.com/watch?v=newLive1234',
-            text: async () => 'var ytInitialPlayerResponse=' + JSON.stringify(h.nextResponse) + ';' });
-        await checking;
-        assert.equal(h.posts.length, 0);
-        assert.equal(h.timers.size, 0);
+for (const reason of ['手動遷移', 'ページ破棄', '再生再開', 'シーク', 'OFF']) {
+    test('通知待ちの' + reason + 'で予約を取り消す', () => {
+        const h = continuationHost(); h.install(); h.end();
+        if (reason === '手動遷移') h.fire('yt-navigate-start');
+        if (reason === 'ページ破棄') h.fire('pagehide');
+        if (reason === '再生再開') h.replay();
+        if (reason === 'シーク') { h.replay(); h.fire('seeking'); }
+        if (reason === 'OFF') h.install(false);
+        assert.equal(h.posts.length, 0); assert.equal(h.requests.length, 0); assert.equal(h.timers.size, 0);
         if (reason === 'ページ破棄') {
             assert.equal(h.context.__tabBrowserMiniPlayerLiveContinuation, undefined);
             assert.equal([...h.events.values()].reduce((n, handlers) => n + handlers.size, 0), 0);
@@ -437,101 +474,46 @@ for (const reason of ['手動遷移', 'ページ破棄']) {
     });
 }
 
-test('配信終了後に再生を再開した場合は継続確認を取り消す', () => {
-    const h = continuationHost(); h.install(); h.end();
-    h.currentResponse.microformat.playerMicroformatRenderer.liveBroadcastDetails.isLiveNow = false;
-    h.replay();
-    assert.equal(h.timers.size, 0);
-    h.end();
-    assert.equal(h.timers.size, 0);
-});
-
-test('ループ中・広告中・古い動画要素の終了では確認しない', () => {
-    for (const mode of ['loop', 'ad', 'old-element']) {
+for (const mode of ['ad-showing', 'ad-interrupting', 'loop', 'ab-repeat', 'old-element']) {
+    test('広告中・リピート中・古い動画の終了は通知しない: ' + mode, () => {
         const h = continuationHost(); h.install();
+        if (mode.startsWith('ad-')) h.adClasses.add(mode);
         if (mode === 'loop') h.video.loop = true;
-        if (mode === 'ad') h.player.classList.contains = () => true;
+        if (mode === 'ab-repeat') h.context.__tabBrowserYouTubeMiniPlayerAbRepeat = { enabled: true };
         if (mode === 'old-element') { h.video.ended = true; h.fire('ended', {}); }
         else h.end();
-        assert.equal(h.timers.size, 0, mode);
-    }
-});
-
-test('外部サイト・HTTP・子フレームには継続bridgeを設置しない', () => {
-    for (const mode of ['external', 'http', 'iframe']) {
+        assert.equal(h.posts.length, 0); assert.equal(h.timers.size, 0); assert.equal(h.requests.length, 0);
+    });
+}
+for (const mode of ['ad-showing', 'ad-interrupting', 'loop', 'ab-repeat']) {
+    test('2秒の待機中に操作条件が変わった場合は通知しない: ' + mode, async () => {
+        const h = continuationHost(); h.install(); h.end();
+        if (mode.startsWith('ad-')) h.adClasses.add(mode);
+        if (mode === 'loop') h.video.loop = true;
+        if (mode === 'ab-repeat') h.context.__tabBrowserYouTubeMiniPlayerAbRepeat = { enabled: true };
+        await h.tick(2000);
+        assert.equal(h.posts.length, 0); assert.equal(h.requests.length, 0); assert.equal(h.timers.size, 0);
+    });
+}
+for (const mode of ['external', 'http', 'iframe']) {
+    test('外部サイト・HTTP・子フレームへ継続bridgeを設置しない: ' + mode, () => {
         const h = continuationHost();
         if (mode === 'external') h.context.location.hostname = 'youtube.com.example.invalid';
         if (mode === 'http') h.context.location.protocol = 'http:';
         if (mode === 'iframe') h.context.top = {};
-        assert.equal(h.install().ok, false);
-        assert.equal(h.events.size, 0);
-    }
-});
-
-test('通信失敗・壊れた情報・外部リダイレクトでも確認は2回で終わる', async () => {
-    for (const mode of ['network', 'broken', 'redirect', 'not-live']) {
-        const h = continuationHost();
-        if (mode === 'network') h.fetchOverride = async () => { throw new Error('offline fixture'); };
-        if (mode === 'broken') h.fetchOverride = async () => ({ ok: true,
-            url: 'https://www.youtube.com/channel/test/live', text: async () => 'var ytInitialPlayerResponse = {broken};' });
-        if (mode === 'redirect') h.fetchOverride = async () => ({ ok: true,
-            url: 'https://example.invalid/', text: async () => { throw new Error('外部ページを読まない'); } });
-        if (mode === 'not-live') h.nextResponse.microformat.playerMicroformatRenderer.liveBroadcastDetails.isLiveNow = false;
-        h.install(); h.end(); await h.tick(2000); await h.tick(10000);
-        assert.equal(h.posts.length, 0, mode);
-        assert.equal(h.requests.length, 2, mode);
-        assert.equal(h.timers.size, 0, mode);
-    }
-});
-
-test('通信の5秒タイムアウトで中止し、再確認を残したままページ破棄で解放できる', async () => {
-    const h = continuationHost();
-    h.fetchOverride = options => new Promise((_, reject) => {
-        options.signal.addEventListener('abort', () => reject(new Error('aborted fixture')), { once: true });
+        assert.equal(h.install().ok, false); assert.equal(h.events.size, 0); assert.equal(h.requests.length, 0);
     });
-    h.install(); h.end(); const checking = h.tick(2000);
-    await h.tick(5000); await checking;
-    assert.equal(h.requests[0].options.signal.aborted, true);
-    assert.equal(h.posts.length, 0);
-    assert.equal(h.timers.size, 1);
-    h.fire('pagehide');
-    assert.equal(h.timers.size, 0);
-});
-
-test('自動移動OFFではライブが終わっても通信を開始しない', () => {
+}
+test('自動移動OFFでは終了通知も予約もしない', () => {
     const h = continuationHost(); h.install(false); h.end(); h.fire('canplay');
-    assert.equal(h.requests.length, 0);
-    assert.equal(h.posts.length, 0);
-    assert.equal(h.timers.size, 0);
+    assert.equal(h.requests.length, 0); assert.equal(h.posts.length, 0); assert.equal(h.timers.size, 0);
 });
-
-test('確認待ちにOFFへ変更すると予約を取り消し、その後ONで再開できる', async () => {
+test('通知前のOFF→ONは再予約でき、通知後のOFF→ONでも同じ動画を通知し直さない', async () => {
     const h = continuationHost(); h.install(); h.end();
-    assert.equal(h.timers.size, 1);
-    const listenersBefore = [...h.events.values()].reduce((n, handlers) => n + handlers.size, 0);
-    h.install(false);
-    assert.equal(h.timers.size, 0);
-    h.install(true); h.install(true);
-    assert.equal(h.timers.size, 1);
-    assert.equal([...h.events.values()].reduce((n, handlers) => n + handlers.size, 0), listenersBefore);
-    await h.tick(2000);
-    assert.equal(h.posts.length, 1);
-});
-
-test('通信中にOFFへ変更すると中止し、ONへ戻しても古い結果を使わない', async () => {
-    const h = continuationHost();
-    let complete;
-    h.fetchOverride = () => new Promise(resolve => { complete = resolve; });
-    h.install(); h.end(); const checking = h.tick(2000);
-    h.install(false);
-    assert.equal(h.requests[0].options.signal.aborted, true);
-    h.install(true);
-    complete({ ok: true, url: 'https://www.youtube.com/watch?v=newLive1234',
-        text: async () => 'var ytInitialPlayerResponse=' + JSON.stringify(h.nextResponse) + ';' });
-    await checking;
-    assert.equal(h.posts.length, 0);
-    assert.equal(h.timers.size, 1);
-    h.fetchOverride = null;
-    await h.tick(2000);
-    assert.equal(h.posts.length, 1);
+    const listeners = [...h.events.values()].reduce((n, handlers) => n + handlers.size, 0);
+    h.install(false); assert.equal(h.timers.size, 0);
+    h.install(true); assert.equal(h.timers.size, 1); await h.tick(2000);
+    assert.equal(h.posts.length, 1); h.install(false); h.install(true); h.end();
+    assert.equal(h.posts.length, 1); assert.equal(h.timers.size, 0); assert.equal(h.requests.length, 0);
+    assert.equal([...h.events.values()].reduce((n, handlers) => n + handlers.size, 0), listeners);
 });

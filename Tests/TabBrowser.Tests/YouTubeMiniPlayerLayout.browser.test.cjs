@@ -41,6 +41,8 @@ before(async () => {
     for (const [name, value] of Object.entries(values)) {
         script = script.replaceAll(`__TAB_BROWSER_YOUTUBE_MINI_PLAYER_${name}__`, JSON.stringify(value));
     }
+    script = script.replaceAll('__TAB_BROWSER_YOUTUBE_MINI_PLAYER_AD_PLAYING__',
+        source.match(/const string AdvertisementPlayingExpression = """\r?\n([\s\S]*?)\r?\n\s*""";/)[1]);
     assert.ok(!script.includes('__TAB_BROWSER_YOUTUBE_MINI_PLAYER_'));
     profile = await mkdtemp(join(tmpdir(), 'tabbrowser-layout-test-'));
     browser = spawn(process.env.KITEN_BROWSER_TEST_CHROME
@@ -567,3 +569,30 @@ test('中間階層を補正しても拡大を維持し、解除後の予約やme
     await frames(20);
     assert.equal(await evaluate('window.layoutCalls'), count);
 });
+
+// 実Chromeの入力イベントで長押しを動かし、広告中のvideo書換えが0回であることを確認する。
+for (const adClass of ['ad-showing', 'ad-interrupting']) {
+    test('広告中は長押し早送り・巻き戻しと解除でvideoを書き換えない: ' + adClass, async () => {
+        for (const delta of [60, -60]) {
+            await reset();
+            await evaluate(`(() => {
+                const video = document.querySelector('video');
+                window.adControlWrites = [];
+                for (const [key, initial] of [['currentTime', 20], ['playbackRate', 1], ['paused', false]]) {
+                    let value = initial;
+                    Object.defineProperty(video, key, { configurable: true, get: () => value,
+                        set: next => { window.adControlWrites.push(key); value = next; } });
+                }
+                video.pause = () => { window.adControlWrites.push('pause'); };
+                video.play = () => { window.adControlWrites.push('play'); return Promise.resolve(); };
+                document.getElementById('movie_player').classList.add(${JSON.stringify(adClass)});
+            })()`);
+            await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 300, y: 200, button: 'right', buttons: 2, clickCount: 1 });
+            await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 300 + delta, y: 200, buttons: 2 });
+            await evaluate('new Promise(resolve => setTimeout(resolve, 300))');
+            assert.match(await evaluate("document.getElementById('tabbrowser-youtube-mini-player-hold-seek-indicator')?.textContent || ''"), /広告の再生中は操作できません/);
+            await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 300 + delta, y: 200, button: 'right', buttons: 0, clickCount: 1 });
+            assert.deepEqual(await evaluate('window.adControlWrites'), []);
+        }
+    });
+}

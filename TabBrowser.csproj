@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.2</KitenReleaseVersion>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.3</KitenReleaseVersion>
     <KitenReleaseClass Condition="'$(KitenReleaseClass)' == ''">Preview</KitenReleaseClass>
     <KitenBuildVerification Condition="'$(KitenBuildVerification)' == ''">unverified</KitenBuildVerification>
     <KitenDistributionPageUrl Condition="'$(KitenDistributionPageUrl)' == ''" />

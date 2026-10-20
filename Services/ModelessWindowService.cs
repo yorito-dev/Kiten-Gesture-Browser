@@ -28,6 +28,13 @@ internal static class ModelessWindowService
             && ReferenceEquals(candidate.Owner, window.Owner));
         if (existing is not null)
         {
+            // 重複表示で使わなかったWindowを、Application.Windowsに残さない。
+            // 表示済み・登録済みのWindowは、編集中の内容を守るため閉じない。
+            if (!window.IsLoaded && !window.IsVisible && !OpenWindows.Contains(window))
+            {
+                window.Close();
+            }
+
             if (forceTopmost)
             {
                 ForcedTopmostWindows.Add(existing);

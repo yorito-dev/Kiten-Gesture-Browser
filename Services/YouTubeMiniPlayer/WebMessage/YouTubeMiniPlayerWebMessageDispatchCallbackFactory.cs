@@ -26,7 +26,8 @@ internal static class YouTubeMiniPlayerWebMessageDispatchCallbackFactory
         Action<YouTubeMiniPlayerRuntime> endRightWheel,
         Action<YouTubeMiniPlayerRuntime, double, double, double> updateContentTransform,
         Action<Guid> close,
-        Action<YouTubeMiniPlayerState, YouTubePlaybackDiagnosticMessage> reportPlaybackDiagnostic)
+        Action<YouTubeMiniPlayerState, YouTubePlaybackDiagnosticMessage> reportPlaybackDiagnostic,
+        Action<string> setStatus)
     {
         return new YouTubeMiniPlayerWebMessageDispatchCallbacks(
             bringToFront,
@@ -49,6 +50,7 @@ internal static class YouTubeMiniPlayerWebMessageDispatchCallbackFactory
             endRightWheel,
             updateContentTransform,
             close,
-            reportPlaybackDiagnostic);
+            reportPlaybackDiagnostic,
+            setStatus);
     }
 }

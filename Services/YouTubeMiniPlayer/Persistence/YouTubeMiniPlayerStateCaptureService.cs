@@ -44,7 +44,8 @@ internal static class YouTubeMiniPlayerStateCaptureService
         YouTubeMiniPlayerState state,
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes)
     {
-        if (!runtimes.TryGetValue(state.Id, out var runtime))
+        if (!runtimes.TryGetValue(state.Id, out var runtime)
+            || runtime.LiveContinuationNavigation is not null)
         {
             return false;
         }
@@ -66,6 +67,11 @@ internal static class YouTubeMiniPlayerStateCaptureService
             YouTubeControlScriptService.BuildPlaybackStateReadScript(),
             showStatus: false,
             _ => { });
+        if (runtime.LiveContinuationNavigation is not null)
+        {
+            return false;
+        }
+
         YouTubeMiniPlayerStateService.ApplyScriptResult(state, result);
         YouTubeMiniPlayerChromeFactory.UpdateLiveViewerCount(
             runtime,

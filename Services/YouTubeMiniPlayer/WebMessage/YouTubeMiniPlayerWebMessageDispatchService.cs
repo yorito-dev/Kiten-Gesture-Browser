@@ -26,7 +26,8 @@ internal sealed record YouTubeMiniPlayerWebMessageDispatchCallbacks(
     Action<YouTubeMiniPlayerRuntime> EndRightWheel,
     Action<YouTubeMiniPlayerRuntime, double, double, double> UpdateContentTransform,
     Action<Guid> Close,
-    Action<YouTubeMiniPlayerState, YouTubePlaybackDiagnosticMessage> ReportPlaybackDiagnostic);
+    Action<YouTubeMiniPlayerState, YouTubePlaybackDiagnosticMessage> ReportPlaybackDiagnostic,
+    Action<string> SetStatus);
 
 internal static class YouTubeMiniPlayerWebMessageDispatchService
 {
@@ -56,6 +57,7 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
         {
             if (IsTrustedYouTubeSource(source)
                 && runtimes.TryGetValue(state.Id, out var playbackRuntime)
+                && playbackRuntime.LiveContinuationNavigation is null
                 && string.Equals(
                     playbackRuntime.WebMessageToken,
                     playbackDiagnostic.Token,
@@ -95,26 +97,28 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
         if (message.Kind == YouTubeMiniPlayerWebMessageKind.LiveContinuation)
         {
             if (!runtime.IsLiveContinuationEnabled || runtime.IsDisposed || runtime.IsNavigationLoading
+                || runtime.LiveContinuationNavigation is not null
+                || string.Equals(runtime.LastLiveContinuationSourceVideoId, message.SourceVideoId, StringComparison.Ordinal)
                 || runtime.WebView?.CoreWebView2 is not { } core
                 || !string.Equals(source, core.Source, StringComparison.Ordinal)
                 || !YouTubeMiniPlayerNavigationService.TryCreateLiveContinuationUri(
-                    state, core.Source, message.SourceVideoId, message.NextVideoId, out var uri))
+                    state, core.Source, message.SourceVideoId, message.ChannelId,
+                    runtime.WebMessageToken, message.Token, out var uri))
             {
                 return;
             }
 
-            var previousPaused = state.IsPaused;
-            var previousLiveResolved = runtime.IsInitialLivePlaybackResolved;
-            state.IsPaused = false;
-            runtime.IsInitialLivePlaybackResolved = false;
+            runtime.LastLiveContinuationSourceVideoId = message.SourceVideoId;
+            runtime.LiveContinuationNavigation = new YouTubeMiniPlayerLiveContinuationNavigation(
+                message.SourceVideoId!, message.ChannelId!, new Uri(core.Source));
             try
             {
                 YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(core, uri);
             }
             catch
             {
-                state.IsPaused = previousPaused;
-                runtime.IsInitialLivePlaybackResolved = previousLiveResolved;
+                runtime.LiveContinuationNavigation = null;
+                callbacks.SetStatus("続きのライブは見つかりませんでした");
             }
             return;
         }

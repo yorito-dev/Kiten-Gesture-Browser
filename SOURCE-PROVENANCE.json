@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
-  "created": "2026-10-19",
-  "upstreamCommit": "43d6a084ae005b46ddbc676e99c41e861ab3b948",
+  "created": "2026-10-20",
+  "upstreamCommit": "5bec2e3c6ebd7b6bc92dd99cccc5650568c439d9",
   "publicRepositoryCommit": null,
   "buildVerification": "unverified",
   "csharpExport": "公開用Releaseで有効な394ファイルのトークン一致を確認。無効な条件分岐と一部コメントを除外。",
@@ -24,7 +24,10 @@
     "SessionDiagnosticSummaryFormatterTests",
     "BrowserUrlRulesServiceTests",
     "WorkspaceTrashWindowTests",
-    "LinkPreviewSiteUrlRulesTests"
+    "LinkPreviewSiteUrlRulesTests",
+    "YouTubeControlScriptServiceTests",
+    "YouTubeMiniPlayerNavigationServiceTests",
+    "YouTubeMiniPlayerWebMessageServiceTests"
   ],
   "unitTestsAreSubset": true,
   "browserSuiteMinimumCounts": [

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using TabBrowser.Models;
 
@@ -76,27 +77,65 @@ public static class YouTubeMiniPlayerNavigationService
         YouTubeMiniPlayerState state,
         string currentSource,
         string? sourceVideoId,
-        string? nextVideoId,
+        string? channelId,
+        string? expectedToken,
+        string? token,
         out Uri uri)
     {
         uri = null!;
         if (state.SourceKind != MiniPlayerSourceKind.YouTube
             || state.IsLooping == true || state.IsAbRepeatEnabled
+            || string.IsNullOrEmpty(expectedToken)
+            || !string.Equals(expectedToken, token, StringComparison.Ordinal)
             || !Uri.TryCreate(currentSource, UriKind.Absolute, out var currentUri)
             || currentUri.Scheme != Uri.UriSchemeHttps
             || !YouTubeUrlService.TryGetVideoId(currentSource, out var currentId)
             || !YouTubeUrlService.TryGetVideoId(state.Url, out var stateId)
             || !string.Equals(currentId, sourceVideoId, StringComparison.Ordinal)
             || !string.Equals(stateId, sourceVideoId, StringComparison.Ordinal)
-            || string.Equals(sourceVideoId, nextVideoId, StringComparison.Ordinal)
-            || !Regex.IsMatch(nextVideoId ?? string.Empty, @"\A[A-Za-z0-9_-]{11}\z"))
+            || !Regex.IsMatch(sourceVideoId ?? string.Empty, @"\A[A-Za-z0-9_-]{11}\z")
+            || !Regex.IsMatch(channelId ?? string.Empty, @"\AUC[A-Za-z0-9_-]{22}\z"))
         {
             return false;
         }
 
-        // ミュート・音量を復元してから、既存の保存状態復元処理で再生する。
-        uri = new Uri("https://www.youtube.com/watch?v=" + nextVideoId + "&autoplay=0");
+        uri = new Uri("https://www.youtube.com/channel/" + channelId + "/live");
         return true;
+    }
+
+    internal static bool IsLiveContinuationDestination(
+        string sourceVideoId, string channelId, string destination, string? resultJson)
+    {
+        if (!Uri.TryCreate(destination, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || !string.Equals(uri.Host, "www.youtube.com", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.AbsolutePath, "/watch", StringComparison.Ordinal)
+            || !YouTubeUrlService.TryGetVideoId(destination, out var videoId)
+            || !Regex.IsMatch(videoId, @"\A[A-Za-z0-9_-]{11}\z")
+            || string.Equals(sourceVideoId, videoId, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(resultJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(resultJson);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True
+                && root.TryGetProperty("isLive", out var live) && live.ValueKind == JsonValueKind.True
+                && root.TryGetProperty("isPlayable", out var playable) && playable.ValueKind == JsonValueKind.True
+                && root.TryGetProperty("isUpcoming", out var upcoming) && upcoming.ValueKind == JsonValueKind.False
+                && root.TryGetProperty("videoId", out var actualId) && actualId.ValueKind == JsonValueKind.String
+                && string.Equals(actualId.GetString(), videoId, StringComparison.Ordinal)
+                && root.TryGetProperty("channelId", out var actualChannel) && actualChannel.ValueKind == JsonValueKind.String
+                && string.Equals(actualChannel.GetString(), channelId, StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     public static string CreateReturnTabUrl(YouTubeMiniPlayerState state, string videoId)
@@ -229,6 +268,33 @@ public static class YouTubeMiniPlayerNavigationService
             "&",
             queryItems.Select(static item =>
                 Uri.EscapeDataString(item.Name) + "=" + Uri.EscapeDataString(item.Value)));
+    }
+}
+
+// 通常遷移が完了するまで保存状態を保護する。ファイルへは保存しない。
+internal sealed class YouTubeMiniPlayerLiveContinuationNavigation(
+    string sourceVideoId, string channelId, Uri returnUri)
+{
+    public ulong? NavigationId { get; set; }
+
+    private bool _resolved;
+
+    public bool TryResolve(string destination, string? resultJson, out Uri? returnTo)
+    {
+        returnTo = null;
+        if (_resolved)
+        {
+            return false;
+        }
+
+        _resolved = true;
+        if (!YouTubeMiniPlayerNavigationService.IsLiveContinuationDestination(
+                sourceVideoId, channelId, destination, resultJson))
+        {
+            returnTo = returnUri;
+        }
+
+        return true;
     }
 }
 

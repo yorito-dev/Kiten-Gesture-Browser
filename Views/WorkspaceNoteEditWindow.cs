@@ -24,6 +24,7 @@ public sealed class WorkspaceNoteEditWindow : Window
     private Func<string, double, Task<bool>>? _updateWithoutClosingAsync;
     private bool _isSaving;
     private bool _allowCloseAfterSave;
+    private bool _hasBeenShown;
 
     public WorkspaceNoteEditWindow(
         string title,
@@ -152,6 +153,7 @@ public sealed class WorkspaceNoteEditWindow : Window
 
         Loaded += (_, _) =>
         {
+            _hasBeenShown = true;
             FocusContentAtEnd();
         };
     }
@@ -334,6 +336,9 @@ public sealed class WorkspaceNoteEditWindow : Window
 
     internal bool IsSaving => _isSaving;
 
+    // 非表示にした編集Windowも保護し、一度も表示されていない未使用Windowは区別する。
+    internal bool RequiresCloseConfirmation => _hasBeenShown || IsVisible || IsSaving;
+
     internal bool IsEditorReadOnly => _contentBox.IsReadOnly;
 
     internal string EditorContent => _contentBox.Text;
@@ -344,6 +349,8 @@ public sealed class WorkspaceNoteEditWindow : Window
     {
         if (_statusText.Visibility != Visibility.Visible)
             ShowStatus("全Windowを閉じるには、このメモを保存して閉じるかキャンセルしてください", isError: false);
+        if (!IsVisible)
+            Show();
         if (WindowState == WindowState.Minimized)
             WindowState = WindowState.Normal;
         Activate();

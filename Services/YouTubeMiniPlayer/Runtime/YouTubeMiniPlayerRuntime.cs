@@ -146,6 +146,10 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public bool IsLiveContinuationEnabled { get; set; } = true;
 
+    public YouTubeMiniPlayerLiveContinuationNavigation? LiveContinuationNavigation { get; set; }
+
+    public string? LastLiveContinuationSourceVideoId { get; set; }
+
     public DateTimeOffset? LastPlaybackStateMessageAt { get; set; }
 
     public int InactiveSuspendGeneration { get; set; }

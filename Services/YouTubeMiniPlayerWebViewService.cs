@@ -12,7 +12,7 @@ internal static class YouTubeMiniPlayerWebViewService
     public static WebView2 CreateWebView(
         YouTubeMiniPlayerState state,
         Action<YouTubeMiniPlayerState, WebView2> onCoreInitialized,
-        Action<YouTubeMiniPlayerState, WebView2> onNavigationStarting,
+        Action<YouTubeMiniPlayerState, WebView2, CoreWebView2NavigationStartingEventArgs> onNavigationStarting,
         Action<YouTubeMiniPlayerState, WebView2> onSourceChanged,
         Action<YouTubeMiniPlayerState, WebView2> onHistoryChanged,
         Func<YouTubeMiniPlayerState, WebView2, CoreWebView2NavigationCompletedEventArgs, Task> onNavigationCompletedAsync,
@@ -41,7 +41,7 @@ internal static class YouTubeMiniPlayerWebViewService
                 };
             }
         };
-        webView.NavigationStarting += (_, _) => onNavigationStarting(state, webView);
+        webView.NavigationStarting += (_, args) => onNavigationStarting(state, webView, args);
         webView.NavigationCompleted += async (_, args) =>
         {
             if (args.IsSuccess)
@@ -429,6 +429,7 @@ internal static class YouTubeMiniPlayerWebViewService
     {
         var serializedToken = JsonSerializer.Serialize(token);
         var enabledJson = JsonSerializer.Serialize(enabled);
+        var adPlayingExpression = YouTubeControlScriptService.AdvertisementPlayingExpression;
         return $$"""
             (() => {
                 if (location.protocol !== "https:"
@@ -443,11 +444,11 @@ internal static class YouTubeMiniPlayerWebViewService
                     return { ok: true };
                 }
                 const token = {{serializedToken}};
-                const state = { enabled, source: null, generation: 0, timer: null, request: null, player: null, disposed: false };
+                const state = { enabled, source: null, generation: 0, timer: null, player: null, disposed: false, notifiedVideoId: null };
                 const getPlayer = () => document.getElementById("movie_player") || document.querySelector(".html5-video-player");
                 const getVideo = () => getPlayer()?.querySelector("video");
                 const videoId = () => new URL(location.href).searchParams.get("v") || "";
-                const isAd = () => getPlayer()?.classList.contains("ad-showing") || getPlayer()?.classList.contains("ad-interrupting");
+                const isAd = () => {{adPlayingExpression}};
                 const isLive = response => {
                     const details = response?.videoDetails;
                     const broadcast = response?.microformat?.playerMicroformatRenderer?.liveBroadcastDetails;
@@ -459,77 +460,34 @@ internal static class YouTubeMiniPlayerWebViewService
                     state.generation++;
                     clearTimeout(state.timer);
                     state.timer = null;
-                    state.request?.abort();
-                    state.request = null;
                 };
                 const isEnded = () => Boolean(getVideo()?.ended) || getPlayer()?.getPlayerState?.() === 0;
                 const isCurrent = (source, generation) => state.enabled && !state.disposed
                     && state.generation === generation && state.source === source
-                    && videoId() === source.videoId && isEnded() && !isAd() && !getVideo()?.loop;
-                // HTML内の公開プレイヤー情報だけをJSONとして読む。取得したscriptは実行しない。
-                const readResponse = html => {
-                    const match = /\bytInitialPlayerResponse\s*=\s*\{/.exec(html);
-                    if (!match) return null;
-                    const start = match.index + match[0].length - 1;
-                    let depth = 0, quoted = false, escaped = false;
-                    for (let i = start; i < html.length; i++) {
-                        const ch = html[i];
-                        if (quoted) {
-                            if (escaped) escaped = false;
-                            else if (ch === "\\") escaped = true;
-                            else if (ch === '"') quoted = false;
-                        } else if (ch === '"') quoted = true;
-                        else if (ch === "{") depth++;
-                        else if (ch === "}" && --depth === 0) return JSON.parse(html.slice(start, i + 1));
-                    }
-                    return null;
-                };
-                const check = async (source, generation, attempt) => {
+                    && videoId() === source.videoId && isEnded() && !isAd() && !getVideo()?.loop
+                    && !window.__tabBrowserYouTubeMiniPlayerAbRepeat?.enabled;
+                const notify = (source, generation) => {
                     state.timer = null;
-                    if (!isCurrent(source, generation)) return;
-                    const request = new AbortController();
-                    state.request = request;
-                    const timeout = setTimeout(() => request.abort(), 5000);
-                    try {
-                        const result = await fetch("https://www.youtube.com/channel/" + source.channelId + "/live", {
-                            credentials: "omit", cache: "no-store", signal: request.signal
+                    if (!isCurrent(source, generation) || source.completed) return;
+                    const post = window.chrome?.webview?.postMessage;
+                    // 通知後の再予約はしない。移動先の解決はYouTube自身の通常遷移に任せる。
+                    source.completed = true;
+                    state.notifiedVideoId = source.videoId;
+                    if (typeof post === "function") {
+                        post.call(window.chrome.webview, {
+                            type: "youtubeMiniPlayerLiveContinuation", token,
+                            sourceVideoId: source.videoId, channelId: source.channelId
                         });
-                        const responseUrl = new URL(result.url);
-                        if (!result.ok || responseUrl.protocol !== "https:" || responseUrl.hostname !== "www.youtube.com") return;
-                        const html = await result.text();
-                        const response = html.length <= 4 * 1024 * 1024 ? readResponse(html) : null;
-                        const details = response?.videoDetails;
-                        const nextVideoId = String(details?.videoId || "");
-                        if (isCurrent(source, generation) && isLive(response)
-                            && response?.playabilityStatus?.status === "OK"
-                            && details?.channelId === source.channelId && nextVideoId !== source.videoId
-                            && /^[A-Za-z0-9_-]{11}$/.test(nextVideoId)) {
-                            const post = window.chrome?.webview?.postMessage;
-                            if (typeof post === "function") {
-                                post.call(window.chrome.webview, {
-                                    type: "youtubeMiniPlayerLiveContinuation", token,
-                                    sourceVideoId: source.videoId, nextVideoId
-                                });
-                                source.completed = true;
-                            }
-                        }
-                    } catch {
-                        // 公開情報が確認できない場合は現在の動画に留まる。
-                    } finally {
-                        clearTimeout(timeout);
-                        if (state.request === request) state.request = null;
-                        if (!source.completed && attempt === 0 && isCurrent(source, generation)) {
-                            state.timer = setTimeout(() => check(source, generation, 1), 10000);
-                        }
                     }
                 };
                 const begin = () => {
                     const source = state.source;
-                    if (!source || source.started || !isCurrent(source, state.generation)) return;
+                    if (!source || source.started || source.videoId === state.notifiedVideoId
+                        || !isCurrent(source, state.generation)) return;
                     source.started = true;
                     const generation = state.generation;
-                    // YouTube自身の遷移を先に待ち、終了したライブだけ最大2回確認する。
-                    state.timer = setTimeout(() => check(source, generation, 0), 2000);
+                    // YouTube自身の遷移を先に2秒待ち、終了したライブを1回だけ通知する。
+                    state.timer = setTimeout(() => notify(source, generation), 2000);
                 };
                 const onPlayerState = event => {
                     refresh();
@@ -687,7 +645,9 @@ internal static class YouTubeMiniPlayerWebViewService
                     }
                 }
 
-                return { ok: true, isLive, replayContinuation, viewerCountText };
+                return { ok: true, isLive, replayContinuation, viewerCountText,
+                    videoId: actualVideoId, channelId: String(details.channelId || ""),
+                    isPlayable: response?.playabilityStatus?.status === "OK", isUpcoming: details.isUpcoming === true };
             })();
             """;
     }

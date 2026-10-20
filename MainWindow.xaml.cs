@@ -2318,6 +2318,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     {
         foreach (var editor in Application.Current.Windows.OfType<WorkspaceNoteEditWindow>())
         {
+            if (!editor.RequiresCloseConfirmation) continue;
             for (Window? owner = editor.Owner; owner is not null; owner = owner.Owner)
             {
                 if (owner is MainWindow main && closingWindows.Contains(main)) return editor;

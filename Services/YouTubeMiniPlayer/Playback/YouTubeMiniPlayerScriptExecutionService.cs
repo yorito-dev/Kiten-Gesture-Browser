@@ -50,7 +50,9 @@ internal static class YouTubeMiniPlayerScriptExecutionService
                 && TryReadScriptBoolean(resultJson, "ok", out var ok)
                 && !ok)
             {
-                setStatus("ミニプレイヤー内の動画を操作できません");
+                setStatus(YouTubeControlScriptService.IsAdvertisementBlockedResult(resultJson)
+                    ? YouTubeControlScriptService.AdvertisementBlockedMessage
+                    : "ミニプレイヤー内の動画を操作できません");
             }
 
             return resultJson;

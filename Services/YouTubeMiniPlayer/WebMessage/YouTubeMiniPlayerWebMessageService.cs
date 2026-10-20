@@ -67,7 +67,7 @@ internal readonly record struct YouTubeMiniPlayerWebMessage(
     YouTubeMiniPlayerSideButton SideButton = YouTubeMiniPlayerSideButton.Unknown,
     bool IsResize = false,
     string? SourceVideoId = null,
-    string? NextVideoId = null);
+    string? ChannelId = null);
 
 internal static class YouTubeMiniPlayerWebMessageService
 {
@@ -90,7 +90,7 @@ internal static class YouTubeMiniPlayerWebMessageService
                     TitleHovered: false,
                     Token: GetJsonString(root, "token"),
                     SourceVideoId: GetJsonString(root, "sourceVideoId"),
-                    NextVideoId: GetJsonString(root, "nextVideoId"));
+                    ChannelId: GetJsonString(root, "channelId"));
                 return true;
             }
 
