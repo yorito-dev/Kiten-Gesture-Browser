@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
-  "created": "2026-10-20",
-  "upstreamCommit": "5bec2e3c6ebd7b6bc92dd99cccc5650568c439d9",
+  "created": "2026-10-21",
+  "upstreamCommit": "d26fbac0e7c2e3c9a97798e724ced18764450509",
   "publicRepositoryCommit": null,
   "buildVerification": "unverified",
   "csharpExport": "公開用Releaseで有効な394ファイルのトークン一致を確認。無効な条件分岐と一部コメントを除外。",

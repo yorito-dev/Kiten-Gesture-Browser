@@ -557,6 +557,21 @@ internal static class YouTubeMiniPlayerWebViewService
             """;
     }
 
+    public static string BuildLiveContinuationVideoScript()
+    {
+        return """
+            (() => {
+                const player = document.getElementById("movie_player")
+                    || document.querySelector(".html5-video-player");
+                const response = (player && typeof player.getPlayerResponse === "function"
+                    ? player.getPlayerResponse() : null) || window.ytInitialPlayerResponse || null;
+                const details = response?.videoDetails;
+                if (!details || details.isUpcoming === true) return { ok: false };
+                return { ok: true, videoId: String(details.videoId || ""), channelId: String(details.channelId || "") };
+            })();
+            """;
+    }
+
     public static string BuildLiveStatusScript(string expectedVideoId)
     {
         var serializedVideoId = JsonSerializer.Serialize(expectedVideoId);

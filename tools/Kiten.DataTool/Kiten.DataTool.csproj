@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Kiten.DataTool</AssemblyName>
     <RootNamespace>Kiten.DataTool</RootNamespace>
-    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.3</KitenReleaseVersion>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.4</KitenReleaseVersion>
     <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
     <Version>$(KitenReleaseVersion)</Version>
     <Product>Kiten Gesture Browser Data Maintenance Tool</Product>

@@ -26,6 +26,7 @@ function script(file, method, messageType, values = {}) {
     const adExpression = readFileSync(resolve(sourceRoot, 'Services/YouTubeControlScriptService.cs'), 'utf8')
         .match(/const string AdvertisementPlayingExpression = """\r?\n([\s\S]*?)\r?\n\s*""";/)[1];
     return raw.replaceAll('{{adPlayingExpression}}', adExpression).replaceAll('{{serializedToken}}', '"fixture-token"')
+        .replaceAll('{{serializedVideoId}}', JSON.stringify(values.videoId ?? 'newLive1234'))
         .replaceAll('{{enabledJson}}', JSON.stringify(values.enabled ?? true))
         .replaceAll('{{tokenJson}}', '"fixture-token"')
         .replaceAll('{{messageTypeJson}}', JSON.stringify(messageType))
@@ -517,3 +518,74 @@ test('通知前のOFF→ONは再予約でき、通知後のOFF→ONでも同じ�
     assert.equal(h.posts.length, 1); assert.equal(h.timers.size, 0); assert.equal(h.requests.length, 0);
     assert.equal([...h.events.values()].reduce((n, handlers) => n + handlers.size, 0), listeners);
 });
+
+// URLを書き換える前も、現在表示中のプレイヤー情報だけで継続先を確認する。
+function readContinuationDestination(h) {
+    const identity = vm.runInContext(script('Services/YouTubeMiniPlayerWebViewService.cs',
+        'BuildLiveContinuationVideoScript', ''), h.context);
+    if (!identity.ok) return identity;
+    return vm.runInContext(script('Services/YouTubeMiniPlayerWebViewService.cs',
+        'BuildLiveStatusScript', '', { videoId: identity.videoId }), h.context);
+}
+for (const fallback of [false, true]) {
+    test('チャンネル/liveのままでも既存プレイヤー情報から別の配信中動画を確認する: fallback=' + fallback, () => {
+        const h = continuationHost(); h.currentResponse = h.response('newLive1234');
+        h.context.location.href = 'https://www.youtube.com/channel/' + h.currentResponse.videoDetails.channelId + '/live?themeRefresh=1';
+        if (fallback) { h.context.ytInitialPlayerResponse = h.currentResponse; h.player.getPlayerResponse = () => null; }
+        const result = readContinuationDestination(h);
+        assert.equal(result.ok, true); assert.equal(result.videoId, 'newLive1234');
+        assert.equal(result.channelId, h.currentResponse.videoDetails.channelId);
+        assert.equal(result.isLive, true); assert.equal(result.isPlayable, true); assert.equal(result.isUpcoming, false);
+        assert.equal(h.requests.length, 0);
+    });
+}
+for (const mode of ['情報なし', '予定配信', '別チャンネル']) {
+    test('ライブページの読取で不合格のメタデータを成功にしない: ' + mode, () => {
+        const h = continuationHost(); h.currentResponse = h.response('newLive1234');
+        const expectedChannel = h.currentResponse.videoDetails.channelId;
+        h.context.location.href = 'https://www.youtube.com/channel/' + expectedChannel + '/live';
+        if (mode === '情報なし') h.currentResponse = null;
+        if (mode === '予定配信') h.currentResponse.videoDetails.isUpcoming = true;
+        if (mode === '別チャンネル') h.currentResponse.videoDetails.channelId = 'UC' + 'b'.repeat(22);
+        const result = readContinuationDestination(h);
+        assert.ok(result.ok !== true || result.channelId !== expectedChannel || result.isLive !== true
+            || result.isPlayable !== true || result.isUpcoming !== false);
+        assert.equal(h.requests.length, 0);
+    });
+}
+test('読み込み完了から3.3秒後のwatch書換えの前後で同じライブと判定する', async () => {
+    const h = continuationHost(); h.currentResponse = h.response('newLive1234');
+    h.context.location.href = 'https://www.youtube.com/channel/' + h.currentResponse.videoDetails.channelId + '/live';
+    h.context.setTimeout(() => { h.context.location.href = 'https://www.youtube.com/watch?v=newLive1234'; }, 3300);
+    const before = readContinuationDestination(h);
+    assert.match(h.context.location.href, /\/channel\//);
+    await h.tick(3300);
+    const after = readContinuationDestination(h);
+    assert.match(h.context.location.href, /\/watch\?v=newLive1234/);
+    for (const key of ['ok', 'videoId', 'channelId', 'isLive', 'isPlayable', 'isUpcoming']) assert.equal(after[key], before[key], key);
+    assert.equal(after.isLive, true); assert.equal(h.requests.length, 0);
+});
+
+for (const adClass of ['ad-showing', 'ad-interrupting']) {
+    for (const target of [null, true, false]) {
+        test('広告中のリピート切替は位置・loop・playerを変更せず、本編では使える: ' + adClass + '/' + target, () => {
+            const h = muteRestoreHost(); h.adClasses.add(adClass);
+            h.video.currentTime = 40; h.video.ended = true; h.video.loop = target === false;
+            let loopWrites = 0, plays = 0;
+            h.player.getPlayerState = () => 0;
+            h.player.setLoop = () => { loopWrites++; };
+            h.player.playVideo = () => { plays++; h.video.paused = false; };
+            const code = miniPlayerScript('BuildLoopScript', { targetText: JSON.stringify(target) });
+            const result = vm.runInContext(code, h.context);
+            assert.equal(result.ok, false); assert.equal(result.found, true);
+            assert.equal(result.skipped, true); assert.equal(result.reason, 'advertisement');
+            assert.equal(h.video.loop, target === false); assert.equal(h.video.currentTime, 40);
+            assert.equal(loopWrites, 0); assert.equal(plays, 0);
+            h.adClasses.clear();
+            const after = vm.runInContext(code, h.context);
+            assert.equal(after.ok, true); assert.equal(h.video.loop, target !== false);
+            assert.equal(h.video.currentTime, target === false ? 40 : 0);
+            assert.equal(loopWrites, 1); assert.equal(plays, target === false ? 0 : 1);
+        });
+    }
+}

@@ -92,13 +92,17 @@ public sealed class YouTubeMiniPlayerNavigationServiceTests
             videoId = "newLive1234",
             channelId = Channel
         });
-        Assert.True(attempt.TryResolve("https://www.youtube.com/watch?v=newLive1234", json, out var returnTo));
-        Assert.Null(returnTo);
-        Assert.False(attempt.TryResolve("https://www.youtube.com/channel/" + Channel + "/live", null, out _));
+        var destination = "https://www.youtube.com/watch?v=newLive1234";
+        Assert.True(attempt.TryBeginResolution());
+        Assert.False(attempt.TryBeginResolution());
+        Assert.True(attempt.TryResolve(destination, destination, json, out var resolution));
+        Assert.Equal(YouTubeLiveContinuationAction.Continue, resolution.Action);
+        Assert.Null(resolution.NavigationUri);
+        Assert.False(attempt.TryResolve(destination, destination, null, out _));
+        Assert.False(attempt.TryTimeout(TimeSpan.FromSeconds(30)));
     }
 
     [Theory]
-    [InlineData("channel-page")]
     [InlineData("same-video")]
     [InlineData("not-live")]
     [InlineData("other-channel")]
@@ -132,11 +136,129 @@ public sealed class YouTubeMiniPlayerNavigationServiceTests
         });
         if (mode == "missing-result") json = null;
         if (mode == "broken-result") json = "{broken";
-        Assert.True(attempt.TryResolve(destination, json, out var returnTo));
-        Assert.Equal(original, returnTo);
-        Assert.False(attempt.TryResolve(destination, json, out returnTo));
-        Assert.Null(returnTo);
+        Assert.True(attempt.TryResolve(destination, destination, json, out var resolution));
+        Assert.Equal(YouTubeLiveContinuationAction.ReturnToOriginal, resolution.Action);
+        Assert.Equal(original, resolution.NavigationUri);
+        Assert.False(attempt.TryResolve(destination, destination, json, out _));
     }
+
+    [Theory]
+    [InlineData("https://www.youtube.com/watch?v=newLive1234", "WatchPage")]
+    [InlineData("https://www.youtube.com/watch?v=newLive1234&themeRefresh=1", "WatchPage")]
+    [InlineData("https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live", "ChannelLivePage")]
+    [InlineData("https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live?themeRefresh=1", "ChannelLivePage")]
+    [InlineData("https://www.youtube.com/channel/UCbbbbbbbbbbbbbbbbbbbbbb/live", "Unsupported")]
+    [InlineData("https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live/", "Unsupported")]
+    [InlineData("http://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live", "Unsupported")]
+    [InlineData("https://example.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live", "Unsupported")]
+    [InlineData("https://youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live", "Unsupported")]
+    [InlineData("https://www.youtube.com:444/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live", "Unsupported")]
+    [InlineData("https://www.youtube.com/watch?v=bad", "Unsupported")]
+    public void ClassifiesOnlyRequestedHttpsLivePageOrWatchPage(string url, string expected)
+    {
+        Assert.Equal(expected, YouTubeMiniPlayerNavigationService.GetLiveContinuationDestinationKind(url, Channel).ToString());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void ChannelLivePageAndYoutubeWatchRewriteResolveTheSameLive(bool query, bool rewritten)
+    {
+        var original = new Uri("https://www.youtube.com/watch?v=oldLive1234");
+        var attempt = new YouTubeMiniPlayerLiveContinuationNavigation("oldLive1234", Channel, original);
+        var livePage = "https://www.youtube.com/channel/" + Channel + "/live" + (query ? "?themeRefresh=1" : "");
+        var current = rewritten ? "https://www.youtube.com/watch?v=newLive1234" : livePage;
+        var json = LiveResult();
+        Assert.True(attempt.TryBeginResolution());
+        Assert.True(attempt.TryReadCandidate(json, out var id));
+        Assert.Equal("newLive1234", id);
+        Assert.False(attempt.TryReleaseForSourceChange(current));
+        Assert.True(attempt.TryResolve(livePage, current, json, out var resolution));
+        Assert.Equal(rewritten ? YouTubeLiveContinuationAction.Continue : YouTubeLiveContinuationAction.NavigateToWatch, resolution.Action);
+        Assert.Equal(rewritten ? null : "https://www.youtube.com/watch?v=newLive1234&autoplay=1", resolution.NavigationUri?.AbsoluteUri);
+        Assert.False(attempt.TryResolve(livePage, current, json, out _));
+        Assert.False(attempt.TryBeginResolution());
+    }
+
+    [Theory]
+    [InlineData("not-live")]
+    [InlineData("upcoming")]
+    [InlineData("unplayable")]
+    [InlineData("same-video")]
+    [InlineData("other-channel")]
+    [InlineData("missing")]
+    [InlineData("broken")]
+    public void ChannelPageWithInvalidMetadataReturnsOnlyOnce(string mode)
+    {
+        var original = new Uri("https://www.youtube.com/watch?v=oldLive1234");
+        var attempt = new YouTubeMiniPlayerLiveContinuationNavigation("oldLive1234", Channel, original);
+        var destination = "https://www.youtube.com/channel/" + Channel + "/live";
+        var json = mode switch { "missing" => null, "broken" => "broken", _ => LiveResult(mode) };
+        Assert.True(attempt.TryResolve(destination, destination, json, out var resolution));
+        Assert.Equal(YouTubeLiveContinuationAction.ReturnToOriginal, resolution.Action);
+        Assert.Equal(original, resolution.NavigationUri);
+        Assert.False(attempt.TryResolve(destination, destination, json, out _));
+    }
+
+    [Theory]
+    [InlineData("https://www.youtube.com/watch?v=otherId1234")]
+    [InlineData("https://www.youtube.com/watch?v=oldLive1234")]
+    [InlineData("https://www.youtube.com/channel/UCbbbbbbbbbbbbbbbbbbbbbb/live")]
+    [InlineData("https://example.com/")]
+    public void SourceChangeDuringAwaitReleasesWithoutNavigationOrNotice(string current)
+    {
+        var destination = "https://www.youtube.com/channel/" + Channel + "/live";
+        var attempt = new YouTubeMiniPlayerLiveContinuationNavigation("oldLive1234", Channel,
+            new Uri("https://www.youtube.com/watch?v=oldLive1234"));
+        Assert.True(attempt.TryBeginResolution());
+        Assert.True(attempt.TryReadCandidate(LiveResult(), out _));
+        Assert.True(attempt.TryResolve(destination, current, LiveResult(), out var resolution));
+        Assert.Equal(YouTubeLiveContinuationAction.ReleaseOnly, resolution.Action);
+        Assert.Null(resolution.NavigationUri);
+        Assert.False(attempt.TryBeginResolution());
+    }
+
+    [Fact]
+    public void SourceRewriteDuringIdentityReadIsCheckedAgainstConfirmedVideo()
+    {
+        var attempt = new YouTubeMiniPlayerLiveContinuationNavigation("oldLive1234", Channel,
+            new Uri("https://www.youtube.com/watch?v=oldLive1234"));
+        Assert.True(attempt.TryBeginResolution());
+        Assert.False(attempt.TryReleaseForSourceChange("https://www.youtube.com/watch?v=newLive1234"));
+        Assert.True(attempt.TryReadCandidate(LiveResult(), out _));
+        Assert.False(attempt.TryReleaseForSourceChange("https://www.youtube.com/watch?v=newLive1234"));
+        Assert.True(attempt.TryReleaseForSourceChange("https://www.youtube.com/watch?v=otherId1234"));
+        Assert.False(attempt.TryResolve("https://www.youtube.com/channel/" + Channel + "/live",
+            "https://www.youtube.com/watch?v=newLive1234", LiveResult(), out _));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ThirtySecondTimeoutReleasesEvenWithoutCompletionAndIgnoresLateResult(bool started)
+    {
+        var attempt = new YouTubeMiniPlayerLiveContinuationNavigation("oldLive1234", Channel,
+            new Uri("https://www.youtube.com/watch?v=oldLive1234"));
+        if (started) Assert.True(attempt.TryBeginResolution());
+        Assert.False(attempt.TryTimeout(TimeSpan.FromMilliseconds(29999)));
+        Assert.True(attempt.TryTimeout(TimeSpan.FromSeconds(30)));
+        Assert.False(attempt.TryTimeout(TimeSpan.FromSeconds(31)));
+        Assert.False(attempt.TryBeginResolution());
+        Assert.False(attempt.TryResolve("https://www.youtube.com/channel/" + Channel + "/live",
+            "https://www.youtube.com/watch?v=newLive1234", LiveResult(), out _));
+    }
+
+    private static string LiveResult(string mode = "live") => JsonSerializer.Serialize(new
+    {
+        ok = true,
+        isLive = mode != "not-live",
+        isPlayable = mode != "unplayable",
+        isUpcoming = mode == "upcoming",
+        videoId = mode == "same-video" ? "oldLive1234" : "newLive1234",
+        channelId = mode == "other-channel" ? "UCbbbbbbbbbbbbbbbbbbbbbb" : Channel
+    });
 
     [Theory]
     [InlineData("https://www.youtube.com/watch?v=abc123", false)]

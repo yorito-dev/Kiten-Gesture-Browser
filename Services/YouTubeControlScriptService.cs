@@ -5003,6 +5003,10 @@ public static class YouTubeControlScriptService
                     return { ok: false, found: false };
                 }
 
+                if ({{AdvertisementPlayingExpression}}) {
+                    return { ok: false, found: true, skipped: true, reason: "advertisement" };
+                }
+
                 const playerState = player && typeof player.getPlayerState === "function"
                     ? Number(player.getPlayerState())
                     : null;

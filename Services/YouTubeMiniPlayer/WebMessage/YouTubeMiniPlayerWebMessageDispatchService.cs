@@ -113,11 +113,12 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
                 message.SourceVideoId!, message.ChannelId!, new Uri(core.Source));
             try
             {
+                YouTubeMiniPlayerRuntimeContentFactory.StartLiveContinuationTimeout(runtime, callbacks.QueueSave);
                 YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(core, uri);
             }
             catch
             {
-                runtime.LiveContinuationNavigation = null;
+                YouTubeMiniPlayerRuntimeContentFactory.ClearLiveContinuation(runtime);
                 callbacks.SetStatus("続きのライブは見つかりませんでした");
             }
             return;

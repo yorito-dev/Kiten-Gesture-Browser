@@ -106,14 +106,53 @@ public static class YouTubeMiniPlayerNavigationService
     internal static bool IsLiveContinuationDestination(
         string sourceVideoId, string channelId, string destination, string? resultJson)
     {
+        var kind = GetLiveContinuationDestinationKind(destination, channelId);
+        if (kind == YouTubeLiveContinuationDestinationKind.Unsupported
+            || !TryReadLiveContinuationVideoId(resultJson, channelId, out var videoId)
+            || string.Equals(sourceVideoId, videoId, StringComparison.Ordinal)
+            || (kind == YouTubeLiveContinuationDestinationKind.WatchPage
+                && (!YouTubeUrlService.TryGetVideoId(destination, out var urlVideoId)
+                    || !string.Equals(urlVideoId, videoId, StringComparison.Ordinal))))
+        {
+            return false;
+        }
+
+        using var document = JsonDocument.Parse(resultJson!);
+        var root = document.RootElement;
+        return root.TryGetProperty("isLive", out var live) && live.ValueKind == JsonValueKind.True
+            && root.TryGetProperty("isPlayable", out var playable) && playable.ValueKind == JsonValueKind.True
+            && root.TryGetProperty("isUpcoming", out var upcoming) && upcoming.ValueKind == JsonValueKind.False;
+    }
+
+    internal static YouTubeLiveContinuationDestinationKind GetLiveContinuationDestinationKind(
+        string destination, string channelId)
+    {
         if (!Uri.TryCreate(destination, UriKind.Absolute, out var uri)
             || uri.Scheme != Uri.UriSchemeHttps
             || !string.Equals(uri.Host, "www.youtube.com", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.AbsolutePath, "/watch", StringComparison.Ordinal)
-            || !YouTubeUrlService.TryGetVideoId(destination, out var videoId)
-            || !Regex.IsMatch(videoId, @"\A[A-Za-z0-9_-]{11}\z")
-            || string.Equals(sourceVideoId, videoId, StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(resultJson))
+            || !uri.IsDefaultPort || !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return YouTubeLiveContinuationDestinationKind.Unsupported;
+        }
+
+        if (Regex.IsMatch(channelId, @"\AUC[A-Za-z0-9_-]{22}\z")
+            && string.Equals(uri.AbsolutePath, "/channel/" + channelId + "/live", StringComparison.Ordinal))
+        {
+            return YouTubeLiveContinuationDestinationKind.ChannelLivePage;
+        }
+
+        return string.Equals(uri.AbsolutePath, "/watch", StringComparison.Ordinal)
+            && YouTubeUrlService.TryGetVideoId(destination, out var videoId)
+            && Regex.IsMatch(videoId, @"\A[A-Za-z0-9_-]{11}\z")
+                ? YouTubeLiveContinuationDestinationKind.WatchPage
+                : YouTubeLiveContinuationDestinationKind.Unsupported;
+    }
+
+    internal static bool TryReadLiveContinuationVideoId(
+        string? resultJson, string channelId, out string videoId)
+    {
+        videoId = string.Empty;
+        if (string.IsNullOrWhiteSpace(resultJson))
         {
             return false;
         }
@@ -122,15 +161,17 @@ public static class YouTubeMiniPlayerNavigationService
         {
             using var document = JsonDocument.Parse(resultJson);
             var root = document.RootElement;
-            return root.ValueKind == JsonValueKind.Object
+            if (root.ValueKind == JsonValueKind.Object
                 && root.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True
-                && root.TryGetProperty("isLive", out var live) && live.ValueKind == JsonValueKind.True
-                && root.TryGetProperty("isPlayable", out var playable) && playable.ValueKind == JsonValueKind.True
-                && root.TryGetProperty("isUpcoming", out var upcoming) && upcoming.ValueKind == JsonValueKind.False
                 && root.TryGetProperty("videoId", out var actualId) && actualId.ValueKind == JsonValueKind.String
-                && string.Equals(actualId.GetString(), videoId, StringComparison.Ordinal)
+                && Regex.IsMatch(actualId.GetString() ?? string.Empty, @"\A[A-Za-z0-9_-]{11}\z")
                 && root.TryGetProperty("channelId", out var actualChannel) && actualChannel.ValueKind == JsonValueKind.String
-                && string.Equals(actualChannel.GetString(), channelId, StringComparison.Ordinal);
+                && string.Equals(actualChannel.GetString(), channelId, StringComparison.Ordinal))
+            {
+                videoId = actualId.GetString()!;
+                return true;
+            }
+            return false;
         }
         catch (JsonException)
         {
@@ -271,27 +312,106 @@ public static class YouTubeMiniPlayerNavigationService
     }
 }
 
+internal enum YouTubeLiveContinuationDestinationKind { Unsupported, WatchPage, ChannelLivePage }
+
+internal enum YouTubeLiveContinuationAction { Continue, NavigateToWatch, ReturnToOriginal, ReleaseOnly }
+
+internal readonly record struct YouTubeLiveContinuationResolution(
+    YouTubeLiveContinuationAction Action, Uri? NavigationUri);
+
 // 通常遷移が完了するまで保存状態を保護する。ファイルへは保存しない。
 internal sealed class YouTubeMiniPlayerLiveContinuationNavigation(
     string sourceVideoId, string channelId, Uri returnUri)
 {
+    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
     public ulong? NavigationId { get; set; }
 
-    private bool _resolved;
+    public string ChannelId => channelId;
 
-    public bool TryResolve(string destination, string? resultJson, out Uri? returnTo)
+    private bool _resolved;
+    public bool IsResolutionStarted { get; private set; }
+    public string? CandidateVideoId { get; private set; }
+
+    public bool TryBeginResolution()
     {
-        returnTo = null;
+        if (_resolved || IsResolutionStarted) return false;
+        IsResolutionStarted = true;
+        return true;
+    }
+
+    public bool TryReadCandidate(string? resultJson, out string videoId)
+    {
+        if (!_resolved && YouTubeMiniPlayerNavigationService.TryReadLiveContinuationVideoId(
+                resultJson, channelId, out videoId)
+            && !string.Equals(sourceVideoId, videoId, StringComparison.Ordinal))
+        {
+            CandidateVideoId = videoId;
+            return true;
+        }
+        videoId = string.Empty;
+        return false;
+    }
+
+    public bool TryReleaseForSourceChange(string currentSource)
+    {
+        if (_resolved) return false;
+        var kind = YouTubeMiniPlayerNavigationService.GetLiveContinuationDestinationKind(currentSource, channelId);
+        if (kind == YouTubeLiveContinuationDestinationKind.ChannelLivePage) return false;
+        if (kind == YouTubeLiveContinuationDestinationKind.WatchPage
+            && YouTubeUrlService.TryGetVideoId(currentSource, out var currentId)
+            && !string.Equals(currentId, sourceVideoId, StringComparison.Ordinal)
+            && (CandidateVideoId is null || string.Equals(currentId, CandidateVideoId, StringComparison.Ordinal)))
+        {
+            // 動画IDの読取中のwatch書換えは、読取後のTryResolveで同じ動画か照合する。
+            return false;
+        }
+        _resolved = true;
+        return true;
+    }
+
+    public bool TryTimeout(TimeSpan elapsed)
+    {
+        if (_resolved || elapsed < Timeout) return false;
+        _resolved = true;
+        return true;
+    }
+
+    public bool TryResolve(string destination, string currentSource, string? resultJson,
+        out YouTubeLiveContinuationResolution resolution)
+    {
+        resolution = default;
         if (_resolved)
         {
             return false;
         }
 
         _resolved = true;
-        if (!YouTubeMiniPlayerNavigationService.IsLiveContinuationDestination(
-                sourceVideoId, channelId, destination, resultJson))
+        var valid = YouTubeMiniPlayerNavigationService.IsLiveContinuationDestination(
+            sourceVideoId, channelId, destination, resultJson);
+        YouTubeMiniPlayerNavigationService.TryReadLiveContinuationVideoId(resultJson, channelId, out var videoId);
+        var currentKind = YouTubeMiniPlayerNavigationService.GetLiveContinuationDestinationKind(currentSource, channelId);
+        if (!string.Equals(destination, currentSource, StringComparison.Ordinal)
+            && currentKind != YouTubeLiveContinuationDestinationKind.ChannelLivePage
+            && !(currentKind == YouTubeLiveContinuationDestinationKind.WatchPage
+                && YouTubeUrlService.TryGetVideoId(currentSource, out var currentId)
+                && string.Equals(currentId, CandidateVideoId ?? videoId, StringComparison.Ordinal)))
         {
-            returnTo = returnUri;
+            resolution = new(YouTubeLiveContinuationAction.ReleaseOnly, null);
+        }
+        else if (!valid)
+        {
+            resolution = new(YouTubeLiveContinuationAction.ReturnToOriginal, returnUri);
+        }
+        else if (currentKind == YouTubeLiveContinuationDestinationKind.ChannelLivePage)
+        {
+            YouTubeMiniPlayerNavigationService.TryCreateMiniPlayerUrl(
+                "https://www.youtube.com/watch?v=" + Uri.EscapeDataString(videoId), out var watchUrl);
+            resolution = new(YouTubeLiveContinuationAction.NavigateToWatch, new Uri(watchUrl));
+        }
+        else
+        {
+            resolution = new(YouTubeLiveContinuationAction.Continue, null);
         }
 
         return true;

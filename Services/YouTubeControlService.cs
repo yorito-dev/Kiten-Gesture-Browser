@@ -331,6 +331,11 @@ public sealed class YouTubeControlService
             tab,
             YouTubeControlScriptService.BuildLoopScript(targetLooping: null),
             true);
+        if (YouTubeControlScriptService.IsAdvertisementBlockedResult(resultJson))
+        {
+            _setStatus(YouTubeControlScriptService.AdvertisementBlockedMessage, true);
+            return;
+        }
         if (!string.IsNullOrWhiteSpace(resultJson)
             && TryReadScriptBoolean(resultJson, "looping", out var isLooping))
         {

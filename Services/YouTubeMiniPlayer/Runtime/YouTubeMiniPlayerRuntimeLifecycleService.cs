@@ -369,6 +369,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
 
     public static void ResetWebView(YouTubeMiniPlayerRuntime runtime)
     {
+        YouTubeMiniPlayerRuntimeContentFactory.ClearLiveContinuation(runtime);
         runtime.InactiveSuspendGeneration++;
         runtime.IsNavigationLoading = false;
         runtime.IsSuspendedForInactivity = false;

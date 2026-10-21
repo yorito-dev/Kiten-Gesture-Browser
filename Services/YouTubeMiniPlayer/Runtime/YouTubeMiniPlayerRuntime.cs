@@ -148,6 +148,8 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public YouTubeMiniPlayerLiveContinuationNavigation? LiveContinuationNavigation { get; set; }
 
+    public OwnedDispatcherTimer? LiveContinuationTimeoutTimer { get; set; }
+
     public string? LastLiveContinuationSourceVideoId { get; set; }
 
     public DateTimeOffset? LastPlaybackStateMessageAt { get; set; }

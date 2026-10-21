@@ -344,7 +344,7 @@ public sealed class KitenDataMaintenanceServiceTests
         const string sourceCommit = "0123456789abcdef0123456789abcdef01234567";
         File.WriteAllText(
             releaseInformationPath,
-            $"{{\"version\":\"0.1.0-preview.3\",\"sourceCommit\":\"{sourceCommit}\"}}",
+            $"{{\"version\":\"0.1.0-preview.4\",\"sourceCommit\":\"{sourceCommit}\"}}",
             new UTF8Encoding(false));
         var service = environment.CreateService();
 
@@ -358,7 +358,7 @@ public sealed class KitenDataMaintenanceServiceTests
         Assert.False(defaultManifest.GetProperty("includesBrowsingHistory").GetBoolean());
         Assert.False(defaultManifest.GetProperty("includesRecentItems").GetBoolean());
         Assert.False(defaultManifest.GetProperty("includesDownloadHistory").GetBoolean());
-        Assert.Equal("0.1.0-preview.3", defaultManifest.GetProperty("sourceApplication").GetProperty("publicVersion").GetString());
+        Assert.Equal("0.1.0-preview.4", defaultManifest.GetProperty("sourceApplication").GetProperty("publicVersion").GetString());
         Assert.Equal(sourceCommit, defaultManifest.GetProperty("sourceApplication").GetProperty("sourceCommit").GetString());
         var defaultFiles = defaultManifest.GetProperty("files").EnumerateArray().ToList();
         Assert.DoesNotContain(defaultFiles, item => item.GetProperty("relativePath").GetString() == "recent-items.json");
@@ -395,7 +395,7 @@ public sealed class KitenDataMaintenanceServiceTests
         const string sourceCommit = "0123456789abcdef0123456789abcdef01234567";
         File.WriteAllText(
             releaseInformationPath,
-            $"{{\"version\":\"0.1.0-preview.3\",\"sourceCommit\":\"{sourceCommit}\"}}",
+            $"{{\"version\":\"0.1.0-preview.4\",\"sourceCommit\":\"{sourceCommit}\"}}",
             new UTF8Encoding(true));
         var service = environment.CreateService();
 
@@ -406,7 +406,7 @@ public sealed class KitenDataMaintenanceServiceTests
 
         Assert.True(backup.Succeeded, backup.Message);
         var manifest = ReadManifest(Assert.IsType<string>(backup.OutputPath));
-        Assert.Equal("0.1.0-preview.3", manifest.GetProperty("sourceApplication").GetProperty("publicVersion").GetString());
+        Assert.Equal("0.1.0-preview.4", manifest.GetProperty("sourceApplication").GetProperty("publicVersion").GetString());
         Assert.Equal(sourceCommit, manifest.GetProperty("sourceApplication").GetProperty("sourceCommit").GetString());
     }
 

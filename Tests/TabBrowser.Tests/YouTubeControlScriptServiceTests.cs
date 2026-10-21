@@ -6,6 +6,33 @@ namespace TabBrowser.Tests;
 
 public sealed class YouTubeControlScriptServiceTests
 {
+    [Fact]
+    public async Task NormalTabLoopDuringAdvertisementShowsReasonWithoutSavingOrUpdatingLoop()
+    {
+        var tab = new BrowserTab { Url = "https://www.youtube.com/watch?v=fixture1234" };
+        var requests = 0;
+        var saves = 0;
+        var updates = 0;
+        string? status = null;
+        var service = new YouTubeControlService(
+            () => [tab], _ => true, _ => false, _ => true, _ => tab.Url, _ => "token",
+            (_, _, _) =>
+            {
+                requests++;
+                return Task.FromResult<string?>("""{"ok":false,"found":true,"skipped":true,"reason":"advertisement"}""");
+            },
+            (message, _) => status = message,
+            () => saves++, (_, _) => updates++, (_, _) => updates++,
+            new TabRuntimeCoordinator(new TabRuntimeRegistry()));
+
+        await service.TogglePlaybackLoopAsync(tab);
+
+        Assert.Equal(1, requests);
+        Assert.Equal(YouTubeControlScriptService.AdvertisementBlockedMessage, status);
+        Assert.Equal(0, saves);
+        Assert.Equal(0, updates);
+    }
+
     [Theory]
     [InlineData("{\"ok\":false,\"skipped\":true,\"reason\":\"advertisement\"}", true)]
     [InlineData("{\"ok\":false,\"reason\":\"not-live\"}", false)]
@@ -20,7 +47,7 @@ public sealed class YouTubeControlScriptServiceTests
     }
 
     [Fact]
-    public void AdvertisementGuardIsSharedByRestoreSpeedSeekAndAbRepeat()
+    public void AdvertisementGuardIsSharedByRestoreSpeedSeekLoopAndAbRepeat()
     {
         var scripts = new[]
         {
@@ -29,6 +56,7 @@ public sealed class YouTubeControlScriptServiceTests
             YouTubeControlScriptService.BuildSeekRelativeScript(10),
             YouTubeControlScriptService.BuildSeekToRatioScript(0.5),
             YouTubeControlScriptService.BuildSeekToLiveEdgeScript(),
+            YouTubeControlScriptService.BuildLoopScript(null),
             YouTubeControlScriptService.BuildAbRepeatScript(10, 20, true, false, "fixture-video")
         };
         Assert.All(scripts, script =>
