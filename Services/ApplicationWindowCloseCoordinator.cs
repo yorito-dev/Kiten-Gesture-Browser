@@ -9,6 +9,33 @@ internal sealed class ApplicationWindowCloseCoordinator
     private int _temporaryScopeCount;
     private readonly SemaphoreSlim _persistenceGate = new(1, 1);
     private readonly Dictionary<string, Task> _pendingWrites = [];
+    private bool _discardingNotes;
+
+    // メモ破棄は明示操作からだけ行う。終了前保存の成功と対象の再確認まで本文を残す。
+    public async Task<WindowPersistenceResult> CloseWithoutSavingNotesAsync(
+        Func<bool> canDiscard,
+        Func<Task<WindowPersistenceResult>> saveBeforeClose,
+        Action discardNotes,
+        Action<WindowPersistenceResult> closeWindows)
+    {
+        if (_discardingNotes || !canDiscard())
+            return new([new("メモの保存中または編集Windowの変更", WindowPersistenceStatus.Pending)]);
+        _discardingNotes = true;
+        try
+        {
+            var result = await saveBeforeClose();
+            if (!result.Succeeded) return result;
+            if (!canDiscard())
+                return new([new("メモの保存中または編集Windowの変更", WindowPersistenceStatus.Pending)]);
+            discardNotes();
+            closeWindows(result);
+            return result;
+        }
+        finally
+        {
+            _discardingNotes = false;
+        }
+    }
 
     // 1回の保存待機は最大15秒。期限超過した書込は追跡し、同じ対象キーへ重ねて開始しない。
     public async Task<WindowPersistenceResult> SaveBeforeCloseAsync(

@@ -62,20 +62,131 @@
         </Style>
 
         <Style x:Key="ToolbarNavigationButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource ToolbarButtonStyle}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
-                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2" SnapsToDevicePixels="True">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" SnapsToDevicePixels="True">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#2B303A" />
-                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#5D6675" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#303D4D" />
+                                <Setter Property="Foreground" Value="#8AD4E3" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#1B1F27" />
-                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#8AB4F8" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#202C38" />
+                                <Setter Property="Foreground" Value="#B4EBF4" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="BorderThickness" Value="1" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#8AD4E3" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="Transparent" />
+                                <Setter TargetName="ButtonBorder" Property="BorderThickness" Value="0" />
+                                <Setter Property="Foreground" Value="#6B7280" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ToolbarNavigationIconStyle" TargetType="Path">
+            <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+            <Setter Property="StrokeThickness" Value="1.7" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
+
+        <Geometry x:Key="ToolbarGoIcon">M 3,10 L 17,10 M 11,4 L 17,10 11,16</Geometry>
+        <Geometry x:Key="ToolbarGridIcon">M 2,2 L 7.5,2 7.5,7.5 2,7.5 Z M 12.5,2 L 18,2 18,7.5 12.5,7.5 Z M 2,12.5 L 7.5,12.5 7.5,18 2,18 Z M 12.5,12.5 L 18,12.5 18,18 12.5,18 Z</Geometry>
+        <Geometry x:Key="ToolbarToolsIcon">M 12,3 A 5,5 0 0 0 7,10 L 2.5,14.5 A 2.1,2.1 0 0 0 5.5,17.5 L 10,13 A 5,5 0 0 0 17,8 L 14,10 10,6 Z</Geometry>
+        <Geometry x:Key="ToolbarStarIcon">M 10,1.8 L 12.6,7.1 18.5,8 14.3,12.1 15.3,18 10,15.2 4.7,18 5.7,12.1 1.5,8 7.4,7.1 Z</Geometry>
+        <Geometry x:Key="ToolbarBookmarkIcon">M 5,2 L 15,2 Q 16,2 16,3 L 16,18 10,14 4,18 4,3 Q 4,2 5,2 Z</Geometry>
+        <Geometry x:Key="ToolbarKeyIcon">M 11,9 A 4.5,4.5 0 1 1 14,12 L 8,18 5,18 5,15 2,15 2,12 8,6 M 13,5 L 13.1,5</Geometry>
+        <Geometry x:Key="ToolbarExtensionIcon">M 3,4 L 7,4 C 5,0 13,0 11,4 L 16,4 16,9 C 20,7 20,15 16,13 L 16,18 11,18 C 13,14 5,14 7,18 L 2,18 2,13 C 6,15 6,7 2,9 L 2,4 Z</Geometry>
+        <Geometry x:Key="ToolbarImportIcon">M 11,2 L 17,2 Q 18,2 18,3 L 18,17 Q 18,18 17,18 L 11,18 M 2,10 L 13,10 M 9,6 L 13,10 9,14</Geometry>
+        <Geometry x:Key="ToolbarManageIcon">M 3,5 L 17,5 M 3,10 L 17,10 M 3,15 L 17,15 M 7,2.5 L 7,7.5 M 13,7.5 L 13,12.5 M 7,12.5 L 7,17.5</Geometry>
+        <Geometry x:Key="ToolbarGestureIcon">M 5,8 L 5,7 A 5,5 0 0 1 15,7 L 15,13 A 5,5 0 0 1 5,13 Z M 10,2 L 10,8 M 5,8 L 15,8</Geometry>
+        <Geometry x:Key="ToolbarSettingsIcon">M 8,2 L 12,2 12.5,4.2 14,5 16.2,4.4 18,7.6 16.3,9.2 16.3,10.8 18,12.4 16.2,15.6 14,15 12.5,15.8 12,18 8,18 7.5,15.8 6,15 3.8,15.6 2,12.4 3.7,10.8 3.7,9.2 2,7.6 3.8,4.4 6,5 7.5,4.2 Z M 13,10 A 3,3 0 1 1 7,10 A 3,3 0 1 1 13,10</Geometry>
+        <Geometry x:Key="ToolbarReadabilityIcon">M 4,2 L 16,2 Q 17,2 17,3 L 17,17 Q 17,18 16,18 L 4,18 Q 3,18 3,17 L 3,3 Q 3,2 4,2 Z M 6,6 L 14,6 M 6,10 L 14,10 M 6,14 L 12,14</Geometry>
+        <Geometry x:Key="ToolbarVideoIcon">M 3,4 L 17,4 Q 18,4 18,5 L 18,15 Q 18,16 17,16 L 3,16 Q 2,16 2,15 L 2,5 Q 2,4 3,4 Z M 8,7 L 13,10 8,13 Z</Geometry>
+        <Geometry x:Key="ToolbarVerticalTabsIcon">M 3,3 L 17,3 Q 18,3 18,4 L 18,16 Q 18,17 17,17 L 3,17 Q 2,17 2,16 L 2,4 Q 2,3 3,3 Z M 7,3 L 7,17</Geometry>
+        <Geometry x:Key="ToolbarHorizontalTabsIcon">M 3,3 L 17,3 Q 18,3 18,4 L 18,16 Q 18,17 17,17 L 3,17 Q 2,17 2,16 L 2,4 Q 2,3 3,3 Z M 2,7 L 18,7</Geometry>
+
+        <DataTemplate x:Key="ToolbarLabeledActionContentTemplate">
+            <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
+                <Viewbox Width="18" Height="18">
+                    <Canvas Width="20" Height="20">
+                        <Path Data="{Binding Tag, RelativeSource={RelativeSource AncestorType=Button}}" Style="{StaticResource ToolbarNavigationIconStyle}" />
+                    </Canvas>
+                </Viewbox>
+                <TextBlock Margin="6,0,0,0" VerticalAlignment="Center" Text="{Binding}" />
+                <Canvas x:Name="MenuChevron" Width="10" Height="18" Margin="5,0,0,0" Visibility="Collapsed">
+                    <Path Data="M 2,7 L 5,10 8,7" Style="{StaticResource ToolbarNavigationIconStyle}" />
+                </Canvas>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding}" Value="操作">
+                    <Setter TargetName="MenuChevron" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding}" Value="ツール">
+                    <Setter TargetName="MenuChevron" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ToolbarTabLayoutContentTemplate">
+            <Canvas Width="20" Height="20" IsHitTestVisible="False">
+                <Path x:Name="LayoutIcon" Data="{StaticResource ToolbarVerticalTabsIcon}" Style="{StaticResource ToolbarNavigationIconStyle}" />
+            </Canvas>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding}" Value="横">
+                    <Setter TargetName="LayoutIcon" Property="Data" Value="{StaticResource ToolbarHorizontalTabsIcon}" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ToolbarZoomContentTemplate">
+            <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
+                <TextBlock VerticalAlignment="Center" Text="{Binding}" />
+                <Canvas Width="10" Height="18" Margin="6,0,0,0">
+                    <Path Data="M 2,7 L 5,10 8,7" Style="{StaticResource ToolbarNavigationIconStyle}" />
+                </Canvas>
+            </StackPanel>
+        </DataTemplate>
+
+        <Style x:Key="ToolbarActionButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+            <Setter Property="Width" Value="Auto" />
+            <Setter Property="MinWidth" Value="34" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding ToolTip, RelativeSource={RelativeSource Self}}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#303D4D" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#52647A" />
+                                <Setter Property="Foreground" Value="#8AD4E3" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#202C38" />
+                                <Setter Property="Foreground" Value="#B4EBF4" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#8AD4E3" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Background" Value="#181B22" />
@@ -87,6 +198,10 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="ToolbarLabeledActionButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolbarActionButtonStyle}">
+            <Setter Property="ContentTemplate" Value="{StaticResource ToolbarLabeledActionContentTemplate}" />
         </Style>
 
         <Style x:Key="WindowCaptionButtonStyle" TargetType="{x:Type Button}">
@@ -761,9 +876,9 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Button x:Name="TopToolbarScrollLeftButton" Grid.Column="0" Width="24" Height="30" Margin="4,5,2,5" Padding="0" Content="‹" Click="TopToolbarScrollLeftButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ツールバーを左へ移動" Visibility="Collapsed" />
+                <Button x:Name="TopToolbarScrollLeftButton" Grid.Column="0" Width="24" Height="30" Margin="4,4,2,5" Padding="0" Content="‹" Click="TopToolbarScrollLeftButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ツールバーを左へ移動" Visibility="Collapsed" />
                 <ScrollViewer x:Name="TopToolbarScrollViewer" Grid.Column="1" CanContentScroll="False" Focusable="False" HorizontalScrollBarVisibility="Hidden" PanningMode="HorizontalOnly" PreviewMouseWheel="TopToolbarScrollViewer_PreviewMouseWheel" ScrollChanged="TopToolbarScrollViewer_ScrollChanged" VerticalScrollBarVisibility="Disabled">
-                    <Grid x:Name="TopToolbarGrid" Margin="10,5" Loaded="TopToolbarGrid_Loaded">
+                    <Grid x:Name="TopToolbarGrid" Margin="10,4,10,5" Loaded="TopToolbarGrid_Loaded">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -793,12 +908,63 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Button x:Name="BackButton" Grid.Column="0" Content="←" Click="BackButton_Click" Style="{StaticResource ToolbarNavigationButtonStyle}" ToolTip="戻る" />
-                <Button x:Name="ForwardButton" Grid.Column="1" Content="→" Click="ForwardButton_Click" Style="{StaticResource ToolbarNavigationButtonStyle}" ToolTip="進む" />
-                <Button x:Name="ReloadButton" Grid.Column="2" Content="更新" Click="ReloadButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="更新" />
-                <Button x:Name="RestoreButton" Grid.Column="3" Content="復元" Click="RestoreButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="最近閉じた項目を復元" />
-                <Button x:Name="ClosedTabHistoryButton" Grid.Column="4" Width="34" Height="30" Margin="0,0,6,0" Content="▼" Click="ClosedTabHistoryButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="最近閉じた項目" />
-                <Popup x:Name="ClosedTabHistoryPopup" PlacementTarget="{Binding ElementName=ClosedTabHistoryButton}" Placement="Bottom" HorizontalOffset="0" VerticalOffset="4" StaysOpen="False" AllowsTransparency="False" PopupAnimation="Fade">
+                <Border Grid.Column="0" Grid.ColumnSpan="2" Height="30" Margin="0,0,6,0" Background="#282D36" CornerRadius="15">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding Visibility, ElementName=BackButton}" Value="Collapsed" />
+                                        <Condition Binding="{Binding Visibility, ElementName=ForwardButton}" Value="Collapsed" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="BackButton" Margin="0" Click="BackButton_Click" Style="{StaticResource ToolbarNavigationButtonStyle}" AutomationProperties.Name="戻る" ToolTip="戻る">
+                            <Canvas Width="20" Height="20" IsHitTestVisible="False">
+                                <Path Style="{StaticResource ToolbarNavigationIconStyle}" Data="M 16,10 L 4,10 M 9,5 L 4,10 9,15" />
+                            </Canvas>
+                        </Button>
+                        <Border Width="1" Height="14" Background="#424853">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Visibility, ElementName=BackButton}" Value="Collapsed">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Visibility, ElementName=ForwardButton}" Value="Collapsed">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                        <Button x:Name="ForwardButton" Margin="0" Click="ForwardButton_Click" Style="{StaticResource ToolbarNavigationButtonStyle}" AutomationProperties.Name="進む" ToolTip="進む">
+                            <Canvas Width="20" Height="20" IsHitTestVisible="False">
+                                <Path Style="{StaticResource ToolbarNavigationIconStyle}" Data="M 4,10 L 16,10 M 11,5 L 16,10 11,15" />
+                            </Canvas>
+                        </Button>
+                    </StackPanel>
+                </Border>
+                <Button x:Name="ReloadButton" Grid.Column="2" Click="ReloadButton_Click" Style="{StaticResource ToolbarNavigationButtonStyle}" AutomationProperties.Name="更新" ToolTip="更新">
+                    <Canvas Width="20" Height="20" IsHitTestVisible="False">
+                        <Path Style="{StaticResource ToolbarNavigationIconStyle}" Data="M 16.4,7 A 7,7 0 1 0 16.7,12 M 16.4,2.5 L 16.4,7 12,7" />
+                    </Canvas>
+                </Button>
+                <Button x:Name="RestoreButton" Grid.Column="3" Click="RestoreButton_Click" Style="{StaticResource ToolbarNavigationButtonStyle}" AutomationProperties.Name="最近閉じた項目を復元" ToolTip="最近閉じた項目を復元">
+                    <Canvas Width="20" Height="20" IsHitTestVisible="False">
+                        <Path Style="{StaticResource ToolbarNavigationIconStyle}" Data="M 5,14 L 3,14 Q 1.5,14 1.5,12.5 L 1.5,3 Q 1.5,1.5 3,1.5 L 12,1.5 Q 13.5,1.5 13.5,3 L 13.5,5 M 2,5 L 10,5 M 8,7 L 17,7 Q 18.5,7 18.5,8.5 L 18.5,17 Q 18.5,18.5 17,18.5 L 8,18.5 Q 6.5,18.5 6.5,17 L 6.5,8.5 Q 6.5,7 8,7 M 10.5,10 L 8.5,12 10.5,14 M 8.5,12 L 12,12 Q 15,12 15,15" />
+                    </Canvas>
+                </Button>
+                <Button x:Name="ClosedTabHistoryButton" Grid.Column="4" Width="46" Height="30" Margin="0,0,6,0" Click="ClosedTabHistoryButton_Click" Style="{StaticResource ToolbarNavigationButtonStyle}" AutomationProperties.Name="最近閉じた項目" ToolTip="最近閉じた項目">
+                    <Canvas Width="34" Height="20" IsHitTestVisible="False">
+                        <Path Style="{StaticResource ToolbarNavigationIconStyle}" Data="M 17,10 A 7,7 0 1 1 3,10 A 7,7 0 1 1 17,10 M 10,5.5 L 10,10 13.5,10 M 25,8 L 28,11 31,8" />
+                    </Canvas>
+                </Button>
+                <Popup x:Name="ClosedTabHistoryPopup" PreviewMouseLeftButtonDown="ClosedTabHistoryPopup_PreviewMouseLeftButtonDown" PlacementTarget="{Binding ElementName=ClosedTabHistoryButton}" Placement="Bottom" HorizontalOffset="0" VerticalOffset="4" StaysOpen="False" AllowsTransparency="False" PopupAnimation="Fade">
                     <Border Width="420" MaxHeight="640" Background="#151820" BorderBrush="#343842" BorderThickness="1">
                         <Border.Resources>
                             <Style x:Key="RecentClosedFilterStyle" TargetType="{x:Type RadioButton}">
@@ -997,10 +1163,10 @@
                         </StackPanel>
                     </Border>
                 </Popup>
-                <Button x:Name="GoButton" Grid.Column="6" Width="54" Height="30" Margin="6,0,8,0" Content="移動" Click="GoButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="移動" />
-                <Button x:Name="ActionsButton" Grid.Column="7" Width="58" Height="30" Margin="0,0,8,0" Content="操作" Click="ActionsButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ブックマーク、Workspace">
+                <Button x:Name="GoButton" Tag="{StaticResource ToolbarGoIcon}" Grid.Column="6" Width="Auto" Height="30" Margin="6,0,6,0" Content="移動" Click="GoButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="移動" />
+                <Button x:Name="ActionsButton" Tag="{StaticResource ToolbarGridIcon}" Grid.Column="7" Width="Auto" Height="30" Margin="0,0,6,0" Content="操作" Click="ActionsButton_Click" PreviewMouseLeftButtonDown="ToolbarMenuButton_PreviewMouseLeftButtonDown" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="ブックマーク、Workspace">
                     <Button.ContextMenu>
-                        <ContextMenu>
+                        <ContextMenu Mouse.PreviewMouseDownOutsideCapturedElement="ToolbarContextMenu_MouseDownOutsideCapturedElement">
                             <MenuItem Header="現在のページをブックマーク" Click="AddBookmarkButton_Click" />
                             <MenuItem x:Name="OpenBookmarkHierarchyMenuItem" Header="ブックマークを開く" />
                             <MenuItem Header="ブックマーク一覧" Click="BookmarkListButton_Click" />
@@ -1010,18 +1176,18 @@
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
-                <Button x:Name="AddExtensionButton" Grid.Column="12" Width="58" Height="30" Margin="0,0,8,0" Content="拡張" Click="AddExtensionButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="拡張機能フォルダを追加" Visibility="Collapsed" />
-                <Button x:Name="ManageExtensionsButton" Grid.Column="14" Width="58" Height="30" Margin="0,0,8,0" Content="管理" Click="ManageExtensionsButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="拡張機能を管理" Visibility="Collapsed" />
-                <Button x:Name="ImportExtensionButton" Grid.Column="13" Width="58" Height="30" Margin="0,0,8,0" Content="取込" Click="ImportExtensionButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="Chrome/Edge の拡張機能を取り込む" Visibility="Collapsed" />
-                <Button x:Name="AddBookmarkButton" Grid.Column="8" Width="34" Height="30" Margin="0,0,6,0" Content="★" Click="AddBookmarkButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="現在のページをブックマーク" Visibility="Collapsed" />
-                <Button x:Name="BookmarkListButton" Grid.Column="9" Width="44" Height="30" Margin="0,0,8,0" Content="栞" Click="BookmarkListButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ブックマーク一覧" Visibility="Collapsed" />
-                <Button x:Name="WorkspaceOSButton" Grid.Column="10" Width="54" Height="30" Margin="0,0,8,0" Content="WS" Click="WorkspaceOSButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="Workspace OS" Visibility="Collapsed" />
+                <Button x:Name="AddExtensionButton" Tag="{StaticResource ToolbarExtensionIcon}" Grid.Column="12" Width="Auto" Height="30" Margin="0,0,6,0" Content="拡張" Click="AddExtensionButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="拡張機能フォルダを追加" Visibility="Collapsed" />
+                <Button x:Name="ManageExtensionsButton" Tag="{StaticResource ToolbarManageIcon}" Grid.Column="14" Width="Auto" Height="30" Margin="0,0,6,0" Content="管理" Click="ManageExtensionsButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="拡張機能を管理" Visibility="Collapsed" />
+                <Button x:Name="ImportExtensionButton" Tag="{StaticResource ToolbarImportIcon}" Grid.Column="13" Width="Auto" Height="30" Margin="0,0,6,0" Content="取込" Click="ImportExtensionButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="Chrome/Edge の拡張機能を取り込む" Visibility="Collapsed" />
+                <Button x:Name="AddBookmarkButton" Tag="{StaticResource ToolbarStarIcon}" Grid.Column="8" Width="Auto" Height="30" Margin="0,0,6,0" Content="追加" Click="AddBookmarkButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="現在のページをブックマーク" Visibility="Collapsed" />
+                <Button x:Name="BookmarkListButton" Tag="{StaticResource ToolbarBookmarkIcon}" Grid.Column="9" Width="Auto" Height="30" Margin="0,0,6,0" Content="栞" Click="BookmarkListButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="ブックマーク一覧" Visibility="Collapsed" />
+                <Button x:Name="WorkspaceOSButton" Tag="{StaticResource ToolbarGridIcon}" Grid.Column="10" Width="Auto" Height="30" Margin="0,0,6,0" Content="WS" Click="WorkspaceOSButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="Workspace OS" Visibility="Collapsed" />
 
-                <Button x:Name="GestureSettingsButton" Grid.Column="15" Width="58" Height="30" Margin="0,0,8,0" Content="ジェス" Click="GestureSettingsButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="マウスジェスチャー設定" Visibility="Collapsed" />
-                <Button x:Name="SettingsButton" Grid.Column="16" Width="58" Height="30" Margin="0,0,8,0" Content="設定" Click="SettingsButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="設定" Visibility="Collapsed" />
-                <Button x:Name="ToolsButton" Grid.Column="17" Width="58" Height="30" Margin="0,0,8,0" Content="ツール" Click="ToolsButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="拡張機能、ジェスチャー、設定">
+                <Button x:Name="GestureSettingsButton" Tag="{StaticResource ToolbarGestureIcon}" Grid.Column="15" Width="Auto" Height="30" Margin="0,0,6,0" Content="ジェス" Click="GestureSettingsButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="マウスジェスチャー設定" Visibility="Collapsed" />
+                <Button x:Name="SettingsButton" Tag="{StaticResource ToolbarSettingsIcon}" Grid.Column="16" Width="Auto" Height="30" Margin="0,0,6,0" Content="設定" Click="SettingsButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="設定" Visibility="Collapsed" />
+                <Button x:Name="ToolsButton" Tag="{StaticResource ToolbarToolsIcon}" Grid.Column="17" Width="Auto" Height="30" Margin="0,0,6,0" Content="ツール" Click="ToolsButton_Click" PreviewMouseLeftButtonDown="ToolbarMenuButton_PreviewMouseLeftButtonDown" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="拡張機能、ジェスチャー、設定">
                     <Button.ContextMenu>
-                        <ContextMenu>
+                        <ContextMenu Mouse.PreviewMouseDownOutsideCapturedElement="ToolbarContextMenu_MouseDownOutsideCapturedElement">
                             <MenuItem Header="拡張機能フォルダを追加" Click="AddExtensionButton_Click" />
                             <MenuItem Header="Chrome/Edge の拡張機能を取り込む" Click="ImportExtensionButton_Click" />
                             <MenuItem Header="拡張機能を管理" Click="ManageExtensionsButton_Click" />
@@ -1052,16 +1218,31 @@
                     </Button.ContextMenu>
                 </Button>
 
-                <Button x:Name="DownloadsButton" Grid.Column="19" Width="Auto" MinWidth="44" Height="30" Margin="0,0,8,0" Padding="6,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" AutomationProperties.Name="ダウンロード" Click="DownloadsButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ダウンロード">
+                <Button x:Name="DownloadsButton" Grid.Column="19" Width="Auto" MinWidth="44" Height="30" Margin="0,0,6,0" Padding="6,0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" AutomationProperties.Name="ダウンロード" Click="DownloadsButton_Click" FontSize="12" FontWeight="Normal" Style="{StaticResource ToolbarActionButtonStyle}" ToolTip="ダウンロード">
                     <Grid IsHitTestVisible="False">
-                        <TextBlock x:Name="DownloadsButtonText" Margin="0,0,0,3" HorizontalAlignment="Center" VerticalAlignment="Center" Text="DL" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="20" Height="20">
+                                <Path Data="M 10,2 L 10,13 M 5,8 L 10,13 15,8 M 2,13 L 2,17 18,17 18,13" Style="{StaticResource ToolbarNavigationIconStyle}" />
+                            </Canvas>
+                            <TextBlock x:Name="DownloadsButtonText" Margin="6,0,0,3" VerticalAlignment="Center" Text="DL">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <Trigger Property="Text" Value="DL">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
                         <ProgressBar x:Name="DownloadsButtonProgress" Height="3" Margin="0,0,0,2" VerticalAlignment="Bottom" Background="#1F2937" BorderThickness="0" Foreground="#22D3EE" Minimum="0" Maximum="100" Value="0" Focusable="False" Visibility="Collapsed" AutomationProperties.Name="ダウンロードの平均進捗" />
                     </Grid>
                 </Button>
-                <Button x:Name="TabLayoutModeButton" Grid.Column="23" Width="44" Height="30" Margin="0,0,8,0" Content="縦" Click="TabLayoutModeButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="縦タブに切り替え" />
-                <Button x:Name="YouTubeMiniPlayerListButton" Grid.Column="24" Width="44" Height="30" Margin="0,0,8,0" Content="YT" Click="YouTubeMiniPlayerListButton_Click" AllowDrop="True" DragOver="YouTubeMiniPlayerLocalVideo_DragOver" Drop="YouTubeMiniPlayerLocalVideo_Drop" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="YouTube ミニプレイヤー一覧" />
-                <Button x:Name="PageZoomButton" Grid.Column="25" Width="54" Height="30" Margin="0" HorizontalAlignment="Right" Content="100%" Click="PageZoomButton_Click" FontSize="12" FontWeight="SemiBold" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ページの表示倍率" Visibility="Collapsed" />
-                <Popup x:Name="PageZoomPopup" PlacementTarget="{Binding ElementName=PageZoomButton}" Placement="Bottom" HorizontalOffset="-112" VerticalOffset="4" StaysOpen="False" AllowsTransparency="False" PopupAnimation="Fade">
+                <Button x:Name="TabLayoutModeButton" Grid.Column="23" Width="38" Height="30" Margin="0,0,6,0" Content="縦" ContentTemplate="{StaticResource ToolbarTabLayoutContentTemplate}" Click="TabLayoutModeButton_Click" FontSize="12" FontWeight="Normal" Style="{StaticResource ToolbarActionButtonStyle}" ToolTip="縦タブに切り替え" />
+                <Button x:Name="YouTubeMiniPlayerListButton" Tag="{StaticResource ToolbarVideoIcon}" Grid.Column="24" Width="Auto" Height="30" Margin="0,0,6,0" Content="動画" Click="YouTubeMiniPlayerListButton_Click" AllowDrop="True" DragOver="YouTubeMiniPlayerLocalVideo_DragOver" Drop="YouTubeMiniPlayerLocalVideo_Drop" FontSize="12" FontWeight="Normal" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="YouTube ミニプレイヤー一覧" />
+                <Button x:Name="PageZoomButton" Grid.Column="25" Width="Auto" Height="30" Margin="0" HorizontalAlignment="Right" Content="100%" ContentTemplate="{StaticResource ToolbarZoomContentTemplate}" Click="PageZoomButton_Click" FontSize="12" FontWeight="Normal" Style="{StaticResource ToolbarActionButtonStyle}" ToolTip="ページの表示倍率" Visibility="Collapsed" />
+                <Popup x:Name="PageZoomPopup" PreviewMouseLeftButtonDown="ToolbarSurface_PreviewMouseLeftButtonDown" PlacementTarget="{Binding ElementName=PageZoomButton}" Placement="Bottom" HorizontalOffset="-112" VerticalOffset="4" StaysOpen="False" AllowsTransparency="False" PopupAnimation="Fade">
                     <Border Padding="5" Background="#151820" BorderBrush="#3A404D" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
                             <Button Width="38" Height="26" Margin="0" Padding="0" Content="−" Click="PageZoomOutButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="10%縮小" />
@@ -1416,8 +1597,9 @@
                         <DataTemplate>
                             <Button Width="30" Height="30" Margin="0,0,4,0" Padding="0" Click="ExtensionIconButton_Click" PreviewMouseRightButtonUp="ExtensionIconButton_PreviewMouseRightButtonUp" ToolTip="{Binding ToolTipText}">
                                 <Button.Style>
-                                    <Style TargetType="{x:Type Button}" BasedOn="{StaticResource ToolbarButtonStyle}">
+                                    <Style TargetType="{x:Type Button}" BasedOn="{StaticResource ToolbarActionButtonStyle}">
                                         <Setter Property="Width" Value="30" />
+                                        <Setter Property="MinWidth" Value="30" />
                                         <Setter Property="Height" Value="30" />
                                         <Setter Property="Margin" Value="0,0,4,0" />
                                         <Style.Triggers>
@@ -1509,7 +1691,7 @@
                 </Border>
                     </Grid>
                 </ScrollViewer>
-                <Button x:Name="TopToolbarScrollRightButton" Grid.Column="2" Width="24" Height="30" Margin="2,5,4,5" Padding="0" Content="›" Click="TopToolbarScrollRightButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ツールバーを右へ移動" Visibility="Collapsed" />
+                <Button x:Name="TopToolbarScrollRightButton" Grid.Column="2" Width="24" Height="30" Margin="2,4,4,5" Padding="0" Content="›" Click="TopToolbarScrollRightButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="ツールバーを右へ移動" Visibility="Collapsed" />
             </Grid>
         </Border>
 
@@ -2098,7 +2280,7 @@
 
 
 
-        <Popup x:Name="DownloadShelfPopup" AllowsTransparency="True" Focusable="True" Placement="Bottom" PlacementTarget="{Binding ElementName=DownloadsButton}" StaysOpen="False" PopupAnimation="Fade">
+        <Popup x:Name="DownloadShelfPopup" PreviewMouseLeftButtonDown="ToolbarSurface_PreviewMouseLeftButtonDown" AllowsTransparency="True" Focusable="True" Placement="Bottom" PlacementTarget="{Binding ElementName=DownloadsButton}" StaysOpen="False" PopupAnimation="Fade">
             <Border Width="540" MaxHeight="560" Padding="12" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1">
                 <DockPanel LastChildFill="True">
                     <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">

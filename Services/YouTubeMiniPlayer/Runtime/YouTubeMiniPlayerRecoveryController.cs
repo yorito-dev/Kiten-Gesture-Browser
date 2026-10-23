@@ -189,15 +189,24 @@ internal sealed class YouTubeMiniPlayerRecoveryController
             allowSourceTabFallback: false);
     }
 
+    public Task<bool> RunManualRepairAsync(YouTubeMiniPlayerState state)
+        => RunYouTubeMiniPlayerAutoRecoveryAsync(state, "manual-repair", TimeSpan.Zero,
+            requireProgressConfirmation: false, skipCurrentWebViewReload: false,
+            allowSourceTabFallback: true, manualRequest: true);
+
     public async Task<bool> RunYouTubeMiniPlayerAutoRecoveryAsync(
         YouTubeMiniPlayerState state,
         string reason,
         TimeSpan confirmationDelay,
         bool requireProgressConfirmation,
         bool skipCurrentWebViewReload,
-        bool allowSourceTabFallback = false)
+        bool allowSourceTabFallback = false,
+        bool manualRequest = false)
     {
-        if (IsRecoveryAttemptLimited(state.Id))
+        if (state.SourceKind != MiniPlayerSourceKind.YouTube) return false;
+        if (manualRequest && (_host.IsClosingWindow || _host.LifetimeToken.IsCancellationRequested
+            || (_host.Runtimes.TryGetValue(state.Id, out var target) && target.IsDisposed))) return false;
+        if (!manualRequest && IsRecoveryAttemptLimited(state.Id))
         {
             if (_host.Runtimes.TryGetValue(state.Id, out var limitedRuntime))
             {
@@ -214,7 +223,7 @@ internal sealed class YouTubeMiniPlayerRecoveryController
             confirmationDelay,
             skipCurrentWebViewReload,
             new YouTubeMiniPlayerRecoveryCallbacks(
-                token => ConfirmYouTubeMiniPlayerFailureAsync(
+                token => manualRequest ? Task.FromResult(true) : ConfirmYouTubeMiniPlayerFailureAsync(
                     state,
                     requireProgressConfirmation,
                     token),
@@ -236,9 +245,9 @@ internal sealed class YouTubeMiniPlayerRecoveryController
             allowSourceTabFallback,
             _host.LifetimeToken);
 
-        if (result is YouTubeMiniPlayerRecoveryResult.RecoveredByReload
+        if (!manualRequest && result is (YouTubeMiniPlayerRecoveryResult.RecoveredByReload
             or YouTubeMiniPlayerRecoveryResult.RecoveredByRecreate
-            or YouTubeMiniPlayerRecoveryResult.Failed)
+            or YouTubeMiniPlayerRecoveryResult.Failed))
         {
             RecordRecoveryAttempt(state.Id);
         }
@@ -274,7 +283,9 @@ internal sealed class YouTubeMiniPlayerRecoveryController
                     runtime.DisplayHealth.ReportFailure();
                 }
 
-                _host.SetStatus("YouTubeミニプレイヤーを自動復旧できませんでした。一覧の表示修復を使用してください");
+                _host.SetStatus(manualRequest
+                    ? "YouTubeミニプレイヤーの表示を修復できませんでした。元のタブから開き直してください"
+                    : "YouTubeミニプレイヤーを自動復旧できませんでした。一覧の表示修復を使用してください");
                 break;
 
         }

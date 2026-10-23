@@ -124,7 +124,13 @@ public sealed class BookmarkService
     {
         using var stream = File.OpenRead(filePath);
         var data = JsonSerializer.Deserialize<BookmarkData>(stream, JsonOptions);
-        return NormalizeLoadedData(data ?? new BookmarkData());
+        if (data is null || data.Bookmarks is null || data.Folders is null
+            || data.Bookmarks.Any(static item => item is null)
+            || data.Folders.Any(static item => item is null))
+        {
+            throw new JsonException("ブックマークの配列または要素が不正です。");
+        }
+        return NormalizeLoadedData(data);
     }
 
     public async Task SaveAsync(IEnumerable<BookmarkItem> bookmarks)

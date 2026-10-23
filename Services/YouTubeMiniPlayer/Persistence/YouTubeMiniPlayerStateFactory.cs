@@ -13,7 +13,8 @@ public static class YouTubeMiniPlayerStateFactory
         string? title,
         bool isShorts,
         Rect bounds,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        double? positionSeconds = null)
     {
         return new YouTubeMiniPlayerState
         {
@@ -25,6 +26,7 @@ public static class YouTubeMiniPlayerStateFactory
                 ? YouTubeMiniPlayerNavigationService.GetFallbackTitle(url)
                 : title.Trim(),
             IsShorts = isShorts,
+            LastPositionSeconds = YouTubeControlScriptService.NormalizePlaybackPosition(positionSeconds),
             Left = bounds.Left,
             Top = bounds.Top,
             Width = bounds.Width,

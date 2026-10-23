@@ -24,6 +24,28 @@ internal sealed class BookmarkStateStore(IBookmarkStore persistence)
 
     public event EventHandler<BookmarkStateChangedEventArgs>? Changed;
 
+    public async Task FlushAsync()
+    {
+        // 更新と同じ門で進行中の保存を待ち、失敗後の最新状態だけを再保存する。
+        await _saveGate.WaitAsync();
+        try
+        {
+            BookmarkData snapshot;
+            lock (_stateLock)
+            {
+                if (!_hasPendingChanges) return;
+                snapshot = BookmarkDataSnapshot.Clone(_state);
+            }
+
+            await _persistence.SaveDataAsync(snapshot);
+            lock (_stateLock) _hasPendingChanges = false;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
     public BookmarkLoadResult Initialize()
     {
         lock (_stateLock)

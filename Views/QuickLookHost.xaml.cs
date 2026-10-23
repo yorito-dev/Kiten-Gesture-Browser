@@ -160,6 +160,15 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         }
 
         await _closeTask;
+        // FolderTab・Workspace・パレットの共通入口で、表示元Windowの文脈を渡す。
+        for (var owner = Window.GetWindow(this); owner is not null; owner = owner.Owner)
+        {
+            if (owner is MainWindow main)
+            {
+                request = request with { IsPrivate = request.IsPrivate || main.IsPrivateBrowsing };
+                break;
+            }
+        }
         var loadVersion = ++_loadVersion;
         _request = request;
         Visibility = Visibility.Visible;

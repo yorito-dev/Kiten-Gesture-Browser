@@ -173,6 +173,8 @@ internal static class WindowTaskOwnershipPolicy
             "tab選択変更時だけ生起動する一回限りのdocument fullscreen解除scriptで全失敗を内部処理し、await後のMainWindow変更はなくapplication fullscreen復元は呼出側が同期実行する。"),
 
         ContinueMiniPlayer("_youTubeMiniPlayerController.OpenFromLinkAsync", 1, "YouTubeMiniPlayerController"),
+        Continue("MainWindow.WebContextMenu.cs", "OpenTabInYouTubeMiniPlayerAsync", 1,
+            "YouTubeMiniPlayerController", "ページメニューからタブメニューと同じ開始処理へ委譲し、既存のmini-player Runtimeに寿命管理を任せる。"),
         Continue("YouTubeMiniPlayerActivityController.cs", "ApplyYouTubeMiniPlayerSizeBasedQualityAsync", 2,
             "mini-player Runtime", "品質ControllerがRuntimeの既存Timerと適用signatureを使い、RuntimeDisposeでTimerを停止する。"),
         ContinueMiniPlayer("CancelYouTubeMiniPlayerRightInputAsync", 1, "mini-player input generation"),

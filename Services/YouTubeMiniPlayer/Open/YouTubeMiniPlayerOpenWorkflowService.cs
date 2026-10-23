@@ -16,7 +16,8 @@ internal sealed record YouTubeMiniPlayerOpenWorkflowCallbacks(
     Func<YouTubeMiniPlayerState, Uri, Task> LoadRuntimeAsync,
     Action QueueSave,
     Action<Guid> Close,
-    Action<string> SetStatus);
+    Action<string> SetStatus,
+    Func<BrowserTab, YouTubeMiniPlayerOpenRequest, Task<YouTubeMiniPlayerOpenRequest?>>? CapturePositionAsync = null);
 
 internal static class YouTubeMiniPlayerOpenWorkflowService
 {
@@ -40,6 +41,17 @@ internal static class YouTubeMiniPlayerOpenWorkflowService
         {
             callbacks.SetStatus("YouTube動画ページでのみミニプレイヤーを開けます");
             return;
+        }
+
+        if (callbacks.CapturePositionAsync is { } capturePositionAsync)
+        {
+            var capturedRequest = await capturePositionAsync(sourceTab, request);
+            if (capturedRequest is null || !tabs.Contains(sourceTab))
+            {
+                return;
+            }
+
+            request = capturedRequest;
         }
 
         await OpenAsync(
@@ -108,7 +120,8 @@ internal static class YouTubeMiniPlayerOpenWorkflowService
             }
         }
 
-        if (!YouTubeMiniPlayerOpenRequestService.TryCreateNavigationUri(request.Url, out var uri))
+        var navigationUrl = YouTubeUrlService.WithPlaybackPosition(request.Url, request.PositionSeconds);
+        if (!YouTubeMiniPlayerOpenRequestService.TryCreateNavigationUri(navigationUrl, out var uri))
         {
             callbacks.SetStatus("ミニプレイヤーで開けるYouTube URLではありません");
             return;
@@ -130,7 +143,8 @@ internal static class YouTubeMiniPlayerOpenWorkflowService
             controller,
             callbacks.CreateRuntime,
             callbacks.SetPosition,
-            callbacks.BringToFront);
+            callbacks.BringToFront,
+            request.PositionSeconds);
 
         try
         {

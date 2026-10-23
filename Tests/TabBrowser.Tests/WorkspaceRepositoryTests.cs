@@ -402,7 +402,7 @@ public sealed class WorkspaceRepositoryTests
         var filePath = Path.Combine(database.DirectoryPath, "file.txt");
         await File.WriteAllTextAsync(notePath, "先頭行\n2行目");
         await File.WriteAllTextAsync(filePath, "ファイル参照のまま");
-        using var viewModel = CreateWorkspaceViewModel(new WorkspaceService(repository), workspace.Id);
+        await using var viewModel = CreateWorkspaceViewModel(new WorkspaceService(repository), workspace.Id);
         await viewModel.InitializeAsync();
 
         var saveCommand = Assert.IsType<AsyncRelayCommand>(viewModel.SaveDroppedShellItemsCommand);
@@ -461,7 +461,7 @@ public sealed class WorkspaceRepositoryTests
                 CreatedAt = createdAt
             }
         ]));
-        using var viewModel = CreateWorkspaceViewModel(
+        await using var viewModel = CreateWorkspaceViewModel(
             new WorkspaceService(repository),
             workspace.Id,
             folder.Id);
@@ -1306,8 +1306,8 @@ public sealed class WorkspaceRepositoryTests
         await repository.AddNoteAsync(new NoteItem { WorkspaceId = source.Id, Title = "残すカード" });
         await repository.AddNoteAsync(new NoteItem { WorkspaceId = target.Id, Title = "移動先のカード" });
         var service = new WorkspaceService(repository);
-        using var view = CreateWorkspaceViewModel(service, source.Id);
-        using var otherView = CreateWorkspaceViewModel(service, target.Id);
+        await using var view = CreateWorkspaceViewModel(service, source.Id);
+        await using var otherView = CreateWorkspaceViewModel(service, target.Id);
         await view.InitializeAsync();
         await otherView.InitializeAsync();
         var sourceItems = view.Items;
@@ -1367,7 +1367,7 @@ public sealed class WorkspaceRepositoryTests
         var folder = await repository.AddFolderAsync(new FolderItem { WorkspaceId = workspace.Id, Title = "Folder" });
         var note = await repository.AddNoteAsync(new NoteItem { WorkspaceId = workspace.Id, Title = "Note" });
         var service = new WorkspaceService(repository);
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var rootItems = view.Items;
         var card = Assert.Single(rootItems, item => item.Id == note.Id);
@@ -1403,8 +1403,8 @@ public sealed class WorkspaceRepositoryTests
         });
         var firstService = new WorkspaceService(new SQLiteWorkspaceRepository(database.DatabasePath));
         var secondService = new WorkspaceService(new SQLiteWorkspaceRepository(database.DatabasePath));
-        using var firstView = CreateWorkspaceViewModel(firstService, workspace.Id);
-        using var secondView = CreateWorkspaceViewModel(secondService, workspace.Id);
+        await using var firstView = CreateWorkspaceViewModel(firstService, workspace.Id);
+        await using var secondView = CreateWorkspaceViewModel(secondService, workspace.Id);
         await firstView.InitializeAsync();
         await secondView.InitializeAsync();
         var firstItems = firstView.Items;
@@ -1464,7 +1464,7 @@ public sealed class WorkspaceRepositoryTests
             Index = 1
         });
         var service = new WorkspaceService(repository);
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var visibleItems = view.Items;
 
@@ -1566,8 +1566,8 @@ public sealed class WorkspaceRepositoryTests
         });
         var firstService = new WorkspaceService(new SQLiteWorkspaceRepository(database.DatabasePath));
         var secondService = new WorkspaceService(new SQLiteWorkspaceRepository(database.DatabasePath));
-        using var firstView = CreateWorkspaceViewModel(firstService, workspace.Id);
-        using var secondView = CreateWorkspaceViewModel(secondService, workspace.Id);
+        await using var firstView = CreateWorkspaceViewModel(firstService, workspace.Id);
+        await using var secondView = CreateWorkspaceViewModel(secondService, workspace.Id);
         await firstView.InitializeAsync();
         await secondView.InitializeAsync();
 
@@ -1642,7 +1642,7 @@ public sealed class WorkspaceRepositoryTests
         var secondWorkspace = await service.CreateWorkspaceAsync("Workspace 2", 2);
         await service.AddBookmarkAsync(firstWorkspace.Id, "First", "https://first.example/", 40, 60);
         await service.AddBookmarkAsync(secondWorkspace.Id, "Second", "https://second.example/", 80, 100);
-        using var viewModel = CreateWorkspaceViewModel(service, firstWorkspace.Id);
+        await using var viewModel = CreateWorkspaceViewModel(service, firstWorkspace.Id);
         await viewModel.InitializeAsync();
 
         var firstItems = viewModel.Items;
@@ -2495,7 +2495,7 @@ public sealed class WorkspaceRepositoryTests
                 Kind = ShellItemKind.File
             }
         ]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var card = Assert.Single(view.Items, item => item.Id == shell.Id);
         await repository.DeleteItemAsync(shell.Id);
@@ -2528,7 +2528,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, Title = "元", TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var card = Assert.Single(view.Items, item => item.Id == shell.Id);
 
@@ -2555,7 +2555,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(collision, "別");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
 
         await Assert.IsType<AsyncRelayCommand>(view.RenameShellTargetCommand)
@@ -2594,7 +2594,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, Title = "元", TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var card = Assert.Single(view.Items, item => item.Id == shell.Id);
 
@@ -2640,7 +2640,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var card = Assert.Single(view.Items, item => item.Id == shell.Id);
 
@@ -2671,7 +2671,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, Title = "元", TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var card = Assert.Single(view.Items, item => item.Id == shell.Id);
         System.ComponentModel.PropertyChangedEventHandler? failOnce = null;
@@ -2704,7 +2704,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, Title = "元", TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var card = Assert.Single(view.Items, item => item.Id == shell.Id);
         await Assert.IsType<AsyncRelayCommand>(view.RenameShellTargetCommand)
@@ -2763,7 +2763,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         await Assert.IsType<AsyncRelayCommand>(view.RenameShellTargetCommand)
             .ExecuteAsync(new WorkspaceShellNameRequest(Assert.Single(view.Items, item => item.Id == shell.Id), "renamed.txt"));
@@ -2796,7 +2796,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         await Assert.IsType<AsyncRelayCommand>(view.RenameShellTargetCommand)
             .ExecuteAsync(new WorkspaceShellNameRequest(Assert.Single(view.Items, item => item.Id == shell.Id), "renamed.txt"));
@@ -2820,7 +2820,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         await Assert.IsType<AsyncRelayCommand>(view.RenameShellTargetCommand)
             .ExecuteAsync(new WorkspaceShellNameRequest(Assert.Single(view.Items, item => item.Id == shell.Id), "renamed.txt"));
@@ -2845,7 +2845,7 @@ public sealed class WorkspaceRepositoryTests
         var other = await service.CreateWorkspaceAsync("別", 2);
         var parent = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = database.DirectoryPath, Kind = ShellItemKind.Directory }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         await Assert.IsType<AsyncRelayCommand>(view.CreateShellDirectoryCommand)
             .ExecuteAsync(new WorkspaceShellNameRequest(Assert.Single(view.Items, item => item.Id == parent.Id), "created"));
@@ -2905,7 +2905,7 @@ public sealed class WorkspaceRepositoryTests
         var other = await service.CreateWorkspaceAsync("別", 2);
         var parent = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = database.DirectoryPath, Kind = ShellItemKind.Directory }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         await Assert.IsType<AsyncRelayCommand>(view.CreateShellDirectoryCommand)
             .ExecuteAsync(new WorkspaceShellNameRequest(Assert.Single(view.Items, item => item.Id == parent.Id), "created"));
@@ -3014,7 +3014,7 @@ public sealed class WorkspaceRepositoryTests
         File.WriteAllText(source, "本文");
         var shell = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = source, Kind = ShellItemKind.File }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         await Assert.IsType<AsyncRelayCommand>(view.RenameShellTargetCommand)
             .ExecuteAsync(new WorkspaceShellNameRequest(Assert.Single(view.Items, item => item.Id == shell.Id), "renamed.txt"));
@@ -3037,7 +3037,7 @@ public sealed class WorkspaceRepositoryTests
         var workspace = await service.CreateWorkspaceAsync("検証", 1);
         var parent = Assert.Single(await service.AddShellItemsAsync(
             [new ShellItem { WorkspaceId = workspace.Id, TargetPath = database.DirectoryPath, Kind = ShellItemKind.Directory }]));
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         await Assert.IsType<AsyncRelayCommand>(view.CreateShellDirectoryCommand)
             .ExecuteAsync(new WorkspaceShellNameRequest(Assert.Single(view.Items, item => item.Id == parent.Id), "created"));
@@ -3083,7 +3083,7 @@ public sealed class WorkspaceRepositoryTests
             new ShellItem { WorkspaceId = workspace.Id, TargetPath = source, Kind = ShellItemKind.File },
             new ShellItem { WorkspaceId = workspace.Id, TargetPath = database.DirectoryPath, Kind = ShellItemKind.Directory }
         ]);
-        using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
         await view.InitializeAsync();
         var fileCard = Assert.Single(view.Items, item => item.Id == items[0].Id);
         var folderCard = Assert.Single(view.Items, item => item.Id == items[1].Id);
@@ -3102,6 +3102,78 @@ public sealed class WorkspaceRepositoryTests
         await Assert.IsType<AsyncRelayCommand>(view.UndoShellOperationCommand).ExecuteAsync(null);
         Assert.False(Directory.Exists(Path.Combine(database.DirectoryPath, "new-folder")));
         Assert.Equal(source, Assert.IsType<ShellItem>(await actual.GetItemByIdAsync(items[0].Id)).TargetPath);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AsyncDisposeWaitsForShellIconConnectionBeforeDatabaseCleanup(bool batch)
+    {
+        using var database = new TempDatabase();
+        var actual = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var proxy = DispatchProxy.Create<IWorkspaceRepository, FaultingWorkspaceRepositoryProxy>();
+        var fault = (FaultingWorkspaceRepositoryProxy)proxy;
+        fault.Inner = actual;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writes = 0;
+        fault.Fault = (method, args) => method.Name is nameof(IWorkspaceRepository.UpdateItemFaviconAsync)
+            or nameof(IWorkspaceRepository.UpdateItemFaviconsAsync)
+            ? HoldConnectionThenSaveAsync(method, args!) : null;
+        async Task HoldConnectionThenSaveAsync(MethodInfo method, object?[] args)
+        {
+            await using var connection = new SqliteConnection($"Data Source={database.DatabasePath};Pooling=False");
+            await connection.OpenAsync();
+            Interlocked.Increment(ref writes);
+            entered.TrySetResult();
+            await release.Task;
+            await (Task)method.Invoke(actual, args)!;
+        }
+
+        var service = new WorkspaceService(proxy);
+        var workspace = await service.CreateWorkspaceAsync("検証", 1);
+        var shell = Assert.Single(await service.AddShellItemsAsync(
+            [new ShellItem { WorkspaceId = workspace.Id, TargetPath = database.DirectoryPath, Kind = ShellItemKind.Directory }]));
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        try
+        {
+            if (batch)
+            {
+                await view.InitializeAsync();
+                _ = typeof(WorkspaceOSViewModel).GetMethod("BackfillShellItemIconsAsync",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(view, null);
+            }
+            else
+            {
+                _ = view.EnsureShellItemIconAsync(new WorkspaceItemViewModel(shell));
+            }
+
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            view.Dispose();
+            var disposal = view.DisposeAsync().AsTask();
+            Assert.False(disposal.IsCompleted);
+            // 旧来の同期Dispose直後には接続が残ることを、実SQLiteファイルの排他openで再現する。
+            Assert.Throws<IOException>(() =>
+            {
+                using var exclusive = File.Open(database.DatabasePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            });
+            release.TrySetResult();
+            await disposal;
+        }
+        finally
+        {
+            release.TrySetResult();
+            await view.DisposeAsync();
+        }
+
+        using (File.Open(database.DatabasePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            // 非同期Disposeは接続の解放まで待つ。エラー抑制や削除の待機延長で回避しない。
+        }
+
+        await view.EnsureShellItemIconAsync(new WorkspaceItemViewModel(shell));
+        Assert.Equal(1, writes);
+        Assert.False(string.IsNullOrWhiteSpace((await actual.GetItemByIdAsync(shell.Id))?.FaviconPngBase64));
     }
 
     public class FaultingWorkspaceRepositoryProxy : DispatchProxy

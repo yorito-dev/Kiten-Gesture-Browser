@@ -6,6 +6,30 @@ namespace TabBrowser.Tests;
 
 public sealed class BookmarkServiceTests
 {
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{\"bookmarks\":null}")]
+    [InlineData("{\"bookmarks\":[null]}")]
+    [InlineData("{\"folders\":null}")]
+    [InlineData("{\"folders\":[null]}")]
+    public void InvalidStructureRecoversValidBackupWithoutReplacingItWithEmptyData(string invalid)
+    {
+        using var directory = new TempDirectory();
+        var service = directory.CreateBookmarkService();
+        service.SaveDataToFile(directory.BookmarksBackupFile, new BookmarkData
+        {
+            Bookmarks = [new() { Url = "https://kept.example/" }]
+        });
+        var backup = File.ReadAllBytes(directory.BookmarksBackupFile);
+        File.WriteAllText(directory.BookmarksFile, invalid);
+        var loaded = service.LoadDataWithResult();
+        Assert.Equal(BookmarkLoadStatus.RecoveredFromBackup, loaded.Status);
+        Assert.IsType<System.Text.Json.JsonException>(loaded.PrimaryError);
+        Assert.Equal("https://kept.example/", Assert.Single(loaded.Data.Bookmarks).Url);
+        Assert.Equal(backup, File.ReadAllBytes(directory.BookmarksBackupFile));
+        Assert.Single(service.LoadData().Bookmarks);
+    }
+
     [Fact]
     public void UrlComparerRetainsNullAndUnknownValuesWithoutGuessingEquivalence()
     {

@@ -12,6 +12,7 @@ internal sealed record PageContextMenuTarget(
 
 internal interface IPageContextMenuHost
 {
+    void OpenPageInYouTubeMiniPlayer(BrowserTab sourceTab);
     void CopyContextPageUrl(BrowserTab sourceTab, string? pageUri);
     void AddPageContainerContextMenu(ContextMenu menu, BrowserTab sourceTab, string pageUri);
     void AddLinkContextMenuItems(ContextMenu menu, BrowserTab sourceTab, string linkUri, string? linkText, string? miniPlayerLinkUri);
@@ -109,6 +110,13 @@ internal sealed class PageContextMenuController
 
         if (!hasLink && normalizedPageUri is not null)
         {
+            if (YouTubeMiniPlayerOpenRequestService.TryCreateFromTab(normalizedPageUri, null, out _))
+            {
+                menu.Items.Add(CreateContextCommand(
+                    "YouTubeミニプレイヤーで開く",
+                    () => _host.OpenPageInYouTubeMiniPlayer(sourceTab)));
+            }
+
             menu.Items.Add(CreateContextCommand("URLをコピー", () => _host.CopyContextPageUrl(sourceTab, normalizedPageUri)));
             _host.AddPageContainerContextMenu(menu, sourceTab, normalizedPageUri);
         }

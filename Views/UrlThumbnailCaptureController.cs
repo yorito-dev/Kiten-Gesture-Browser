@@ -33,6 +33,7 @@ internal sealed class UrlThumbnailCaptureController
     private readonly CancellationToken _lifetimeToken;
     private readonly string _previewProfileName = "KitenPreview-" + Guid.NewGuid().ToString("N");
     private WebView2? _webView;
+    private CoreWebView2? _restrictedCore;
     private string? _activeUrl;
 
     internal UrlThumbnailCaptureController(
@@ -313,7 +314,48 @@ internal sealed class UrlThumbnailCaptureController
             // 未対応Runtimeや初期化設定の不一致で通常プロファイルへ退行した場合は遷移しない。
             throw new InvalidOperationException("サムネイルの分離プロファイルを確認できません。");
         }
+        AttachRestrictions(webView.CoreWebView2);
     }
+
+    private void AttachRestrictions(CoreWebView2 core)
+    {
+        if (ReferenceEquals(core, _restrictedCore)) return;
+        DetachRestrictions();
+        _restrictedCore = core;
+        core.DownloadStarting += RejectDownload;
+        core.NewWindowRequested += RejectNewWindow;
+        core.PermissionRequested += RejectPermission;
+        core.LaunchingExternalUriScheme += RejectExternalUri;
+    }
+
+    private void DetachRestrictions()
+    {
+        if (_restrictedCore is not { } core) return;
+        core.DownloadStarting -= RejectDownload;
+        core.NewWindowRequested -= RejectNewWindow;
+        core.PermissionRequested -= RejectPermission;
+        core.LaunchingExternalUriScheme -= RejectExternalUri;
+        _restrictedCore = null;
+    }
+
+    private static void RejectDownload(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        e.Cancel = true;
+        e.Handled = true;
+    }
+
+    private static void RejectNewWindow(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+        => e.Handled = true;
+
+    private static void RejectPermission(object? sender, CoreWebView2PermissionRequestedEventArgs e)
+    {
+        e.State = CoreWebView2PermissionState.Deny;
+        e.SavesInProfile = false;
+        e.Handled = true;
+    }
+
+    private static void RejectExternalUri(object? sender, CoreWebView2LaunchingExternalUriSchemeEventArgs e)
+        => e.Cancel = true;
 
     private WebView2 EnsureWebView()
     {
@@ -350,6 +392,7 @@ internal sealed class UrlThumbnailCaptureController
         }
 
         StopPlayback();
+        DetachRestrictions();
         _webHost.Children.Remove(webView);
         webView.Dispose();
         _webView = null;

@@ -9,15 +9,18 @@ namespace TabBrowser.Views;
 public partial class QuickLookPdfView : UserControl, IDisposable
 {
     private readonly string _filePath;
+    private readonly QuickLookPdfEnvironmentScope _environmentScope;
+    private Task _loadTask = Task.CompletedTask;
     private readonly CancellationTokenSource _loadCancellation = new();
     private Uri? _documentUri;
     private bool _loadStarted;
     private bool _isDisposed;
 
-    public QuickLookPdfView(string filePath)
+    public QuickLookPdfView(string filePath, bool isPrivate = false)
     {
         InitializeComponent();
         _filePath = Path.GetFullPath(filePath);
+        _environmentScope = new QuickLookPdfEnvironmentScope(isPrivate);
         Loaded += QuickLookPdfView_Loaded;
     }
 
@@ -31,6 +34,11 @@ public partial class QuickLookPdfView : UserControl, IDisposable
         _isDisposed = true;
         Loaded -= QuickLookPdfView_Loaded;
         _loadCancellation.Cancel();
+        _ = _environmentScope.ReleaseAsync(_loadTask, ReleaseWebViewResources);
+    }
+
+    private void ReleaseWebViewResources()
+    {
         _loadCancellation.Dispose();
         if (PdfWebView.CoreWebView2 is { } core)
         {
@@ -58,6 +66,12 @@ public partial class QuickLookPdfView : UserControl, IDisposable
         }
 
         _loadStarted = true;
+        _loadTask = LoadDocumentAsync();
+        await _loadTask;
+    }
+
+    private async Task LoadDocumentAsync()
+    {
         try
         {
             if (!File.Exists(_filePath))
@@ -66,10 +80,12 @@ public partial class QuickLookPdfView : UserControl, IDisposable
             }
 
             var cancellationToken = _loadCancellation.Token;
-            var environment = await QuickLookPdfEnvironmentProvider.Shared.GetAsync();
+            var environment = await _environmentScope.GetAsync();
             cancellationToken.ThrowIfCancellationRequested();
-            await PdfWebView.EnsureCoreWebView2Async(environment);
+            await PdfWebView.EnsureCoreWebView2Async(environment, _environmentScope.CreateControllerOptions(environment));
             cancellationToken.ThrowIfCancellationRequested();
+            _environmentScope.VerifyProfile(PdfWebView.CoreWebView2.Profile.IsInPrivateModeEnabled,
+                PdfWebView.CoreWebView2.Profile.ProfileName);
             ConfigureCore(PdfWebView.CoreWebView2);
             _documentUri = new Uri(_filePath);
             PdfWebView.Source = _documentUri;

@@ -9,6 +9,58 @@ namespace TabBrowser.Tests;
 public sealed class BookmarkStateStoreTests
 {
     [Fact]
+    public async Task RealLockedBookmarkFileIsSavedOnCloseAfterUnlockWithoutFurtherEditing()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "Kiten-bookmark-close-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "bookmarks.json");
+            var service = new BookmarkService(path);
+            service.SaveData(new BookmarkData());
+            var store = new BookmarkStateStore(new BookmarkStore(service));
+            store.Initialize();
+            using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                Assert.False((await store.UpdateAsync(data => Add(data, "https://after-unlock.example/"))).Persisted);
+                await Assert.ThrowsAnyAsync<IOException>(store.FlushAsync);
+            }
+            await store.FlushAsync();
+            Assert.Equal("https://after-unlock.example/", Assert.Single(new BookmarkService(path).LoadData().Bookmarks).Url);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task CloseRetriesFailedSaveWithoutAnotherEditAndFailureStillBlocksClose()
+    {
+        var persistence = new ControllableStore(new BookmarkData()) { RemainingFailures = 2 };
+        var store = new BookmarkStateStore(persistence);
+        Assert.False((await store.UpdateAsync(data => Add(data, "https://pending.example/"))).Persisted);
+        var closing = new ApplicationWindowCloseCoordinator();
+        var targets = new[] { new WindowPersistenceTarget("bookmarks", "ブックマーク", store.FlushAsync) };
+        Assert.False((await closing.SaveBeforeCloseAsync(targets)).Succeeded);
+        Assert.True((await closing.SaveBeforeCloseAsync(targets)).Succeeded);
+        var reopened = new BookmarkStateStore(persistence);
+        Assert.Equal("https://pending.example/", Assert.Single(reopened.Initialize().Data.Bookmarks).Url);
+    }
+
+    [Fact]
+    public async Task CloseWaitsForSavingAndQueuedLatestUpdate()
+    {
+        var persistence = new ControllableStore(new BookmarkData()) { HoldFirstSave = true };
+        var store = new BookmarkStateStore(persistence);
+        var first = store.UpdateAsync(data => Add(data, "https://first.example/"));
+        await persistence.FirstSaveStarted.Task;
+        var second = store.UpdateAsync(data => Add(data, "https://second.example/"));
+        var closing = store.FlushAsync();
+        Assert.False(closing.IsCompleted);
+        persistence.ReleaseFirstSave.SetResult();
+        await Task.WhenAll(first, second, closing);
+        Assert.Equal(2, persistence.Current.Bookmarks.Count);
+    }
+
+    [Fact]
     public async Task HeldSaveSerializesLaterUpdateAndPersistsNewestSnapshotLast()
     {
         var persistence = new ControllableStore(CreateData("https://initial.example/"))

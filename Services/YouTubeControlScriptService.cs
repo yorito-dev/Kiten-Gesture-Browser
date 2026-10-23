@@ -40,6 +40,25 @@ public static class YouTubeControlScriptService
         }
     }
 
+    public static string BuildMiniPlayerStartPositionReadScript(string videoId)
+    {
+        return """
+            (() => {
+                const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                if (__AD_PLAYING__ || !player || typeof player.getVideoData !== "function"
+                    || player.getVideoData()?.video_id !== __VIDEO_ID__) {
+                    return null;
+                }
+                const video = player.querySelector("video.html5-main-video")
+                    || player.querySelector("video.video-stream") || player.querySelector("video");
+                const position = video?.currentTime;
+                return typeof position === "number" && Number.isFinite(position) && position >= 0
+                    ? position : null;
+            })();
+            """.Replace("__AD_PLAYING__", AdvertisementPlayingExpression, StringComparison.Ordinal)
+            .Replace("__VIDEO_ID__", JsonSerializer.Serialize(videoId), StringComparison.Ordinal);
+    }
+
     public static double? NormalizePlaybackPosition(double? positionSeconds)
     {
         return positionSeconds is { } position

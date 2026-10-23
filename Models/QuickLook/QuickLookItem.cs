@@ -51,7 +51,8 @@ public sealed record QuickLookItem
 public sealed record QuickLookRequest(
     IReadOnlyList<QuickLookItem> Items,
     string SourceId,
-    IQuickLookItemSource? ItemSource = null)
+    IQuickLookItemSource? ItemSource = null,
+    bool IsPrivate = false)
 {
     public QuickLookItem? PrimaryItem => Items.FirstOrDefault();
 }

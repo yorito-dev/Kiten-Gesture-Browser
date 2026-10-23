@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.4</KitenReleaseVersion>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.5</KitenReleaseVersion>
     <KitenReleaseClass Condition="'$(KitenReleaseClass)' == ''">Preview</KitenReleaseClass>
     <KitenBuildVerification Condition="'$(KitenBuildVerification)' == ''">unverified</KitenBuildVerification>
     <KitenDistributionPageUrl Condition="'$(KitenDistributionPageUrl)' == ''" />
@@ -16,9 +16,13 @@
     <DefineConstants Condition="'$(KitenPublicBuild)' == 'true'">$(DefineConstants);KITEN_PUBLIC_BUILD</DefineConstants>
     <IntermediateOutputPath Condition="'$(KitenPublicBuild)' == 'true'">obj\$(Configuration)\public\</IntermediateOutputPath>
     <OutputPath Condition="'$(KitenPublicBuild)' == 'true'">bin\$(Configuration)\public\</OutputPath>
+    <PathMap Condition="'$(KitenPublicBuild)' == 'true'">$(MSBuildProjectDirectory)\=/_/</PathMap>
+    <EnableSourceLink Condition="'$(KitenPublicBuild)' == 'true'">false</EnableSourceLink>
     <Version>$(KitenReleaseVersion)</Version>
     <Product>Kiten Gesture Browser</Product>
     <AssemblyTitle>Kiten Gesture Browser</AssemblyTitle>
+    <Company>ヨリト</Company>
+    <Copyright>Copyright (c) 2026 ヨリト</Copyright>
     <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>

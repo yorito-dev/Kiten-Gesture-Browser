@@ -27,6 +27,9 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
     void IPageContextMenuHost.CopyContextPageUrl(BrowserTab sourceTab, string? pageUri)
         => CopyContextPageUrl(sourceTab, pageUri);
 
+    void IPageContextMenuHost.OpenPageInYouTubeMiniPlayer(BrowserTab sourceTab)
+        => _ = OpenTabInYouTubeMiniPlayerAsync(sourceTab);
+
     void IPageContextMenuHost.AddPageContainerContextMenu(ContextMenu menu, BrowserTab sourceTab, string pageUri)
         => AddPageContainerContextMenu(menu, sourceTab, pageUri);
 

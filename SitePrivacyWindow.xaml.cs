@@ -13,11 +13,10 @@ public partial class SitePrivacyWindow : Window
     private readonly Func<SiteDataClearRequest, Task<SiteDataClearResult>> _clearApplicationDataAsync;
     private readonly Func<string, IReadOnlyList<PopupPermissionEntry>> _getPopupEntries;
     private readonly Action<string, string, string?> _updatePopupPolicy;
-    private WebView2? _profileWebView;
-    private CoreWebView2Profile? _profile;
+    private readonly SitePrivacyTargetCoordinator<CoreWebView2Profile> _targets = new();
+    private int _pendingClearGeneration;
     private SiteDataClearRequest? _pendingClearRequest;
     private string? _focusedOrigin;
-    private int _profileLoadGeneration;
     private bool _closed;
 
     public SitePrivacyWindow(
@@ -76,8 +75,8 @@ public partial class SitePrivacyWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _closed = true;
-        _profileLoadGeneration++;
-        DisposeProfileWebView();
+        CancelClearConfirmation();
+        _targets.Dispose();
         base.OnClosed(e);
     }
 
@@ -98,52 +97,55 @@ public partial class SitePrivacyWindow : Window
             return;
         }
 
-        var generation = ++_profileLoadGeneration;
+        CancelClearConfirmation();
+        var generation = _targets.BeginLoad();
         ReloadPopupEntries(container.Id);
         StatusText.Text = $"{container.Name}の権限を読み込んでいます...";
         PermissionGrid.ItemsSource = null;
-        _profile = null;
-        DisposeProfileWebView();
-
+        UpdatePermissionButtons();
+        WebView2? loadingView = null;
         try
         {
             var environment = await _ensureEnvironmentAsync(container.Id);
-            if (_closed || generation != _profileLoadGeneration)
-            {
-                return;
-            }
-
-            var webView = new WebView2
-            {
-                Width = 1,
-                Height = 1,
-                IsHitTestVisible = false
-            };
-            _profileWebView = webView;
-            ProfileWebViewHost.Children.Add(webView);
-            await webView.EnsureCoreWebView2Async(environment);
-            if (_closed || generation != _profileLoadGeneration)
-            {
-                return;
-            }
-
-            _profile = webView.CoreWebView2.Profile;
+            if (_closed || generation != _targets.Generation) return;
+            loadingView = new WebView2 { Width = 1, Height = 1, IsHitTestVisible = false };
+            ProfileWebViewHost.Children.Add(loadingView);
+            await loadingView.EnsureCoreWebView2Async(environment);
+            var ownedView = loadingView;
+            var profile = ownedView.CoreWebView2.Profile;
+            loadingView = null;
+            if (!_targets.SetTarget(generation, container.Id, profile, () =>
+                {
+                    ProfileWebViewHost.Children.Remove(ownedView);
+                    ownedView.Dispose();
+                })) return;
             await ReloadPermissionEntriesAsync();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "サイト権限を読み込めません: " + ex.Message;
+            if (!_closed && generation == _targets.Generation)
+                StatusText.Text = "サイト権限を読み込めません: " + ex.Message;
+        }
+        finally
+        {
+            if (loadingView is not null)
+            {
+                ProfileWebViewHost.Children.Remove(loadingView);
+                loadingView.Dispose();
+            }
         }
     }
 
+    private SitePrivacyTargetCoordinator<CoreWebView2Profile>.Lease? AcquireCurrentTarget()
+        => ContainerBox.SelectedItem is ContainerProfile container
+            ? _targets.Acquire(_targets.Generation, container.Id) : null;
+
     private async Task ReloadPermissionEntriesAsync()
     {
-        if (_profile is null)
-        {
-            return;
-        }
-
-        var entries = await SitePrivacyService.GetPermissionEntriesAsync(_profile);
+        using var target = AcquireCurrentTarget();
+        if (target is null) return;
+        var entries = await SitePrivacyService.GetPermissionEntriesAsync(target.Value);
+        if (!_targets.IsCurrent(target)) return;
         PermissionGrid.ItemsSource = entries;
         StatusText.Text = entries.Count == 0
             ? "個別に保存されたサイト権限はありません"
@@ -238,7 +240,8 @@ public partial class SitePrivacyWindow : Window
 
     private void UpdatePermissionButtons()
     {
-        var enabled = PermissionGrid.SelectedItem is SitePermissionEntry && _profile is not null;
+        using var target = AcquireCurrentTarget();
+        var enabled = PermissionGrid.SelectedItem is SitePermissionEntry && target is not null;
         AllowPermissionButton.IsEnabled = enabled;
         DenyPermissionButton.IsEnabled = enabled;
         ResetPermissionButton.IsEnabled = enabled;
@@ -261,7 +264,8 @@ public partial class SitePrivacyWindow : Window
 
     private async Task SetSelectedPermissionAsync(CoreWebView2PermissionState state)
     {
-        if (_profile is null || PermissionGrid.SelectedItem is not SitePermissionEntry entry)
+        using var target = AcquireCurrentTarget();
+        if (target is null || PermissionGrid.SelectedItem is not SitePermissionEntry entry)
         {
             return;
         }
@@ -269,21 +273,22 @@ public partial class SitePrivacyWindow : Window
         try
         {
             await SitePrivacyService.SetPermissionStateAsync(
-                _profile,
+                target.Value,
                 entry.Origin,
                 entry.PermissionKind,
                 state);
-            await ReloadPermissionEntriesAsync();
+            if (_targets.IsCurrent(target)) await ReloadPermissionEntriesAsync();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "権限を変更できません: " + ex.Message;
+            if (_targets.IsCurrent(target)) StatusText.Text = "権限を変更できません: " + ex.Message;
         }
     }
 
     private async void ResetOriginButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_profile is null || PermissionGrid.SelectedItem is not SitePermissionEntry selected)
+        using var target = AcquireCurrentTarget();
+        if (target is null || PermissionGrid.SelectedItem is not SitePermissionEntry selected)
         {
             StatusText.Text = "既定へ戻すサイトを選択してください";
             return;
@@ -297,17 +302,17 @@ public partial class SitePrivacyWindow : Window
             foreach (var entry in entries)
             {
                 await SitePrivacyService.SetPermissionStateAsync(
-                    _profile,
+                    target.Value,
                     entry.Origin,
                     entry.PermissionKind,
                     CoreWebView2PermissionState.Default);
             }
 
-            await ReloadPermissionEntriesAsync();
+            if (_targets.IsCurrent(target)) await ReloadPermissionEntriesAsync();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "サイト権限を既定へ戻せません: " + ex.Message;
+            if (_targets.IsCurrent(target)) StatusText.Text = "サイト権限を既定へ戻せません: " + ex.Message;
         }
     }
 
@@ -328,6 +333,8 @@ public partial class SitePrivacyWindow : Window
             return;
         }
 
+        using var target = AcquireCurrentTarget();
+        if (target is null) return;
         var categories = GetSelectedCategories();
         if (categories == SiteDataCategory.None)
         {
@@ -336,6 +343,7 @@ public partial class SitePrivacyWindow : Window
         }
 
         var (from, to) = GetSelectedPeriod();
+        _pendingClearGeneration = _targets.Generation;
         _pendingClearRequest = new SiteDataClearRequest(container.Id, categories, from, to);
         var periodName = (PeriodBox.SelectedItem as PeriodOption)?.Name ?? "全期間";
         ClearConfirmationText.Text =
@@ -346,8 +354,9 @@ public partial class SitePrivacyWindow : Window
     private async void ConfirmClearDataButton_Click(object sender, RoutedEventArgs e)
     {
         var request = _pendingClearRequest;
+        using var target = request is null ? null : _targets.Acquire(_pendingClearGeneration, request.ContainerProfileId);
         CancelClearConfirmation();
-        if (request is null || _profile is null)
+        if (request is null || target is null)
         {
             StatusText.Text = "削除対象のプロファイルを読み込めません";
             return;
@@ -357,17 +366,18 @@ public partial class SitePrivacyWindow : Window
         try
         {
             await SitePrivacyService.ClearProfileDataAsync(
-                _profile,
+                target.Value,
                 request.Categories,
                 request.From,
                 request.To);
             var result = await _clearApplicationDataAsync(request);
+            if (!_targets.IsCurrent(target)) return;
             StatusText.Text =
                 $"削除しました（アプリ履歴 {result.ApplicationBrowsingHistoryDeleted}件、ダウンロード履歴 {result.ApplicationDownloadHistoryDeleted}件）";
         }
         catch (Exception ex)
         {
-            StatusText.Text = "閲覧データを削除できません: " + ex.Message;
+            if (_targets.IsCurrent(target)) StatusText.Text = "閲覧データを削除できません: " + ex.Message;
         }
     }
 
@@ -428,19 +438,6 @@ public partial class SitePrivacyWindow : Window
         return (
             new DateTimeOffset(fromDate, TimeZoneInfo.Local.GetUtcOffset(fromDate)),
             new DateTimeOffset(toDate, TimeZoneInfo.Local.GetUtcOffset(toDate)));
-    }
-
-    private void DisposeProfileWebView()
-    {
-        if (_profileWebView is null)
-        {
-            return;
-        }
-
-        ProfileWebViewHost.Children.Remove(_profileWebView);
-        _profileWebView.Dispose();
-        _profileWebView = null;
-        _profile = null;
     }
 
     private sealed record PeriodOption(string Name, string Value);

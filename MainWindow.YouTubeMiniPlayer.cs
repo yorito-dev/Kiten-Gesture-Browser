@@ -305,8 +305,9 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
         YouTubeMiniPlayerAudioFocusMode mode, IReadOnlyCollection<Guid> ids, string message)
         => ExecuteYouTubeMiniPlayerAudioFocusAsync(mode, ids, message);
     Task<bool> IYouTubeMiniPlayerCommandOwner.RepairAsync(YouTubeMiniPlayerState state)
-        => _youTubeMiniPlayerRecoveryController.RunYouTubeMiniPlayerAutoRecoveryAsync(state, "manual-repair", TimeSpan.Zero,
-            requireProgressConfirmation: false, skipCurrentWebViewReload: false, allowSourceTabFallback: true);
+        => YouTubeMiniPlayerPlaybackCommandService.RepairAsync(state, _youTubeMiniPlayerRuntimes,
+            LoadYouTubeMiniPlayerRuntimeAsync, _youTubeMiniPlayerRecoveryController.RunManualRepairAsync,
+            message => SetStatus(message, autoClear: true));
     void IYouTubeMiniPlayerCommandOwner.ActivateSourceTab(YouTubeMiniPlayerState state)
         => CreateYouTubeMiniPlayerCommandCallbacks().ActivateSourceTab(state);
     void IYouTubeMiniPlayerCommandOwner.ToggleMinimized(YouTubeMiniPlayerState state)
@@ -749,15 +750,18 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
     {
         if ((sender as FrameworkElement)?.DataContext is BrowserTab tab)
         {
-            await _youTubeMiniPlayerController.OpenFromTabAsync(
-                tab,
-                _tabs,
-                _workspaceWindowIndex,
-                WebHost.ActualWidth,
-                WebHost.ActualHeight,
-                CreateYouTubeMiniPlayerOpenWorkflowCallbacks());
+            await OpenTabInYouTubeMiniPlayerAsync(tab);
         }
     }
+
+    private Task OpenTabInYouTubeMiniPlayerAsync(BrowserTab tab)
+        => _youTubeMiniPlayerController.OpenFromTabAsync(
+            tab,
+            _tabs,
+            _workspaceWindowIndex,
+            WebHost.ActualWidth,
+            WebHost.ActualHeight,
+            CreateYouTubeMiniPlayerOpenWorkflowCallbacks());
 
     private void AddMiniPlayerLinkContextMenuItem(
         ContextMenu menu,
@@ -802,7 +806,12 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
             LoadYouTubeMiniPlayerRuntimeAsync,
             QueueYouTubeMiniPlayerSave,
             commandCallbacks.Close,
-            message => SetStatus(message, autoClear: true));
+            message => SetStatus(message, autoClear: true),
+            (tab, request) => YouTubeMiniPlayerOpenRequestService.CapturePositionAsync(
+                request,
+                () => !_isClosingWindow && _tabs.Contains(tab),
+                () => GetCurrentPageUrl(tab) ?? tab.Url,
+                script => ExecuteYouTubeScriptAsync(tab, script, showStatus: false)));
     }
 
     private YouTubeMiniPlayerRuntime CreateYouTubeMiniPlayerRuntime(YouTubeMiniPlayerState state, bool loadImmediately)

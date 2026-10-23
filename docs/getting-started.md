@@ -5,12 +5,12 @@ Kiten Gesture Browserは、Windows 11 x64向けの無料のタブブラウザで
 
 ## 1. ダウンロードする
 
-1. [公開アルファの配布ページ（v0.1.0-preview.4）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.4)を開きます。
-2. `Assets`から`Kiten-Gesture-Browser-0.1.0-preview.4-win-x64.zip`と、同名の`.zip.sha256`をダウンロードします。`Source code`は実行用ではありません。
+1. [公開アルファの配布ページ（v0.1.0-preview.5）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.5)を開きます。
+2. `Assets`から`Kiten-Gesture-Browser-0.1.0-preview.5-win-x64.zip`と、同名の`.zip.sha256`をダウンロードします。`Source code`は実行用ではありません。
 3. ZIPを保存したフォルダーをPowerShellで開き、次を実行します。表示された`Hash`が、配布ページと`.sha256`ファイルのSHA-256に一致することを確認します。一致しなければ起動しません。
 
 ```powershell
-Get-FileHash -LiteralPath '.\Kiten-Gesture-Browser-0.1.0-preview.4-win-x64.zip' -Algorithm SHA256
+Get-FileHash -LiteralPath '.\Kiten-Gesture-Browser-0.1.0-preview.5-win-x64.zip' -Algorithm SHA256
 ```
 
 実行用ZIPには.NET Runtimeを含みます。.NET SDKの導入やソースのビルドは不要です。Webページの表示に使うMicrosoft Edge WebView2 Evergreen Runtimeは、Windows 11には通常、最初から入っています。Webページが表示されない場合だけ、[動作条件](distribution-guide.md#2-動作条件)の手順で導入してください。
