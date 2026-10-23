@@ -208,6 +208,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly bool _restoreFloatingMediaPlaceholders;
     private readonly PrivateBrowsingContext? _privateBrowsingContext;
     internal bool IsPrivateBrowsing => _isPrivateWindow;
+    internal WindowTaskSupervisor QuickLookReleases { get; } = new();
     private readonly PrivateBrowsingShutdownCoordinator? _privateBrowsingShutdownCoordinator;
     private readonly WindowShutdownCoordinator _windowShutdownCoordinator = new(
         static (phase, exception) => AppendSessionDiagnostic(
@@ -2455,6 +2456,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task CleanupPrivateBrowsingDataAsync()
     {
+        // 個別に閉じたPDFも含め、所有Windowの解放だけを終了前に非同期で待つ。
+        var pdfReleases = await QuickLookReleases.DrainAsync(TimeSpan.FromSeconds(3));
+        if (pdfReleases.TimedOut)
+            AppendSessionDiagnostic("quicklook-pdf-release-timeout", new TimeoutException("PDFの後片付け待機が期限を超えました。"),
+                $"pending={pdfReleases.PendingTaskCount}");
+        QuickLookReleases.Dispose();
+
         if (_privateBrowsingContext is not { } privateContext
             || _privateBrowsingShutdownCoordinator is not { } shutdownCoordinator)
         {

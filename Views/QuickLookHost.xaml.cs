@@ -165,7 +165,7 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         {
             if (owner is MainWindow main)
             {
-                request = request with { IsPrivate = request.IsPrivate || main.IsPrivateBrowsing };
+                request = request with { IsPrivate = request.IsPrivate || main.IsPrivateBrowsing, PdfReleaseOwner = main.QuickLookReleases };
                 break;
             }
         }

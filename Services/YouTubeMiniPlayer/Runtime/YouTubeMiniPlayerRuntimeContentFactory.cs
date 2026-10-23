@@ -27,8 +27,10 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
         Action<YouTubeMiniPlayerState> beginLiveChatTransition,
         Func<YouTubeMiniPlayerState, YouTubeLiveChatAvailabilityResult, Task> applyLiveChatAvailabilityAsync,
         Action<YouTubeMiniPlayerRuntime> recordBrowsingHistory,
-        Action<YouTubeMiniPlayerState, bool> queueInactiveSuspension)
+        Action<YouTubeMiniPlayerState, bool> queueInactiveSuspension,
+        Func<bool>? isClosing = null)
     {
+        var documents = new YouTubeMiniPlayerDocumentInitialization();
         void ApplyCurrentSource(YouTubeMiniPlayerState currentState, WebView2 webView)
         {
             if (!IsCurrentWebView(currentState, webView, runtimes)
@@ -64,6 +66,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                 if (IsCurrentWebView(currentState, webView, runtimes))
                 {
                     var runtime = runtimes[currentState.Id];
+                    documents.Begin(args.NavigationId);
                     if (args.IsUserInitiated
                         || (runtime.LiveContinuationNavigation is { IsResolutionStarted: true, NavigationId: { } previousId }
                             && previousId != args.NavigationId))
@@ -125,6 +128,8 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                 }
 
                 var runtime = runtimes[currentState.Id];
+                if (!documents.IsCurrent(args.NavigationId)) return;
+
                 if (runtime.LiveContinuationNavigation is { NavigationId: { } navigationId }
                     && navigationId != args.NavigationId)
                 {
@@ -133,170 +138,181 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                 runtime.InactiveSuspendGeneration++;
                 runtime.IsNavigationLoading = false;
 
-                if (runtime.LiveContinuationNavigation is { } continuation)
+                bool DocumentAvailable() => documents.IsCurrent(args.NavigationId)
+                    && !runtime.IsDisposed && isClosing?.Invoke() != true
+                    && !runtime.IsNavigationLoading && IsCurrentWebView(currentState, webView, runtimes);
+                await documents.CompleteAsync(args.NavigationId, DocumentAvailable, async () =>
                 {
-                    if (webView.CoreWebView2 is not { } continuationCore)
+                    if (runtime.LiveContinuationNavigation is { } continuation)
                     {
+                        if (webView.CoreWebView2 is not { } continuationCore)
+                        {
+                            ClearLiveContinuation(runtime);
+                            return YouTubeContinuationCompletion.Redirected;
+                        }
+                        if (continuation.NavigationId != args.NavigationId || !continuation.TryBeginResolution())
+                        {
+                            return YouTubeContinuationCompletion.Redirected;
+                        }
+
+                        var destination = continuationCore.Source;
+                        string? destinationResult = null;
+                        if (args.IsSuccess && runtime.IsLiveContinuationEnabled)
+                        {
+                            try
+                            {
+                                // 現在表示しているページの既存の状態取得を再利用する。別ページは取得しない。
+                                string? destinationVideoId = null;
+                                if (YouTubeMiniPlayerNavigationService.GetLiveContinuationDestinationKind(
+                                        destination, continuation.ChannelId) == YouTubeLiveContinuationDestinationKind.ChannelLivePage)
+                                {
+                                    var identityResult = await continuationCore.ExecuteScriptAsync(
+                                        YouTubeMiniPlayerWebViewService.BuildLiveContinuationVideoScript());
+                                    if (continuation.TryReadCandidate(identityResult, out var currentVideoId))
+                                        destinationVideoId = currentVideoId;
+                                }
+                                else if (YouTubeUrlService.TryGetVideoId(destination, out var watchVideoId))
+                                {
+                                    destinationVideoId = watchVideoId;
+                                }
+                                if (destinationVideoId is not null && !runtime.IsDisposed
+                                    && ReferenceEquals(runtime.LiveContinuationNavigation, continuation))
+                                {
+                                    destinationResult = await continuationCore.ExecuteScriptAsync(
+                                        YouTubeMiniPlayerWebViewService.BuildLiveStatusScript(destinationVideoId));
+                                }
+                            }
+                            catch
+                            {
+                                // 確認できない移動先は、下で元の動画へ一度だけ戻す。
+                            }
+                        }
+
+                        if (!DocumentAvailable()
+                            || runtime.IsDisposed
+                            || !ReferenceEquals(YouTubeMiniPlayerRuntimeLifecycleService.TryGetCoreWebView2(runtime), continuationCore)
+                            || runtime.IsNavigationLoading || continuation.NavigationId != args.NavigationId)
+                        {
+                            return YouTubeContinuationCompletion.Redirected;
+                        }
+
+                        if (!ReferenceEquals(runtime.LiveContinuationNavigation, continuation))
+                            return YouTubeContinuationCompletion.Expired;
+
+                        if (!runtime.IsLiveContinuationEnabled)
+                        {
+                            destinationResult = null;
+                        }
+                        if (!continuation.TryResolve(destination, continuationCore.Source, destinationResult, out var resolution))
+                        {
+                            return YouTubeContinuationCompletion.Redirected;
+                        }
+
                         ClearLiveContinuation(runtime);
-                        return;
-                    }
-                    if (continuation.NavigationId != args.NavigationId || !continuation.TryBeginResolution())
-                    {
-                        return;
-                    }
-
-                    var destination = continuationCore.Source;
-                    string? destinationResult = null;
-                    if (args.IsSuccess && runtime.IsLiveContinuationEnabled)
-                    {
-                        try
+                        if (resolution.Action == YouTubeLiveContinuationAction.ReleaseOnly)
                         {
-                            // 現在表示しているページの既存の状態取得を再利用する。別ページは取得しない。
-                            string? destinationVideoId = null;
-                            if (YouTubeMiniPlayerNavigationService.GetLiveContinuationDestinationKind(
-                                    destination, continuation.ChannelId) == YouTubeLiveContinuationDestinationKind.ChannelLivePage)
-                            {
-                                var identityResult = await continuationCore.ExecuteScriptAsync(
-                                    YouTubeMiniPlayerWebViewService.BuildLiveContinuationVideoScript());
-                                if (continuation.TryReadCandidate(identityResult, out var currentVideoId))
-                                    destinationVideoId = currentVideoId;
-                            }
-                            else if (YouTubeUrlService.TryGetVideoId(destination, out var watchVideoId))
-                            {
-                                destinationVideoId = watchVideoId;
-                            }
-                            if (destinationVideoId is not null && !runtime.IsDisposed
-                                && ReferenceEquals(runtime.LiveContinuationNavigation, continuation))
-                            {
-                                destinationResult = await continuationCore.ExecuteScriptAsync(
-                                    YouTubeMiniPlayerWebViewService.BuildLiveStatusScript(destinationVideoId));
-                            }
+                            ApplyCurrentSource(currentState, webView);
+                            return YouTubeContinuationCompletion.Redirected;
                         }
-                        catch
-                        {
-                            // 確認できない移動先は、下で元の動画へ一度だけ戻す。
-                        }
-                    }
-
-                    if (!IsCurrentWebView(currentState, webView, runtimes)
-                        || runtime.IsDisposed
-                        || !ReferenceEquals(YouTubeMiniPlayerRuntimeLifecycleService.TryGetCoreWebView2(runtime), continuationCore)
-                        || !ReferenceEquals(runtime.LiveContinuationNavigation, continuation)
-                        || runtime.IsNavigationLoading || continuation.NavigationId != args.NavigationId)
-                    {
-                        return;
-                    }
-
-                    if (!runtime.IsLiveContinuationEnabled)
-                    {
-                        destinationResult = null;
-                    }
-                    if (!continuation.TryResolve(destination, continuationCore.Source, destinationResult, out var resolution))
-                    {
-                        return;
-                    }
-
-                    ClearLiveContinuation(runtime);
-                    if (resolution.Action == YouTubeLiveContinuationAction.ReleaseOnly)
-                    {
-                        ApplyCurrentSource(currentState, webView);
-                        return;
-                    }
-                    if (resolution.Action == YouTubeLiveContinuationAction.ReturnToOriginal)
-                    {
-                        setStatus("続きのライブは見つかりませんでした");
-                        try
-                        {
-                            YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(continuationCore, resolution.NavigationUri!);
-                        }
-                        catch
-                        {
-                            setStatus("元の動画へ戻れませんでした");
-                        }
-                        return;
-                    }
-
-                    currentState.IsPaused = false;
-                    runtime.IsInitialLivePlaybackResolved = false;
-                    if (YouTubeMiniPlayerNavigationService.TryApplyCurrentVideoUrl(currentState,
-                            resolution.NavigationUri?.AbsoluteUri ?? continuationCore.Source))
-                    {
-                        beginLiveChatTransition(currentState);
-                        queueSave();
-                    }
-                    if (resolution.Action == YouTubeLiveContinuationAction.NavigateToWatch)
-                    {
-                        try
-                        {
-                            YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(continuationCore, resolution.NavigationUri!);
-                        }
-                        catch
+                        if (resolution.Action == YouTubeLiveContinuationAction.ReturnToOriginal)
                         {
                             setStatus("続きのライブは見つかりませんでした");
+                            try
+                            {
+                                YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(continuationCore, resolution.NavigationUri!);
+                            }
+                            catch
+                            {
+                                setStatus("元の動画へ戻れませんでした");
+                            }
+                            return YouTubeContinuationCompletion.Redirected;
                         }
+
+                        currentState.IsPaused = false;
+                        runtime.IsInitialLivePlaybackResolved = false;
+                        if (YouTubeMiniPlayerNavigationService.TryApplyCurrentVideoUrl(currentState,
+                                resolution.NavigationUri?.AbsoluteUri ?? continuationCore.Source))
+                        {
+                            beginLiveChatTransition(currentState);
+                            queueSave();
+                        }
+                        if (resolution.Action == YouTubeLiveContinuationAction.NavigateToWatch)
+                        {
+                            try
+                            {
+                                YouTubeMiniPlayerWebViewService.NavigateWithYouTubeReferer(continuationCore, resolution.NavigationUri!);
+                            }
+                            catch
+                            {
+                                setStatus("続きのライブは見つかりませんでした");
+                            }
+                            return YouTubeContinuationCompletion.Redirected;
+                        }
+                    }
+
+                    return YouTubeContinuationCompletion.Ready;
+                }, async isCurrentDocument =>
+                {
+                    if (!args.IsSuccess)
+                    {
+                        runtime.DisplayHealth.ReportFailure();
+                        runtime.CompleteRecoveryNavigation(webView, isHealthy: false);
+                        setStatus("YouTubeミニプレイヤーの読み込みに失敗しました: " + args.WebErrorStatus);
+                        requestAutoRecovery(currentState, "navigation-failed");
                         return;
                     }
-                }
 
-                if (!args.IsSuccess)
-                {
-                    runtime.DisplayHealth.ReportFailure();
-                    runtime.CompleteRecoveryNavigation(webView, isHealthy: false);
-                    setStatus("YouTubeミニプレイヤーの読み込みに失敗しました: " + args.WebErrorStatus);
-                    requestAutoRecovery(currentState, "navigation-failed");
-                    return;
-                }
-
-                YouTubeMiniPlayerTitleService.ApplyDocumentTitle(
-                    currentState,
-                    runtimes,
-                    queueSave);
-                recordBrowsingHistory(runtimes[currentState.Id]);
-                // 状態通知ブリッジが起動直後の0秒を通知しても、読み込み前の保存値を復元に使う。
-                var savedState = YouTubeMiniPlayerNavigationService.CloneState(currentState);
-                var displayGeneration = await applyWatchPageModeAsync(currentState);
-                if (!IsCurrentWebView(currentState, webView, runtimes))
-                {
-                    return;
-                }
-
-                if (displayGeneration is not { } currentDisplayGeneration)
-                {
-                    return;
-                }
-
-                await applySavedStateAsync(savedState, currentDisplayGeneration);
-                if (!IsCurrentWebView(currentState, webView, runtimes))
-                {
-                    return;
-                }
-
-                var liveChatAvailability = await UpdateLiveChatButtonAvailabilityAsync(
-                    currentState,
-                    webView,
-                    runtimes);
-                if (!IsCurrentWebView(currentState, webView, runtimes))
-                {
-                    return;
-                }
-
-                if (liveChatAvailability is { } currentLiveChatAvailability)
-                {
-                    await applyLiveChatAvailabilityAsync(currentState, currentLiveChatAvailability);
-                    if (!IsCurrentWebView(currentState, webView, runtimes))
+                    YouTubeMiniPlayerTitleService.ApplyDocumentTitle(
+                        currentState,
+                        runtimes,
+                        queueSave);
+                    recordBrowsingHistory(runtimes[currentState.Id]);
+                    // 状態通知ブリッジが起動直後の0秒を通知しても、読み込み前の保存値を復元に使う。
+                    var savedState = YouTubeMiniPlayerNavigationService.CloneState(currentState);
+                    var displayGeneration = await applyWatchPageModeAsync(currentState);
+                    if (!isCurrentDocument())
                     {
                         return;
                     }
-                }
 
-                var currentRuntime = runtimes[currentState.Id];
-                var isHealthy = currentRuntime.DisplayHealth.GetSnapshot().State
-                    == YouTubeMiniPlayerDisplayHealthState.Healthy;
-                currentRuntime.CompleteRecoveryNavigation(webView, isHealthy);
-                if (!isHealthy)
-                {
-                    requestAutoRecovery(currentState, "display-health");
-                }
+                    if (displayGeneration is not { } currentDisplayGeneration)
+                    {
+                        return;
+                    }
+
+                    await applySavedStateAsync(savedState, currentDisplayGeneration);
+                    if (!isCurrentDocument())
+                    {
+                        return;
+                    }
+
+                    var liveChatAvailability = await UpdateLiveChatButtonAvailabilityAsync(
+                        currentState,
+                        webView,
+                        runtimes);
+                    if (!isCurrentDocument())
+                    {
+                        return;
+                    }
+
+                    if (liveChatAvailability is { } currentLiveChatAvailability)
+                    {
+                        await applyLiveChatAvailabilityAsync(currentState, currentLiveChatAvailability);
+                        if (!isCurrentDocument())
+                        {
+                            return;
+                        }
+                    }
+
+                    var currentRuntime = runtimes[currentState.Id];
+                    var isHealthy = currentRuntime.DisplayHealth.GetSnapshot().State
+                        == YouTubeMiniPlayerDisplayHealthState.Healthy;
+                    currentRuntime.CompleteRecoveryNavigation(webView, isHealthy);
+                    if (!isHealthy)
+                    {
+                        requestAutoRecovery(currentState, "display-health");
+                    }
+                });
             },
             (currentState, webView, args) =>
             {

@@ -172,21 +172,61 @@ public sealed class SettingsService
         };
     }
 
-    private static void ApplyChanges(JsonObject before, JsonObject after, JsonObject latest)
+    private static void ApplyChanges(JsonObject before, JsonObject after, JsonObject latest, string parentPath = "")
     {
         foreach (var key in before.Select(static pair => pair.Key).Union(after.Select(static pair => pair.Key)))
         {
             before.TryGetPropertyValue(key, out var oldValue);
             after.TryGetPropertyValue(key, out var newValue);
             if (JsonNode.DeepEquals(oldValue, newValue)) continue;
-            if (oldValue is JsonObject oldObject && newValue is JsonObject newObject
+            var path = string.IsNullOrEmpty(parentPath) ? key : parentPath + "." + key;
+            if (TryMergeCollection(path, oldValue, newValue, latest[key], out var collection))
+                latest[key] = collection;
+            else if (oldValue is JsonObject oldObject && newValue is JsonObject newObject
                 && latest[key] is JsonObject currentObject)
-                ApplyChanges(oldObject, newObject, currentObject);
+                ApplyChanges(oldObject, newObject, currentObject, path);
             else if (!after.ContainsKey(key)) latest.Remove(key);
             else latest[key] = newValue?.DeepClone();
         }
     }
 
+    private static bool TryMergeCollection(string path, JsonNode? before, JsonNode? after, JsonNode? latest, out JsonArray? result)
+    {
+        Func<JsonNode?, JsonArray>? normalize = path switch
+        {
+            "sitePrivacy.popupRules" => node => ToArray(SitePrivacySettingsProfile.Normalize(new() { PopupRules = ReadArray<PopupPermissionRule>(node) }).PopupRules),
+            "pageZoomPreferences" => node => ToArray(PageZoomPreferenceSettingsProfile.Normalize(ReadArray<PageZoomPreferenceSettings>(node))),
+            "folderTabSortPreferences" => node => ToArray(FolderTabSortPreferenceSettingsProfile.Normalize(ReadArray<FolderTabSortPreferenceSettings>(node))),
+            "commandPaletteUsage" => node => ToArray(CommandPaletteUsageSettingsProfile.Normalize(ReadArray<CommandPaletteUsageSettings>(node))),
+            _ => null
+        };
+        result = null;
+        if (normalize is null) return false;
+        string Key(JsonNode node) => path switch
+        {
+            "sitePrivacy.popupRules" or "pageZoomPreferences" => node["containerProfileId"]!.GetValue<string>() + "\n" + node["origin"]!.GetValue<string>(),
+            "folderTabSortPreferences" => node["folderPath"]!.GetValue<string>().ToUpperInvariant(),
+            _ => node["itemId"]!.GetValue<string>()
+        };
+        var oldEntries = normalize(before).ToDictionary(node => Key(node!), node => node!);
+        var newEntries = normalize(after).ToDictionary(node => Key(node!), node => node!);
+        var current = normalize(latest).ToDictionary(node => Key(node!), node => node!);
+        // 読込時から変更したキーだけを適用する。同一キーは最後に実行した保存を採用する。
+        // 他のWindowが消した未編集要素は復活させず、順序・件数上限は既存profileへ委ねる。
+        foreach (var key in oldEntries.Keys.Union(newEntries.Keys))
+        {
+            oldEntries.TryGetValue(key, out var oldEntry);
+            newEntries.TryGetValue(key, out var newEntry);
+            if (JsonNode.DeepEquals(oldEntry, newEntry)) continue;
+            if (newEntry is null) current.Remove(key);
+            else current[key] = newEntry;
+        }
+        result = normalize(new JsonArray(current.Values.Select(node => node.DeepClone()).ToArray()));
+        return true;
+    }
+
+    private static List<T> ReadArray<T>(JsonNode? node) => node?.Deserialize<List<T>>(JsonOptions) ?? [];
+    private static JsonArray ToArray<T>(IEnumerable<T> values) => JsonSerializer.SerializeToNode(values, JsonOptions)!.AsArray();
     private static bool HasSameFileContent(string filePath, string content)
     {
         try { return string.Equals(File.ReadAllText(filePath), content, StringComparison.Ordinal); }
@@ -282,6 +322,11 @@ public sealed class SettingsService
     {
         if (settings is not null)
         {
+            // JSONとして読めても正規化で参照不能になる構造だけを破損として分類する。
+            // セクション自体のnullや、既存profileが無視する不正要素の扱いは維持する。
+            if (settings.SitePrivacy?.PopupRules?.Any(static rule => rule is null) == true
+                || settings.PageZoomPreferences?.Any(static entry => entry is null) == true)
+                throw new JsonException("サイト権限またはサイト別倍率の配列にnull要素があります。");
             settings.SearchAliases = SearchAliasSettingsProfile.Normalize(settings.SearchAliases);
             settings.FolderTabViewMode = FolderTabViewMode.Normalize(settings.FolderTabViewMode);
             settings.FolderTabSortMode = FolderTabSortMode.Normalize(settings.FolderTabSortMode);

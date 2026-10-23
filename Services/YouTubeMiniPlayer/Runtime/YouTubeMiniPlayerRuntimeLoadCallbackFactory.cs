@@ -39,7 +39,8 @@ internal static class YouTubeMiniPlayerRuntimeLoadCallbackFactory
         Action<YouTubeMiniPlayerRuntime> recordBrowsingHistory,
         Action<YouTubeMiniPlayerState, string> requestAutoRecovery,
         Action<YouTubeMiniPlayerState, bool> queueInactiveSuspension,
-        Action updateStateCaptureTimer)
+        Action updateStateCaptureTimer,
+        Func<bool>? isClosing = null)
     {
         return new YouTubeMiniPlayerRuntimeLoadCallbacks(
             runtime => YouTubeMiniPlayerRuntimeContentFactory.CreateWebView(
@@ -54,7 +55,8 @@ internal static class YouTubeMiniPlayerRuntimeLoadCallbackFactory
                 beginLiveChatTransition,
                 applyLiveChatAvailabilityAsync,
                 recordBrowsingHistory,
-                queueInactiveSuspension),
+                queueInactiveSuspension,
+                isClosing),
             ensureEnvironmentAsync,
             runtime => YouTubeMiniPlayerTitleService.AttachDocumentTitleHandler(
                 runtime,

@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
-  "created": "2026-10-23",
-  "upstreamCommit": "c06adec381c0cbd27662ebf862ad245d70c2c009",
+  "created": "2026-10-24",
+  "upstreamCommit": "959bca2f077cb7defa582d64cdd4af32a3500aaa",
   "publicRepositoryCommit": null,
   "buildVerification": "unverified",
-  "csharpExport": "公開用Releaseで有効な395ファイルのトークン一致を確認。無効な条件分岐と一部コメントを除外。",
+  "csharpExport": "既存の公開用ソースを維持し、レビュー修正の13ファイルを公開用Releaseの条件で再生成。有効C#トークン一致を確認。無効な条件分岐と一部コメントを除外。",
   "xamlExport": "既存の公開用XAML生成を使用。4件を元の相対パスへ配置。",
   "projectChanges": "公開専用に整理。実際の公開用パッケージ版・出力metadata・XAML不足検査は維持。",
   "unitTestFiles": [
@@ -36,7 +36,12 @@
     "YouTubeControlScriptServiceTests",
     "YouTubeMiniPlayerNavigationServiceTests",
     "YouTubeMiniPlayerRecoveryControllerTests",
-    "YouTubeMiniPlayerWebMessageServiceTests"
+    "YouTubeMiniPlayerWebMessageServiceTests",
+    "SettingsDialogPersistenceTests",
+    "SettingsCollectionMergeTests",
+    "SettingsStructureRecoveryTests",
+    "YouTubeDocumentInitializationTests",
+    "QuickLookPdfReleaseOwnershipTests"
   ],
   "unitTestsAreSubset": true,
   "browserSuiteMinimumCounts": [
@@ -48,8 +53,9 @@
   "productGuiTested": false,
   "realPlaybackTested": false,
   "extendedStabilityTested": false,
-  "additionalManualValidation": "omitted-by-owner",
-  "upstreamTree": "7a826efb36d84600e3f84e45f9b8d499615f31f2",
-  "exportedFromCommit": "5670c5397fce05dcd6c3f7ea5fbb642bb4961a56",
-  "exportTreeEqualsUpstreamTree": true
+  "additionalManualValidation": "今回の設定倍率往復は管理元の開発版で別途記録。実PDF・実動画・長時間安定性は今回未検証。",
+  "upstreamTree": "da363463735b0427abf903fcd6e688eb1b483834",
+  "exportedFromCommit": "959bca2f077cb7defa582d64cdd4af32a3500aaa",
+  "exportTreeEqualsUpstreamTree": true,
+  "reviewBaselineCommit": "c93480158ba678112b298bbc88740bea09f2332e"
 }

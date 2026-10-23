@@ -54,6 +54,8 @@ public sealed record QuickLookRequest(
     IQuickLookItemSource? ItemSource = null,
     bool IsPrivate = false)
 {
+    internal TabBrowser.Services.WindowTaskSupervisor? PdfReleaseOwner { get; init; }
+
     public QuickLookItem? PrimaryItem => Items.FirstOrDefault();
 }
 
