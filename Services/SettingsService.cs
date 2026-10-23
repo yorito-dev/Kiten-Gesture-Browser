@@ -1,4 +1,7 @@
 using System.IO;
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Text.Json.Nodes;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using TabBrowser.Models;
@@ -28,59 +31,75 @@ public sealed class SettingsService
         _settingsBackupFile = AtomicFileService.CreateBackupFilePath(settingsFile);
     }
 
-    public async Task<AppSettings> LoadAsync()
+    private static readonly ConcurrentDictionary<string, object> SaveGates = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConditionalWeakTable<AppSettings, SettingsBaseline> Baselines = new();
+
+    private sealed class SettingsBaseline(string path, JsonObject? value)
     {
-        EnsureStorage();
-        var primaryExists = File.Exists(_settingsFile);
-        if (primaryExists)
-        {
-            try
-            {
-                if (await LoadFromFileAsync(_settingsFile) is { } primarySettings)
-                {
-                    return primarySettings;
-                }
-            }
-            catch
-            {
-                // backupを試した後に、既存の部分回復へ進む。
-            }
-        }
-
-        var backupSettings = await TryLoadBackupAsync();
-        if (backupSettings is not null)
-        {
-            await TryRepairPrimaryFromBackupAsync(backupSettings, primaryExists);
-            return backupSettings;
-        }
-
-        if (!primaryExists)
-        {
-            var defaults = new AppSettings();
-            await SaveToFileAsync(_settingsFile, defaults, _settingsBackupFile);
-            return defaults;
-        }
-
-        return LoadRecoveredSettings(_settingsFile);
+        public string Path { get; } = path;
+        public JsonObject? Value { get; set; } = value;
+        public long Captured { get; set; }
+        public long Saved { get; set; }
     }
+
+    private static JsonObject ToNode(AppSettings settings)
+        => JsonSerializer.SerializeToNode(settings, JsonOptions)!.AsObject();
+
+    internal static AppSettings CloneForEdit(AppSettings settings)
+        => JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, JsonOptions), JsonOptions)!;
+
+    internal static AppSettings MergeEditingResult(AppSettings before, AppSettings after, string? filePath = null)
+    {
+        var latest = new SettingsService(filePath ?? AppPaths.SettingsFile).Load();
+        var merged = ToNode(latest);
+        ApplyChanges(ToNode(before), ToNode(after), merged);
+        var result = merged.Deserialize<AppSettings>(JsonOptions)!;
+        var baseline = Baselines.GetValue(latest, _ => throw new InvalidOperationException());
+        Baselines.Add(result, new SettingsBaseline(baseline.Path, baseline.Value));
+        return result;
+    }
+
+    internal static void AcknowledgeSynchronizedChanges(AppSettings settings, AppSettings before)
+    {
+        if (!Baselines.TryGetValue(settings, out var baseline)) return;
+        lock (SaveGates.GetOrAdd(baseline.Path, static _ => new object()))
+        {
+            if (baseline.Value is not null) ApplyChanges(ToNode(before), ToNode(settings), baseline.Value);
+        }
+    }
+
+    public Task<AppSettings> LoadAsync() => Task.Run(Load);
 
     public AppSettings Load()
     {
-        EnsureStorage();
-        var primaryExists = File.Exists(_settingsFile);
-        if (primaryExists)
+        var path = Path.GetFullPath(_settingsFile);
+        lock (SaveGates.GetOrAdd(path, static _ => new object()))
         {
-            try
-            {
-                if (LoadFromFile(_settingsFile) is { } primarySettings)
-                {
-                    return primarySettings;
-                }
-            }
-            catch
-            {
-                // backupを試した後に、既存の部分回復へ進む。
-            }
+            var settings = LoadCore();
+            Baselines.Add(settings, new SettingsBaseline(path, ToNode(settings)));
+            return settings;
+        }
+    }
+
+    private AppSettings LoadCore()
+    {
+        EnsureStorage();
+        var primaryExists = true;
+        try
+        {
+            return LoadFromFile(_settingsFile)
+                ?? throw new JsonException("設定のルートがnullです。");
+        }
+        catch (FileNotFoundException) { primaryExists = false; }
+        catch (DirectoryNotFoundException) { primaryExists = false; }
+        catch (JsonException)
+        {
+            // 内容が不正な場合だけ、バックアップから主ファイルを修復する。
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 暫定表示に使っても主ファイルは変更しない。保存時に必ず再読込する。
+            return TryLoadBackup() ?? new AppSettings();
         }
 
         var backupSettings = TryLoadBackup();
@@ -89,80 +108,97 @@ public sealed class SettingsService
             TryRepairPrimaryFromBackup(backupSettings, primaryExists);
             return backupSettings;
         }
-
         if (!primaryExists)
         {
             var defaults = new AppSettings();
             SaveToFile(_settingsFile, defaults, _settingsBackupFile);
             return defaults;
         }
-
         return LoadRecoveredSettings(_settingsFile);
     }
 
-    public static async Task SaveAsync(AppSettings settings)
-    {
-        AppPaths.Ensure();
-        await SaveToFileAsync(
-            AppPaths.SettingsFile,
-            settings,
-            AtomicFileService.CreateBackupFilePath(AppPaths.SettingsFile));
-    }
+    public static Task SaveAsync(AppSettings settings)
+        => Task.Run(CaptureSaveOperation(settings));
 
-    public static void Save(AppSettings settings)
-    {
-        AppPaths.Ensure();
-        SaveToFile(AppPaths.SettingsFile, settings, AtomicFileService.CreateBackupFilePath(AppPaths.SettingsFile));
-    }
+    public static void Save(AppSettings settings) => CaptureSaveOperation(settings)();
 
     internal static Action CaptureSaveOperation(AppSettings settings, string? filePath = null)
     {
-        var snapshot = JsonSerializer.Serialize(settings, JsonOptions);
-        filePath ??= AppPaths.SettingsFile;
+        var path = Path.GetFullPath(filePath ?? AppPaths.SettingsFile);
+        var gate = SaveGates.GetOrAdd(path, static _ => new object());
+        SettingsBaseline baseline;
+        JsonObject snapshot;
+        long sequence;
+        lock (gate)
+        {
+            baseline = Baselines.GetValue(settings, _ => new SettingsBaseline(path, null));
+            if (!string.Equals(baseline.Path, path, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("設定の読込先と保存先が一致しません。");
+            snapshot = ToNode(settings);
+            sequence = ++baseline.Captured;
+        }
         return () =>
         {
-            if (HasSameFileContent(filePath, snapshot))
+            lock (gate)
             {
-                return;
-            }
-
-            AtomicFileService.Write(
-                filePath,
-                AtomicFileService.CreateBackupFilePath(filePath),
-                stream =>
+                if (sequence <= baseline.Saved) return;
+                JsonObject latest;
+                var missing = false;
+                try
                 {
-                    using var writer = new StreamWriter(stream, leaveOpen: true);
-                    writer.Write(snapshot);
-                });
+                    // ロック・アクセス拒否・破損を空データや古いbackupへ置き換えない。
+                    latest = ToNode(LoadFromFile(path) ?? throw new JsonException("設定のルートがnullです。"));
+                }
+                catch (FileNotFoundException) { latest = new JsonObject(); missing = true; }
+                catch (DirectoryNotFoundException) { latest = new JsonObject(); missing = true; }
+                if (baseline.Value is null || missing)
+                    latest = (JsonObject)snapshot.DeepClone();
+                else
+                    ApplyChanges(baseline.Value, snapshot, latest);
+                var content = latest.ToJsonString(JsonOptions);
+                if (!HasSameFileContent(path, content))
+                {
+                    AtomicFileService.EnsureDirectory(path);
+                    AtomicFileService.Write(path, AtomicFileService.CreateBackupFilePath(path), stream =>
+                    {
+                        using var writer = new StreamWriter(stream, leaveOpen: true);
+                        writer.Write(content);
+                    });
+                }
+                // Window側の実行状態は書き換えず、このWindowが保存した差分の基点だけ進める。
+                baseline.Value = snapshot;
+                baseline.Saved = sequence;
+            }
         };
+    }
+
+    private static void ApplyChanges(JsonObject before, JsonObject after, JsonObject latest)
+    {
+        foreach (var key in before.Select(static pair => pair.Key).Union(after.Select(static pair => pair.Key)))
+        {
+            before.TryGetPropertyValue(key, out var oldValue);
+            after.TryGetPropertyValue(key, out var newValue);
+            if (JsonNode.DeepEquals(oldValue, newValue)) continue;
+            if (oldValue is JsonObject oldObject && newValue is JsonObject newObject
+                && latest[key] is JsonObject currentObject)
+                ApplyChanges(oldObject, newObject, currentObject);
+            else if (!after.ContainsKey(key)) latest.Remove(key);
+            else latest[key] = newValue?.DeepClone();
+        }
     }
 
     private static bool HasSameFileContent(string filePath, string content)
     {
-        try
-        {
-            return File.Exists(filePath)
-                && string.Equals(File.ReadAllText(filePath), content, StringComparison.Ordinal);
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
+        try { return string.Equals(File.ReadAllText(filePath), content, StringComparison.Ordinal); }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
     }
 
-    public static async Task SaveToFileAsync(string filePath, AppSettings settings)
-    {
-        await SaveToFileAsync(filePath, settings, AtomicFileService.CreateBackupFilePath(filePath));
-    }
+    public static Task SaveToFileAsync(string filePath, AppSettings settings)
+        => Task.Run(CaptureSaveOperation(settings, filePath));
 
     public static void SaveToFile(string filePath, AppSettings settings)
-    {
-        SaveToFile(filePath, settings, AtomicFileService.CreateBackupFilePath(filePath));
-    }
+        => CaptureSaveOperation(settings, filePath)();
 
     private async Task<AppSettings?> TryLoadBackupAsync()
     {

@@ -414,7 +414,7 @@ public sealed class SessionServiceTests
                     FolderTabSortDirection = FolderTabSortDirection.Descending,
                     FolderTabState = new FolderTabSessionState
                     {
-                        NavigationHistory = [@"C:\work", folderPath],
+                        NavigationHistory = [@"C:\SampleData", folderPath],
                         NavigationHistoryIndex = 1,
                         SelectedPaths = [Path.Combine(folderPath, "report.txt")],
                         SelectionAnchorPath = Path.Combine(folderPath, "report.txt"),
@@ -432,7 +432,7 @@ public sealed class SessionServiceTests
         Assert.Equal(FolderTabViewMode.Icons, closedTab.FolderTabViewMode);
         Assert.Equal(FolderTabSortMode.Size, closedTab.FolderTabSortMode);
         Assert.Equal(FolderTabSortDirection.Descending, closedTab.FolderTabSortDirection);
-        Assert.Equal([@"C:\work", folderPath], closedTab.FolderTabState?.NavigationHistory);
+        Assert.Equal([@"C:\SampleData", folderPath], closedTab.FolderTabState?.NavigationHistory);
         Assert.Equal(1, closedTab.FolderTabState?.NavigationHistoryIndex);
         Assert.Equal(48d, closedTab.FolderTabState?.DetailScrollOffset);
         Assert.Equal(96d, closedTab.FolderTabState?.IconScrollOffset);
@@ -456,7 +456,7 @@ public sealed class SessionServiceTests
                 new SessionTabState
                 {
                     Id = tabId,
-                    Url = @"C:\work\documents",
+                    Url = @"C:\SampleData\documents",
                     Title = "documents",
                     IsFolderTab = true,
                     FolderTabViewMode = FolderTabViewMode.Icons,
@@ -464,10 +464,10 @@ public sealed class SessionServiceTests
                     FolderTabSortDirection = FolderTabSortDirection.Descending,
                     FolderTabState = new FolderTabSessionState
                     {
-                        NavigationHistory = [@"C:\work", @"C:\work\documents"],
+                        NavigationHistory = [@"C:\SampleData", @"C:\SampleData\documents"],
                         NavigationHistoryIndex = 1,
-                        SelectedPaths = [@"C:\work\documents\one.txt", @"C:\work\documents\two.txt"],
-                        SelectionAnchorPath = @"C:\work\documents\two.txt",
+                        SelectedPaths = [@"C:\SampleData\documents\one.txt", @"C:\SampleData\documents\two.txt"],
+                        SelectionAnchorPath = @"C:\SampleData\documents\two.txt",
                         DetailScrollOffset = 120,
                         IconScrollOffset = 240,
                         DetailColumnOrder = ["LastWriteTime", "Name", "TypeText", "SizeBytes"]
@@ -481,7 +481,7 @@ public sealed class SessionServiceTests
 
         var tab = Assert.Single(loaded.Tabs);
         Assert.Equal(tabId, tab.Id);
-        Assert.Equal(@"C:\work\documents", tab.Url);
+        Assert.Equal(@"C:\SampleData\documents", tab.Url);
         Assert.True(tab.IsFolderTab);
         Assert.True(tab.IsPinned);
         Assert.Equal(FolderTabViewMode.Icons, tab.FolderTabViewMode);
@@ -489,7 +489,7 @@ public sealed class SessionServiceTests
         Assert.Equal(FolderTabSortDirection.Descending, tab.FolderTabSortDirection);
         Assert.Equal(2, tab.FolderTabState?.NavigationHistory.Count);
         Assert.Equal(2, tab.FolderTabState?.SelectedPaths.Count);
-        Assert.Equal(@"C:\work\documents\two.txt", tab.FolderTabState?.SelectionAnchorPath);
+        Assert.Equal(@"C:\SampleData\documents\two.txt", tab.FolderTabState?.SelectionAnchorPath);
         Assert.Equal(120d, tab.FolderTabState?.DetailScrollOffset);
         Assert.Equal(240d, tab.FolderTabState?.IconScrollOffset);
         Assert.Equal(
@@ -510,13 +510,13 @@ public sealed class SessionServiceTests
             [
                 new SessionTabState
                 {
-                    Url = @"C:\work\documents",
+                    Url = @"C:\SampleData\documents",
                     IsFolderTab = true,
                     FolderTabState = new FolderTabSessionState
                     {
-                        NavigationHistory = [" ", @" C:\work ", @"C:\work\documents"],
+                        NavigationHistory = [" ", @" C:\SampleData ", @"C:\SampleData\documents"],
                         NavigationHistoryIndex = 99,
-                        SelectedPaths = [@" C:\work\documents\one.txt ", @"C:\work\documents\one.txt"],
+                        SelectedPaths = [@" C:\SampleData\documents\one.txt ", @"C:\SampleData\documents\one.txt"],
                         SelectionAnchorPath = " ",
                         DetailScrollOffset = -1,
                         IconScrollOffset = -10,
@@ -529,9 +529,9 @@ public sealed class SessionServiceTests
         var state = Assert.Single((await service.LoadAsync()).Tabs).FolderTabState;
 
         Assert.NotNull(state);
-        Assert.Equal([@"C:\work", @"C:\work\documents"], state.NavigationHistory);
+        Assert.Equal([@"C:\SampleData", @"C:\SampleData\documents"], state.NavigationHistory);
         Assert.Equal(1, state.NavigationHistoryIndex);
-        Assert.Equal([@"C:\work\documents\one.txt"], state.SelectedPaths);
+        Assert.Equal([@"C:\SampleData\documents\one.txt"], state.SelectedPaths);
         Assert.Null(state.SelectionAnchorPath);
         Assert.Equal(0d, state.DetailScrollOffset);
         Assert.Equal(0d, state.IconScrollOffset);

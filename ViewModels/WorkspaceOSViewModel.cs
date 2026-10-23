@@ -16,7 +16,7 @@ using RecentItemFactory = TabBrowser.Services.RecentItemFactory;
 
 namespace TabBrowser.ViewModels;
 
-public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceChangeListener, IDisposable
+public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceChangeListener, IDisposable, IAsyncDisposable
 {
     private const double ArrangeStartMinimum = 24;
     private const double AvoidanceStepX = 32;
@@ -60,6 +60,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     private readonly SemaphoreSlim _workspaceLoadGate = new(1, 1);
     private readonly HashSet<Guid> _capturingThumbnailItemIds = [];
     private readonly HashSet<Guid> _shellIconAttemptedItemIds = [];
+    private readonly HashSet<Task> _shellIconTasks = [];
     private readonly Dictionary<Guid, (string PngBase64, DateTimeOffset UpdatedAt)> _pendingThumbnailSaves = [];
     private Task? _pendingThumbnailSaveTask;
     private int _thumbnailRefreshCount;
@@ -462,7 +463,10 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         }
     }
 
-    public async Task EnsureShellItemIconAsync(WorkspaceItemViewModel item)
+    public Task EnsureShellItemIconAsync(WorkspaceItemViewModel item)
+        => TrackShellIconWork(() => EnsureShellItemIconCoreAsync(item));
+
+    private async Task EnsureShellItemIconCoreAsync(WorkspaceItemViewModel item)
     {
         if (item.Item is not ShellItem shellItem
             || item.HasFavicon
@@ -475,7 +479,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         {
             item.RefreshShellState();
             var iconPngBase64 = await _shellItemService.GetIconPngBase64Async(shellItem);
-            if (string.IsNullOrWhiteSpace(iconPngBase64))
+            if (_isDisposed || string.IsNullOrWhiteSpace(iconPngBase64))
             {
                 return;
             }
@@ -1037,12 +1041,16 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
     public void Dispose()
     {
-        if (_isDisposed)
+        lock (_shellIconTasks)
         {
-            return;
+            if (_isDisposed)
+            {
+                return;
+            }
+
+            _isDisposed = true;
         }
 
-        _isDisposed = true;
         _workspacePreloadCancellation?.Cancel();
         _workspacePreloadCancellation?.Dispose();
         _workspacePreloadCancellation = null;
@@ -1056,6 +1064,54 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         _workspaceRuntimeCache.Clear();
         _currentWorkspaceRuntime = null;
         _lastShellOperation = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        Task[] pending;
+        lock (_shellIconTasks)
+        {
+            pending = _shellIconTasks.ToArray();
+        }
+
+        // アイコン取得後のDB保存まで所有し、呼出し元がDBを片付ける前に接続の解放を待つ。
+        await Task.WhenAll(pending);
+    }
+
+    private Task TrackShellIconWork(Func<Task> start)
+    {
+        lock (_shellIconTasks)
+        {
+            if (_isDisposed)
+            {
+                return Task.CompletedTask;
+            }
+
+            var task = start();
+            if (!task.IsCompleted)
+            {
+                _shellIconTasks.Add(task);
+                _ = RemoveCompletedShellIconWorkAsync(task);
+            }
+
+            return task;
+        }
+    }
+
+    private async Task RemoveCompletedShellIconWorkAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        finally
+        {
+            lock (_shellIconTasks)
+            {
+                _shellIconTasks.Remove(task);
+            }
+        }
     }
 
     public void ConfigureRecentItems(RecentItemsService service, bool recordActions)
@@ -1311,7 +1367,10 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         }
     }
 
-    private async Task BackfillShellItemIconsAsync()
+    private Task BackfillShellItemIconsAsync()
+        => TrackShellIconWork(BackfillShellItemIconsCoreAsync);
+
+    private async Task BackfillShellItemIconsCoreAsync()
     {
         if (_isBackfillingShellIcons)
         {
@@ -1345,6 +1404,11 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
                 target.RefreshShellState();
                 var iconPngBase64 = await _shellItemService.GetIconPngBase64Async(shellItem);
+                if (_isDisposed)
+                {
+                    return;
+                }
+
                 if (string.IsNullOrWhiteSpace(iconPngBase64))
                 {
                     continue;
@@ -1354,7 +1418,10 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
                 pending[target.Id] = iconPngBase64;
             }
 
-            await _workspaceService.UpdateItemFaviconsAsync(pending);
+            if (!_isDisposed)
+            {
+                await _workspaceService.UpdateItemFaviconsAsync(pending);
+            }
         }
         catch
         {

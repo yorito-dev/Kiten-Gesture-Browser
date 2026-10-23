@@ -28,6 +28,41 @@ internal interface ITopToolbarHost
 // ツールバーの開閉と横幅・スクロールを所有し、機能別Popupや設定保存はWindowへ残す。
 internal sealed class TopToolbarController : IDisposable
 {
+    private Button? _dismissedMenuButton;
+    private int _menuDismissPressTimestamp;
+
+    internal void RecordMenuDismissPress(Button button, Point position, int timestamp)
+    {
+        if (!button.IsEnabled || !new Rect(button.RenderSize).Contains(position)) return;
+        _dismissedMenuButton = button;
+        _menuDismissPressTimestamp = timestamp;
+    }
+
+    internal bool ConsumeMenuDismissPress(Button button, int timestamp)
+    {
+        var consume = ReferenceEquals(button, _dismissedMenuButton)
+            && timestamp == _menuDismissPressTimestamp;
+        _dismissedMenuButton = null;
+        return consume;
+    }
+
+    internal static bool CloseSurfaceOnButtonPress(FrameworkElement button, Point position, Action close)
+    {
+        if (!button.IsEnabled || !new Rect(button.RenderSize).Contains(position)) return false;
+
+        // 外側クリックで既に閉じていても、元ボタンへの同じ押下による再表示を防ぐ。
+        close();
+        return true;
+    }
+
+    internal static void ToggleButtonContextMenu(Button button)
+    {
+        if (button.ContextMenu is not { } menu) return;
+        menu.PlacementTarget = button;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = !menu.IsOpen;
+    }
+
     private const double TopToolbarVisibleHeight = 40;
     private const double TopToolbarHiddenHeight = 4;
     private const double TopToolbarRevealDistance = 12;

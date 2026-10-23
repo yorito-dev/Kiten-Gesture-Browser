@@ -672,15 +672,26 @@ internal static class YouTubeMiniPlayerPlaybackCommandService
         return true;
     }
 
+    public static Task<bool> RepairAsync(YouTubeMiniPlayerState state,
+        IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
+        Func<YouTubeMiniPlayerState, Uri, Task> loadRuntimeAsync,
+        Func<YouTubeMiniPlayerState, Task<bool>> repairYouTubeAsync,
+        Action<string> setStatus)
+        => state.SourceKind == MiniPlayerSourceKind.LocalFile
+            ? ReloadAsync(state, runtimes, loadRuntimeAsync, setStatus)
+            : repairYouTubeAsync(state);
+
     public static async Task<bool> ReloadAsync(
         YouTubeMiniPlayerState state,
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
         Func<YouTubeMiniPlayerState, Uri, Task> loadRuntimeAsync,
         Action<string> setStatus)
     {
-        if (TryGetLocalController(state, runtimes, out var localController))
+        if (state.SourceKind == MiniPlayerSourceKind.LocalFile)
         {
-            var changed = localController.Reload();
+            var changed = TryGetLocalController(state, runtimes, out var localController)
+                && runtimes.TryGetValue(state.Id, out var localRuntime) && !localRuntime.IsDisposed
+                && localController.Reload();
             if (!changed)
             {
                 setStatus("ローカル動画を再読み込みできませんでした");

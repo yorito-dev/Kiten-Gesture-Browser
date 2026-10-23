@@ -187,7 +187,9 @@ public static class WebThumbnailCaptureService
         var captureData = await TryGetPageCaptureDataAsync(core);
         cancellationToken.ThrowIfCancellationRequested();
         await using var stream = new MemoryStream();
-        await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
+        await WaitForCapturePreviewAsync(
+            core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream),
+            cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (stream.Length == 0)
         {
@@ -200,6 +202,24 @@ public static class WebThumbnailCaptureService
         return new WebThumbnailCaptureResult(
             CreateThumbnail(stream, captureData?.CropHint, title, url),
             captureData?.PageDescription ?? string.Empty);
+    }
+
+    internal static async Task WaitForCapturePreviewAsync(
+        Task capture,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await capture.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 閉じたタブなどhostから外れて非表示になったWebView2ではCapturePreviewAsyncが完了しない。
+            // 取消で待機だけを終え、放棄したnative captureの後からの失敗は未観測例外にしない。
+            _ = capture.ContinueWith(static completed => _ = completed.Exception,
+                CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            throw;
+        }
     }
 
     public static async Task WaitForVisualStabilityAsync(

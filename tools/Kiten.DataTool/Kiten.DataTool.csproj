@@ -7,10 +7,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Kiten.DataTool</AssemblyName>
     <RootNamespace>Kiten.DataTool</RootNamespace>
-    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.4</KitenReleaseVersion>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.5</KitenReleaseVersion>
     <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
     <Version>$(KitenReleaseVersion)</Version>
     <Product>Kiten Gesture Browser Data Maintenance Tool</Product>
+    <Company>ヨリト</Company>
+    <Copyright>Copyright (c) 2026 ヨリト</Copyright>
+    <PathMap Condition="'$(KitenPublicBuild)' == 'true'">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\'))=/_/</PathMap>
+    <EnableSourceLink Condition="'$(KitenPublicBuild)' == 'true'">false</EnableSourceLink>
     <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 

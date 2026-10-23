@@ -207,6 +207,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly bool _isPrivateWindow;
     private readonly bool _restoreFloatingMediaPlaceholders;
     private readonly PrivateBrowsingContext? _privateBrowsingContext;
+    internal bool IsPrivateBrowsing => _isPrivateWindow;
     private readonly PrivateBrowsingShutdownCoordinator? _privateBrowsingShutdownCoordinator;
     private readonly WindowShutdownCoordinator _windowShutdownCoordinator = new(
         static (phase, exception) => AppendSessionDiagnostic(
@@ -2141,7 +2142,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             e.Cancel = true;
             _windowShutdownCoordinator.ClearPreparedPersistence();
             SetStatus("メモ編集Windowが開いているため終了を中止しました。メモの保存またはキャンセルを確認してから閉じてください。", autoClear: false);
-            FindOpenWorkspaceNoteEditor([this])?.ShowRequiredCloseAction();
+            ShowWorkspaceNoteCloseConfirmation([this]);
             return;
         }
 
@@ -2314,6 +2315,43 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private static bool HasOpenWorkspaceNoteEditor(IReadOnlyList<MainWindow> closingWindows)
         => FindOpenWorkspaceNoteEditor(closingWindows) is not null;
 
+    private void ShowWorkspaceNoteCloseConfirmation(IReadOnlyList<MainWindow> closingWindows)
+    {
+        var editor = FindOpenWorkspaceNoteEditor(closingWindows);
+        if (editor is null) return;
+        editor.CloseAllWithoutSavingAsync = CloseAllWithoutSavingNotesAsync;
+        editor.ShowRequiredCloseAction();
+    }
+
+    private async Task<WindowPersistenceResult> CloseAllWithoutSavingNotesAsync()
+    {
+        var windows = GetApplicationCloseMainWindows().Append(this).Distinct().ToList();
+        var editors = Application.Current.Windows.OfType<WorkspaceNoteEditWindow>()
+            .Where(static editor => editor.RequiresCloseConfirmation).ToList();
+        return await s_applicationWindowCloseCoordinator.CloseWithoutSavingNotesAsync(
+            () => !windows.Any(static window => window._windowShutdownCoordinator.IsStarted)
+                && GetApplicationCloseMainWindows().All(windows.Contains)
+                && editors.All(static editor => !editor.IsSaving)
+                && Application.Current.Windows.OfType<WorkspaceNoteEditWindow>()
+                    .Where(static editor => editor.RequiresCloseConfirmation).ToHashSet().SetEquals(editors),
+            () => FlushWindowSetPersistenceAsync(windows, saveSettings: true, checkClosingEditors: false),
+            () =>
+            {
+                foreach (var editor in editors) editor.Close();
+                if (Application.Current.Windows.OfType<WorkspaceNoteEditWindow>()
+                    .Any(static editor => editor.RequiresCloseConfirmation))
+                    throw new InvalidOperationException("閉じられないメモがあります。編集画面を確認してください。");
+            },
+            protection =>
+            {
+                s_applicationWindowCloseCoordinator.BeginPermanentCloseAll();
+                foreach (var window in windows) window._windowShutdownCoordinator.PreparePersistence(protection);
+                foreach (var window in windows.Where(window => !ReferenceEquals(window, this))) window.Close();
+                _closeConfirmed = true;
+                Close();
+            });
+    }
+
     private static WorkspaceNoteEditWindow? FindOpenWorkspaceNoteEditor(IReadOnlyList<MainWindow> closingWindows)
     {
         foreach (var editor in Application.Current.Windows.OfType<WorkspaceNoteEditWindow>())
@@ -2335,6 +2373,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         var windows = Application.Current.Windows.OfType<Window>().ToList();
         var targets = new List<WindowPersistenceTarget>();
+        // 明示的なブックマーク編集はプライベートWindowでも共有・永続化する。
+        targets.Add(new("bookmarks", "ブックマーク", () => App.Bookmarks.FlushAsync()));
         foreach (var window in closingWindows.Where(static window => window._downloadService.HasActiveExternalDownloads))
             targets.Add(new($"download-stop-{window._sessionWindowId}", $"Window {window._workspaceWindowIndex} のダウンロード確定", async () =>
             {
@@ -2529,7 +2569,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             if (!protection.Succeeded)
             {
                 SetStatus(protection.FailureMessage, autoClear: false);
-                FindOpenWorkspaceNoteEditor(windowsToClose.Append(this).ToList())?.ShowRequiredCloseAction();
+                ShowWorkspaceNoteCloseConfirmation(windowsToClose.Append(this).ToList());
                 return;
             }
             s_applicationWindowCloseCoordinator.BeginPermanentCloseAll();
@@ -4215,14 +4255,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private static void OpenButtonContextMenu(Button button)
     {
-        if (button.ContextMenu is null)
-        {
-            return;
-        }
+        TopToolbarController.ToggleButtonContextMenu(button);
+    }
 
-        button.ContextMenu.PlacementTarget = button;
-        button.ContextMenu.Placement = PlacementMode.Bottom;
-        button.ContextMenu.IsOpen = true;
+    private void ToolbarContextMenu_MouseDownOutsideCapturedElement(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left
+            && sender is ContextMenu { PlacementTarget: Button button })
+        {
+            // MenuBaseが通常のPreviewMouseDownより先に閉じるため、同じ押下を識別する。
+            _topToolbarController.RecordMenuDismissPress(button, e.GetPosition(button), e.Timestamp);
+        }
+    }
+
+    private void ToolbarMenuButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Button button && _topToolbarController.ConsumeMenuDismissPress(button, e.Timestamp))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void ToolbarSurface_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Popup popup && popup.PlacementTarget is FrameworkElement popupButton)
+        {
+            e.Handled = TopToolbarController.CloseSurfaceOnButtonPress(
+                popupButton, e.GetPosition(popupButton), () => popup.IsOpen = false);
+        }
     }
 
     private void RebuildBookmarkHierarchyMenu() => _bookmarkMenuController.Rebuild();
@@ -4452,6 +4512,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async void ManageExtensionsButton_Click(object sender, RoutedEventArgs e)
     {
+        if (ReferenceEquals(sender, ManageExtensionsButton)
+            && ModelessWindowService.CloseOwned<ExtensionManagerWindow>(this))
+        {
+            return;
+        }
+
         await OpenExtensionManagerAsync();
     }
 
@@ -4505,6 +4571,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async void BookmarkListButton_Click(object sender, RoutedEventArgs e)
     {
+        if (ReferenceEquals(sender, BookmarkListButton)
+            && ModelessWindowService.CloseOwned<BookmarkManagerWindow>(this))
+        {
+            return;
+        }
+
         await ExecuteRegisteredCommandAsync(BrowserCommandProvider.ShowBookmarksActionId);
     }
 
@@ -4515,6 +4587,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async void GestureSettingsButton_Click(object sender, RoutedEventArgs e)
     {
+        if (ReferenceEquals(sender, GestureSettingsButton)
+            && ModelessWindowService.CloseOwned<MouseGestureSettingsWindow>(this))
+        {
+            return;
+        }
+
         await OpenMouseGestureSettingsWindowAsync();
     }
 
@@ -4552,6 +4630,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
+        if (ReferenceEquals(sender, SettingsButton)
+            && ModelessWindowService.CloseOwned<SettingsWindow>(this))
+        {
+            return;
+        }
+
         await ExecuteRegisteredCommandAsync(BrowserCommandProvider.OpenSettingsActionId);
     }
 
@@ -4568,7 +4652,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        var dialog = new SettingsWindow(_settings, GetInUseContainerProfileIdsForSettings())
+        var editingBaseline = SettingsService.CloneForEdit(_settings);
+        var dialog = new SettingsWindow(editingBaseline, GetInUseContainerProfileIdsForSettings())
         {
             Owner = this
         };
@@ -4595,7 +4680,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        await ApplySettingsToOpenWindowsAsync(dialog.ResultSettings);
+        await ApplySettingsToOpenWindowsAsync(
+            SettingsService.MergeEditingResult(editingBaseline, dialog.ResultSettings));
     }
 
     private async void CloseTabButton_Click(object sender, RoutedEventArgs e)
@@ -4684,6 +4770,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private async Task ApplyMouseGestureSettingsToOpenWindowsAsync(AppSettings result)
     {
         var windows = GetSettingsSynchronizationTargets();
+        var before = windows.ToDictionary(window => window, window => SettingsService.CloneForEdit(window._settings));
         foreach (var window in windows)
         {
             window._settings.GestureStartThreshold = result.GestureStartThreshold;
@@ -4695,6 +4782,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
 
         SettingsService.Save(_settings);
+        foreach (var window in windows.Where(window => !ReferenceEquals(window, this)))
+            SettingsService.AcknowledgeSynchronizedChanges(window._settings, before[window]);
         foreach (var window in windows)
         {
             window.RefreshWorkspaceGestureSettings();
@@ -4707,16 +4796,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task ApplySettingsToOpenWindowsAsync(AppSettings result)
     {
-        var windows = GetSettingsSynchronizationTargets();
-        foreach (var window in windows.Where(window => !ReferenceEquals(window, this)))
+        SettingsService.Save(result);
+        foreach (var window in GetSettingsSynchronizationTargets())
         {
-            await window.ApplySettingsAsync(
-                result,
-                persistSettings: false,
-                showStatus: false);
+            await window.ApplySettingsAsync(result, persistSettings: false,
+                showStatus: ReferenceEquals(window, this));
         }
-
-        await ApplySettingsAsync(result, persistSettings: true, showStatus: true);
     }
 
     private async Task ApplySettingsAsync(
@@ -4724,6 +4809,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         bool persistSettings,
         bool showStatus)
     {
+        var synchronizedBefore = SettingsService.CloneForEdit(_settings);
         var extensionSettingChanged = _settings.EnableBrowserExtensions != result.EnableBrowserExtensions;
 
         _settings.SearchEngine = result.SearchEngine;
@@ -4761,7 +4847,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             folderTabView.UpdateShowHiddenItems(_settings.ShowHiddenFolderTabItems);
         }
         _settings.QuickLook = QuickLookSettingsProfile.Normalize(result.QuickLook);
-        await ApplyFloatingMediaSettingsAsync(result);
+        var floatingMediaUpdate = ApplyFloatingMediaSettingsAsync(result);
         CommandPaletteQuickLookHost.Configure(_settings.QuickLook);
         _settings.GestureStartThreshold = result.GestureStartThreshold;
         _settings.GestureDirectionThreshold = result.GestureDirectionThreshold;
@@ -4783,7 +4869,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         {
             SettingsService.Save(_settings);
         }
+        else
+        {
+            // ページ側の反映待ち中に行われた別の編集を保存済みと扱わない。
+            SettingsService.AcknowledgeSynchronizedChanges(_settings, synchronizedBefore);
+        }
 
+        await floatingMediaUpdate;
         RestartFocusedViewingCpuSaverTimer();
         RefreshWorkspaceGestureSettings();
         await RefreshGestureScriptOnLoadedTabsAsync();

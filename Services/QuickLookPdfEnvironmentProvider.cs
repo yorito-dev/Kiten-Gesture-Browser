@@ -1,11 +1,72 @@
 using System.IO;
 using Microsoft.Web.WebView2.Core;
+using TabBrowser.Models;
 
 namespace TabBrowser.Services;
 
 public enum QuickLookPdfEnvironmentOwner
 {
     Process
+}
+
+// PDFプレビュー単位の一時領域。通常利用の共有環境や他のWindowの領域を削除しない。
+internal sealed class QuickLookPdfEnvironmentScope
+{
+    private readonly PrivateBrowsingContext? _context;
+    private readonly QuickLookPdfEnvironmentProvider _provider;
+    private readonly Func<PrivateBrowsingContext, CancellationToken, Task<PrivateBrowsingDeleteResult>> _delete;
+    private readonly PrivateBrowsingShutdownCoordinator _shutdown = new();
+    private Task? _releaseTask;
+
+    public QuickLookPdfEnvironmentScope(bool isPrivate,
+        Func<PrivateBrowsingContext>? createContext = null,
+        Func<PrivateBrowsingContext, CancellationToken, Task<PrivateBrowsingDeleteResult>>? delete = null)
+    {
+        _delete = delete ?? PrivateBrowsingDataService.DeleteContextAsync;
+        _context = isPrivate ? (createContext ?? PrivateBrowsingDataService.CreateContext)() : null;
+        _provider = _context is null ? QuickLookPdfEnvironmentProvider.Shared
+            : new QuickLookPdfEnvironmentProvider(() => CoreWebView2Environment.CreateAsync(
+                userDataFolder: _context.UserDataFolder,
+                options: WebViewLifecycleService.CreateEnvironmentOptions(enableBrowserExtensions: false)));
+    }
+
+    internal PrivateBrowsingContext? Context => _context;
+    internal string? ProfileName => _context is null ? null : "KitenPrivatePdf-" + _context.Id.ToString("N");
+    public Task<CoreWebView2Environment> GetAsync() => _provider.GetAsync();
+
+    public CoreWebView2ControllerOptions? CreateControllerOptions(CoreWebView2Environment environment)
+    {
+        if (_context is null) return null;
+        var options = environment.CreateCoreWebView2ControllerOptions();
+        options.ProfileName = ProfileName;
+        options.IsInPrivateModeEnabled = true;
+        return options;
+    }
+
+    internal void VerifyProfile(bool isInPrivate, string profileName)
+    {
+        if (_context is not null && (!isInPrivate || profileName != ProfileName))
+            throw new InvalidOperationException("PDFのプライベートプロファイルを確認できません。");
+    }
+
+    public Task ReleaseAsync(Task initialization, Action releaseResources)
+        => _releaseTask ??= ReleaseCoreAsync(initialization, releaseResources);
+
+    private async Task ReleaseCoreAsync(Task initialization, Action releaseResources)
+    {
+        // 初期化完了後に破棄する。初期化中に一時フォルダーを消して再作成させない。
+        try { await initialization; }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException and not AccessViolationException) { }
+        if (_context is null)
+        {
+            releaseResources();
+            return;
+        }
+        var result = await _shutdown.ShutdownAsync(releaseResources,
+            token => _delete(_context, token), TimeSpan.FromSeconds(3));
+        if (!result.IsSuccess)
+            PrivateBrowsingDataService.RecordCleanupFailure(_context, result.FailureReason ?? "pdf-cleanup-failed");
+    }
 }
 
 public enum QuickLookPdfEnvironmentState

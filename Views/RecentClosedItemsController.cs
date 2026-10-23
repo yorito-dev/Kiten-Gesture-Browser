@@ -76,6 +76,12 @@ internal sealed class RecentClosedItemsController(
 
     public void OpenHistory()
     {
+        if (_elements.ClosedTabHistoryPopup.IsOpen)
+        {
+            _elements.ClosedTabHistoryPopup.IsOpen = false;
+            return;
+        }
+
         Refresh();
         if (!_host.HasClosedItems)
         {
@@ -84,6 +90,19 @@ internal sealed class RecentClosedItemsController(
         }
 
         _elements.ClosedTabHistoryPopup.IsOpen = true;
+    }
+
+    public bool CloseHistoryOnButtonPress(Point position)
+    {
+        var button = _elements.ClosedTabHistoryButton;
+        if (!button.IsEnabled || !new Rect(button.RenderSize).Contains(position))
+        {
+            return false;
+        }
+
+        // Popupの外側クリックによる自動終了後も、同じ押下で再び開かない。
+        _elements.ClosedTabHistoryPopup.IsOpen = false;
+        return true;
     }
 
     public async Task RestoreSelectedItemAsync()

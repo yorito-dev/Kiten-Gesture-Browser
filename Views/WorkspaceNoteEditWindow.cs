@@ -14,6 +14,12 @@ public sealed class WorkspaceNoteEditWindow : Window
     private readonly TextBox _contentBox;
     private readonly TextBlock _fontSizeText;
     private readonly TextBlock _statusText;
+    private readonly Border _closeConfirmation;
+    private Window? _closeConfirmationWindow;
+    private readonly TextBlock _closeConfirmationStatus;
+    private readonly Button _confirmSaveButton;
+    private readonly Button _discardAllButton;
+    private bool _isRequestingCloseAll;
     private readonly Button _saveAndCloseButton;
     private readonly Button _updateButton;
     private readonly Button _saveAsNewButton;
@@ -65,6 +71,100 @@ public sealed class WorkspaceNoteEditWindow : Window
         _contentBox.VerticalContentAlignment = VerticalAlignment.Top;
         Grid.SetRow(_contentBox, 0);
         root.Children.Add(_contentBox);
+
+        // 保存状態の表示とは分け、保存済み・エラー表示中でも終了の案内を見落とさない。
+        var closeActions = new StackPanel();
+        var message = new Grid { Margin = new Thickness(0, 4, 0, 28) };
+        message.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+        message.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        message.Children.Add(new TextBlock
+        {
+            Text = "\uE946",
+            FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            FontSize = 38,
+            Foreground = CreateBrush(244, 193, 94),
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+        var messageText = new StackPanel();
+        Grid.SetColumn(messageText, 1);
+        message.Children.Add(messageText);
+        closeActions.Children.Add(message);
+        messageText.Children.Add(new TextBlock
+        {
+            Text = "終了する前に、メモを確認してください。",
+            Foreground = CreateBrush(243, 244, 246),
+            FontSize = 22,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        });
+        messageText.Children.Add(new TextBlock
+        {
+            Text = "保存せずに終了すると、すべてのメモの未保存変更が失われます。\n保存済みの内容は残ります。",
+            Foreground = CreateBrush(209, 213, 219),
+            FontSize = 16,
+            LineHeight = 26,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 22, 0, 16)
+        });
+        messageText.Children.Add(new TextBlock
+        {
+            Text = "保存する場合は、このメモを閉じた後にもう一度終了してください。",
+            Foreground = CreateBrush(160, 166, 177),
+            FontSize = 14,
+            TextWrapping = TextWrapping.Wrap
+        });
+        var actionRow = new Grid();
+        actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.35, GridUnitType.Star) });
+        actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.25, GridUnitType.Star) });
+        closeActions.Children.Add(actionRow);
+        _confirmSaveButton = CreateButton("このメモを保存して閉じる");
+        _confirmSaveButton.Background = CreateBrush(30, 100, 133);
+        _confirmSaveButton.BorderBrush = CreateBrush(82, 160, 190);
+        _confirmSaveButton.ToolTip = "このメモを保存します。全ウィンドウの終了は、もう一度操作してください。";
+        _confirmSaveButton.Click += async (_, _) =>
+        {
+            if (IsTargetMissing) await TrySaveAsNewAsync();
+            else await TrySaveAndCloseAsync();
+        };
+        Grid.SetColumn(_confirmSaveButton, 1);
+        actionRow.Children.Add(_confirmSaveButton);
+        _discardAllButton = CreateButton("保存せずにすべて閉じる");
+        _discardAllButton.Background = CreateBrush(20, 22, 26);
+        _discardAllButton.BorderBrush = CreateBrush(244, 193, 94);
+        _discardAllButton.Foreground = CreateBrush(244, 193, 94);
+        _discardAllButton.Click += async (_, _) => await RequestCloseAllWithoutSavingAsync();
+        Grid.SetColumn(_discardAllButton, 2);
+        actionRow.Children.Add(_discardAllButton);
+        var continueEditing = CreateButton("編集に戻る");
+        continueEditing.Click += (_, _) => DismissCloseConfirmation();
+        actionRow.Children.Add(continueEditing);
+        foreach (var button in actionRow.Children.OfType<Button>())
+        {
+            button.Height = 44;
+            button.FontSize = 14;
+            button.FontWeight = FontWeights.SemiBold;
+            button.Margin = new Thickness(0, 0, ReferenceEquals(button, _discardAllButton) ? 0 : 12, 0);
+        }
+        _closeConfirmationStatus = new TextBlock
+        {
+            Foreground = CreateBrush(248, 113, 113),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        closeActions.Children.Add(_closeConfirmationStatus);
+        _closeConfirmation = new Border
+        {
+            Background = CreateBrush(28, 32, 40),
+            Padding = new Thickness(24),
+            Visibility = Visibility.Collapsed,
+            Child = new ScrollViewer
+            {
+                Content = closeActions,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            }
+        };
 
         _statusText = new TextBlock
         {
@@ -303,6 +403,12 @@ public sealed class WorkspaceNoteEditWindow : Window
     {
         if (e.Key == Key.Escape)
         {
+            if (IsCloseConfirmationVisible)
+            {
+                DismissCloseConfirmation();
+                e.Handled = true;
+                return;
+            }
             Close();
             e.Handled = true;
             return;
@@ -345,20 +451,89 @@ public sealed class WorkspaceNoteEditWindow : Window
 
     internal string StatusText => _statusText.Text;
 
+    internal bool IsCloseConfirmationVisible => _closeConfirmationWindow?.IsVisible == true;
+
+    internal Window? CloseConfirmationWindow => _closeConfirmationWindow;
+
+    internal Func<Task<WindowPersistenceResult>>? CloseAllWithoutSavingAsync { get; set; }
+
+    internal async Task RequestCloseAllWithoutSavingAsync()
+    {
+        if (_isSaving || _isRequestingCloseAll || CloseAllWithoutSavingAsync is null) return;
+        _isRequestingCloseAll = true;
+        SetEditorEnabled(false);
+        try
+        {
+            var result = await CloseAllWithoutSavingAsync();
+            if (!result.Succeeded) ShowStatus(result.FailureMessage, isError: true);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus("終了できませんでした: " + ex.Message, isError: true);
+        }
+        finally
+        {
+            _isRequestingCloseAll = false;
+            SetEditorEnabled(true);
+        }
+    }
+
+    internal void DismissCloseConfirmation()
+    {
+        if (_isRequestingCloseAll) return;
+        _closeConfirmationWindow?.Close();
+    }
+
     internal void ShowRequiredCloseAction()
     {
+        _closeConfirmation.Visibility = Visibility.Visible;
+        _discardAllButton.Visibility = CloseAllWithoutSavingAsync is null ? Visibility.Collapsed : Visibility.Visible;
+        _confirmSaveButton.Content = IsTargetMissing ? "新しいメモとして保存して閉じる" : "このメモを保存して閉じる";
         if (_statusText.Visibility != Visibility.Visible)
             ShowStatus("全Windowを閉じるには、このメモを保存して閉じるかキャンセルしてください", isError: false);
         if (!IsVisible)
             Show();
         if (WindowState == WindowState.Minimized)
             WindowState = WindowState.Normal;
-        Activate();
+        if (_closeConfirmationWindow is { } existing)
+        {
+            if (existing.WindowState == WindowState.Minimized) existing.WindowState = WindowState.Normal;
+            existing.Activate();
+            return;
+        }
+
+        var dialog = new Window
+        {
+            Title = "メモの確認",
+            Owner = this,
+            Width = Math.Min(920, SystemParameters.WorkArea.Width - 32),
+            SizeToContent = SizeToContent.Height,
+            MaxHeight = SystemParameters.WorkArea.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            Background = CreateBrush(16, 17, 20),
+            Content = _closeConfirmation
+        };
+        _closeConfirmationWindow = dialog;
+        dialog.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape) return;
+            e.Handled = true;
+            DismissCloseConfirmation();
+        };
+        dialog.Closed += (_, _) =>
+        {
+            dialog.Content = null;
+            _closeConfirmationWindow = null;
+            if (IsVisible) FocusContentAtEnd();
+        };
+        ModelessWindowService.Show(dialog, forceTopmost: true);
     }
 
     private async Task<bool> TrySaveAsync(bool closeAfterSuccess, bool saveAsNew = false)
     {
-        if (_isSaving)
+        if (_isSaving || _isRequestingCloseAll)
         {
             return false;
         }
@@ -440,6 +615,8 @@ public sealed class WorkspaceNoteEditWindow : Window
 
     private void SetEditorEnabled(bool enabled)
     {
+        _confirmSaveButton.IsEnabled = enabled;
+        _discardAllButton.IsEnabled = enabled;
         _contentBox.IsReadOnly = !enabled;
         _saveAndCloseButton.IsEnabled = enabled;
         _updateButton.IsEnabled = enabled;
@@ -486,5 +663,6 @@ public sealed class WorkspaceNoteEditWindow : Window
             ? CreateBrush(248, 113, 113)
             : CreateBrush(74, 222, 128);
         _statusText.Visibility = Visibility.Visible;
+        _closeConfirmationStatus.Text = isError ? text : string.Empty;
     }
 }

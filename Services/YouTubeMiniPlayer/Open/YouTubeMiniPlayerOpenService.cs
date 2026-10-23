@@ -17,7 +17,8 @@ internal static class YouTubeMiniPlayerOpenService
         YouTubeMiniPlayerController controller,
         Func<YouTubeMiniPlayerState, YouTubeMiniPlayerRuntime> createRuntime,
         Action<YouTubeMiniPlayerState, UIElement> setPosition,
-        Action<Guid> bringToFront)
+        Action<Guid> bringToFront,
+        double? positionSeconds = null)
     {
         var state = YouTubeMiniPlayerStateFactory.Create(
             sourceTab,
@@ -26,7 +27,8 @@ internal static class YouTubeMiniPlayerOpenService
             title,
             isShorts,
             bounds,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            positionSeconds);
 
         var runtime = createRuntime(state);
         controller.Register(state, runtime);

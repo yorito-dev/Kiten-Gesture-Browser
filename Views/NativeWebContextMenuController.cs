@@ -35,6 +35,7 @@ internal sealed class NativeWebContextMenuController
     private readonly CoreWebView2ContextMenuItem _xSearchMenuItem;
     private readonly CoreWebView2ContextMenuItem _youTubeSearchMenuItem;
     private readonly CoreWebView2ContextMenuItem _copyPageUrlMenuItem;
+    private readonly CoreWebView2ContextMenuItem _youTubeMiniPlayerMenuItem;
     private readonly CoreWebView2ContextMenuItem _openPageInContainerMenuItem;
     private readonly CoreWebView2ContextMenuItem _openLinkInNewTabMenuItem;
     private readonly CoreWebView2ContextMenuItem _openLinkInBackgroundTabMenuItem;
@@ -66,6 +67,7 @@ internal sealed class NativeWebContextMenuController
         _xSearchMenuItem = CreateItem(environment, "選択範囲を X で検索");
         _youTubeSearchMenuItem = CreateItem(environment, "選択範囲を YouTube で検索");
         _copyPageUrlMenuItem = CreateItem(environment, "URLをコピー");
+        _youTubeMiniPlayerMenuItem = CreateItem(environment, "YouTubeミニプレイヤーで開く");
         _openPageInContainerMenuItem = CreateItem(
             environment,
             "現在ページを別コンテナで開く",
@@ -126,6 +128,13 @@ internal sealed class NativeWebContextMenuController
             }
         };
         _copyPageUrlMenuItem.CustomItemSelected += (_, _) => _host.CopyContextPageUrl(_tab, _contextPageUri);
+        _youTubeMiniPlayerMenuItem.CustomItemSelected += (_, _) =>
+        {
+            if (_host.ContainsTab(_tab))
+            {
+                _host.OpenPageInYouTubeMiniPlayer(_tab);
+            }
+        };
         _openLinkInNewTabMenuItem.CustomItemSelected += (_, _) =>
         {
             if (_host.ContainsTab(_tab)
@@ -287,6 +296,11 @@ internal sealed class NativeWebContextMenuController
         }
         if (!hasLink && _copyPageUrlMenuItem.IsEnabled)
         {
+            if (YouTubeMiniPlayerOpenRequestService.TryCreateFromTab(_contextPageUri, null, out _))
+            {
+                args.MenuItems.Insert(args.MenuItems.Count, _youTubeMiniPlayerMenuItem);
+            }
+
             args.MenuItems.Insert(args.MenuItems.Count, _copyPageUrlMenuItem);
         }
 

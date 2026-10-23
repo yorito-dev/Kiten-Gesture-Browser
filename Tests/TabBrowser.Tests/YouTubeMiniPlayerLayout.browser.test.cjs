@@ -30,8 +30,13 @@ const frames = async (count = 8) => evaluate(`new Promise(resolve => {
     requestAnimationFrame(tick);
 })`);
 let script;
+let startPositionScript;
 before(async () => {
     const source = await readFile(resolve(__dirname, '../../Services/YouTubeControlScriptService.cs'), 'utf8');
+    startPositionScript = source.slice(source.indexOf('public static string BuildMiniPlayerStartPositionReadScript('))
+        .match(/return """\r?\n([\s\S]*?)\r?\n\s*"""\.Replace\(/)[1]
+        .replaceAll('__VIDEO_ID__', JSON.stringify('abc123'))
+        .replaceAll('__AD_PLAYING__', source.match(/const string AdvertisementPlayingExpression = """\r?\n([\s\S]*?)\r?\n\s*""";/)[1]);
     const method = source.slice(source.indexOf('public static string BuildMiniPlayerWatchPageScript(\n') >= 0
         ? source.indexOf('public static string BuildMiniPlayerWatchPageScript(\n')
         : source.indexOf('public static string BuildMiniPlayerWatchPageScript(\r\n'));
@@ -594,5 +599,28 @@ for (const adClass of ['ad-showing', 'ad-interrupting']) {
             await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 300 + delta, y: 200, button: 'right', buttons: 0, clickCount: 1 });
             assert.deepEqual(await evaluate('window.adControlWrites'), []);
         }
+    });
+}
+
+for (const [name, setup, expected] of [
+    ['再生中の現在位置', '', 123.75],
+    ['一時停止中の現在位置', 'Object.defineProperty(video, "paused", { value: true });', 123.75],
+    ['広告表示中', 'player.classList.add("ad-showing");', null],
+    ['広告割込中', 'player.classList.add("ad-interrupting");', null],
+    ['別動画への切替途中', 'player.getVideoData = () => ({ video_id: "other" });', null],
+    ['動画要素なし', 'video.remove();', null],
+    ['不正な位置', 'Object.defineProperty(video, "currentTime", { value: NaN });', null],
+    ['動画情報なし', 'player.getVideoData = undefined;', null]
+]) {
+    test('ページから開く開始位置: ' + name, async () => {
+        await reset();
+        await evaluate(`(() => {
+            const player = document.getElementById('movie_player');
+            const video = player.querySelector('video');
+            player.getVideoData = () => ({ video_id: 'abc123' });
+            Object.defineProperty(video, 'currentTime', { configurable: true, value: 123.75 });
+            ${setup}
+        })()`);
+        assert.equal(await evaluate(startPositionScript), expected);
     });
 }

@@ -27,7 +27,7 @@ internal sealed class QuickLookPdfRenderer : IQuickLookRenderer
             return Task.FromResult(QuickLookInformationRenderer.CreateMissingResult(item));
         }
 
-        _view = new QuickLookPdfView(item.FilePath!);
+        _view = new QuickLookPdfView(item.FilePath!, request.IsPrivate);
         return Task.FromResult(new QuickLookRenderResult(
             QuickLookRenderKind.Interactive,
             item.DisplayName,
