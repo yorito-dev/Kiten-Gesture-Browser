@@ -94,6 +94,7 @@ pwsh -NoProfile -File .\Build-Source.ps1
 ```
 
 アプリとDataToolをビルドし、同梱の公開構成向けテストを実行します。
+テストでは本番の復元JavaScriptも実行するため、Node.js 22以上をPATH上で使用できる状態にしてください。
 出力は`bin/Release/public/net10.0-windows/TabBrowser.exe`と
 `tools/Kiten.DataTool/bin/Release/net10.0-windows/Kiten.DataTool.exe`です。
 開発データを使う場合はアプリに`--channel development`を指定します。

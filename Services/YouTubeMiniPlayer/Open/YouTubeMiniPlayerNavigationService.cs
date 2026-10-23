@@ -148,6 +148,17 @@ public static class YouTubeMiniPlayerNavigationService
                 : YouTubeLiveContinuationDestinationKind.Unsupported;
     }
 
+    internal static bool TryGetLiveChannelId(string source, out string channelId)
+    {
+        channelId = string.Empty;
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)) return false;
+        var match = Regex.Match(uri.AbsolutePath, @"\A/channel/(UC[A-Za-z0-9_-]{22})/live\z");
+        if (!match.Success || GetLiveContinuationDestinationKind(source, match.Groups[1].Value)
+            != YouTubeLiveContinuationDestinationKind.ChannelLivePage) return false;
+        channelId = match.Groups[1].Value;
+        return true;
+    }
+
     internal static bool TryReadLiveContinuationVideoId(
         string? resultJson, string channelId, out string videoId)
     {

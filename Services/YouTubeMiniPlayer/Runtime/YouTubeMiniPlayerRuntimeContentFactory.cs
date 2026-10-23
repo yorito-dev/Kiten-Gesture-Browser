@@ -262,13 +262,14 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                         return;
                     }
 
-                    YouTubeMiniPlayerTitleService.ApplyDocumentTitle(
-                        currentState,
-                        runtimes,
-                        queueSave);
-                    recordBrowsingHistory(runtimes[currentState.Id]);
                     // 状態通知ブリッジが起動直後の0秒を通知しても、読み込み前の保存値を復元に使う。
-                    var savedState = YouTubeMiniPlayerNavigationService.CloneState(currentState);
+                    var savedState = await YouTubeMiniPlayerStateRestoreService.PrepareForDocumentAsync(
+                        currentState, () => webView.CoreWebView2?.Source ?? string.Empty,
+                        isCurrentDocument, async script => await webView.ExecuteScriptAsync(script),
+                        () => { beginLiveChatTransition(currentState); ResetLiveStatus(currentState, runtime); queueSave(); });
+                    if (!isCurrentDocument()) return;
+                    YouTubeMiniPlayerTitleService.ApplyDocumentTitle(currentState, runtimes, queueSave);
+                    if (savedState is not null) recordBrowsingHistory(runtimes[currentState.Id]);
                     var displayGeneration = await applyWatchPageModeAsync(currentState);
                     if (!isCurrentDocument())
                     {
@@ -280,7 +281,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                         return;
                     }
 
-                    await applySavedStateAsync(savedState, currentDisplayGeneration);
+                    if (savedState is not null) await applySavedStateAsync(savedState, currentDisplayGeneration);
                     if (!isCurrentDocument())
                     {
                         return;

@@ -40,20 +40,69 @@ public sealed class SettingsService
         public JsonObject? Value { get; set; } = value;
         public long Captured { get; set; }
         public long Saved { get; set; }
+        public long AppliedMutationVersion { get; set; }
     }
+
+    private sealed record CapturedMutation(long Version, JsonNode? Value);
 
     private static JsonObject ToNode(AppSettings settings)
         => JsonSerializer.SerializeToNode(settings, JsonOptions)!.AsObject();
 
     internal static AppSettings CloneForEdit(AppSettings settings)
-        => JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, JsonOptions), JsonOptions)!;
+    {
+        var clone = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings, JsonOptions), JsonOptions)!;
+        CopyAutomaticRemovals(CaptureAutomaticRemovals(settings), clone);
+        CopyMutations(settings, clone);
+        return clone;
+    }
+
+    private static Dictionary<string, object?> TrackedCollections(AppSettings settings) => new()
+    {
+        ["sitePrivacy.popupRules"] = settings.SitePrivacy?.PopupRules,
+        ["pageZoomPreferences"] = settings.PageZoomPreferences,
+        ["folderTabSortPreferences"] = settings.FolderTabSortPreferences,
+        ["commandPaletteUsage"] = settings.CommandPaletteUsage
+    };
+
+    private static Dictionary<string, HashSet<string>> CaptureAutomaticRemovals(AppSettings settings)
+        => TrackedCollections(settings).ToDictionary(pair => pair.Key, pair => SettingsCollectionEditTracking.Capture(pair.Value));
+
+    private static void CopyAutomaticRemovals(IReadOnlyDictionary<string, HashSet<string>> removals, AppSettings target)
+    {
+        foreach (var (path, collection) in TrackedCollections(target))
+            if (removals.TryGetValue(path, out var keys)) SettingsCollectionEditTracking.Set(collection, keys);
+    }
+
+    private static long LatestMutationVersion(AppSettings settings)
+        => TrackedCollections(settings).Values.SelectMany(collection => SettingsCollectionEditTracking.CaptureMutations(collection).Values)
+            .Select(edit => edit.Version).DefaultIfEmpty().Max();
+
+    private static void CopyMutations(AppSettings source, AppSettings target, long afterVersion = 0)
+    {
+        var sources = TrackedCollections(source);
+        foreach (var (path, collection) in TrackedCollections(target))
+            SettingsCollectionEditTracking.SetMutations(collection, SettingsCollectionEditTracking.CaptureMutations(sources[path])
+                .Where(pair => pair.Value.Version > afterVersion).ToDictionary());
+    }
+
+    private static Dictionary<string, Dictionary<string, CapturedMutation>> CaptureMutations(AppSettings settings)
+        => TrackedCollections(settings).ToDictionary(pair => pair.Key,
+            pair => SettingsCollectionEditTracking.CaptureMutations(pair.Value).ToDictionary(edit => edit.Key,
+                edit => new CapturedMutation(edit.Value.Version, edit.Value.Value is null ? null
+                    : JsonSerializer.SerializeToNode(edit.Value.Value, edit.Value.Value.GetType(), JsonOptions))));
 
     internal static AppSettings MergeEditingResult(AppSettings before, AppSettings after, string? filePath = null)
     {
         var latest = new SettingsService(filePath ?? AppPaths.SettingsFile).Load();
         var merged = ToNode(latest);
-        ApplyChanges(ToNode(before), ToNode(after), merged);
+        var mergedTruncations = new Dictionary<string, HashSet<string>>();
+        var beforeVersion = LatestMutationVersion(before);
+        ApplyChanges(ToNode(before), ToNode(after), merged,
+            automaticRemovals: CaptureAutomaticRemovals(after), mergedTruncations: mergedTruncations,
+            mutations: CaptureMutations(after), appliedMutationVersion: beforeVersion);
         var result = merged.Deserialize<AppSettings>(JsonOptions)!;
+        CopyAutomaticRemovals(mergedTruncations, result);
+        CopyMutations(after, result, beforeVersion);
         var baseline = Baselines.GetValue(latest, _ => throw new InvalidOperationException());
         Baselines.Add(result, new SettingsBaseline(baseline.Path, baseline.Value));
         return result;
@@ -64,7 +113,8 @@ public sealed class SettingsService
         if (!Baselines.TryGetValue(settings, out var baseline)) return;
         lock (SaveGates.GetOrAdd(baseline.Path, static _ => new object()))
         {
-            if (baseline.Value is not null) ApplyChanges(ToNode(before), ToNode(settings), baseline.Value);
+            if (baseline.Value is not null) ApplyChanges(ToNode(before), ToNode(settings), baseline.Value,
+                automaticRemovals: CaptureAutomaticRemovals(settings));
         }
     }
 
@@ -128,6 +178,9 @@ public sealed class SettingsService
         var gate = SaveGates.GetOrAdd(path, static _ => new object());
         SettingsBaseline baseline;
         JsonObject snapshot;
+        Dictionary<string, object?> collections;
+        Dictionary<string, HashSet<string>> automaticRemovals;
+        Dictionary<string, Dictionary<string, CapturedMutation>> mutations;
         long sequence;
         lock (gate)
         {
@@ -135,6 +188,9 @@ public sealed class SettingsService
             if (!string.Equals(baseline.Path, path, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("設定の読込先と保存先が一致しません。");
             snapshot = ToNode(settings);
+            collections = TrackedCollections(settings);
+            automaticRemovals = collections.ToDictionary(pair => pair.Key, pair => SettingsCollectionEditTracking.Capture(pair.Value));
+            mutations = CaptureMutations(settings);
             sequence = ++baseline.Captured;
         }
         return () =>
@@ -154,7 +210,8 @@ public sealed class SettingsService
                 if (baseline.Value is null || missing)
                     latest = (JsonObject)snapshot.DeepClone();
                 else
-                    ApplyChanges(baseline.Value, snapshot, latest);
+                    ApplyChanges(baseline.Value, snapshot, latest, automaticRemovals: automaticRemovals,
+                        mutations: mutations, appliedMutationVersion: baseline.AppliedMutationVersion);
                 var content = latest.ToJsonString(JsonOptions);
                 if (!HasSameFileContent(path, content))
                 {
@@ -168,29 +225,44 @@ public sealed class SettingsService
                 // Window側の実行状態は書き換えず、このWindowが保存した差分の基点だけ進める。
                 baseline.Value = snapshot;
                 baseline.Saved = sequence;
+                baseline.AppliedMutationVersion = Math.Max(baseline.AppliedMutationVersion,
+                    mutations.Values.SelectMany(edits => edits.Values).Select(edit => edit.Version).DefaultIfEmpty().Max());
+                // この捕捉が使った一覧だけを確定する。後から作った一覧や失敗した保存には触れない。
+                foreach (var collection in collections.Values) SettingsCollectionEditTracking.Acknowledge(collection);
             }
         };
     }
 
-    private static void ApplyChanges(JsonObject before, JsonObject after, JsonObject latest, string parentPath = "")
+    private static void ApplyChanges(JsonObject before, JsonObject after, JsonObject latest, string parentPath = "",
+        IReadOnlyDictionary<string, HashSet<string>>? automaticRemovals = null,
+        Dictionary<string, HashSet<string>>? mergedTruncations = null,
+        IReadOnlyDictionary<string, Dictionary<string, CapturedMutation>>? mutations = null, long appliedMutationVersion = 0)
     {
         foreach (var key in before.Select(static pair => pair.Key).Union(after.Select(static pair => pair.Key)))
         {
             before.TryGetPropertyValue(key, out var oldValue);
             after.TryGetPropertyValue(key, out var newValue);
-            if (JsonNode.DeepEquals(oldValue, newValue)) continue;
             var path = string.IsNullOrEmpty(parentPath) ? key : parentPath + "." + key;
-            if (TryMergeCollection(path, oldValue, newValue, latest[key], out var collection))
+            var hasPendingEdits = mutations?.Any(pair => (pair.Key == path || pair.Key.StartsWith(path + ".", StringComparison.Ordinal))
+                && pair.Value.Values.Any(edit => edit.Version > appliedMutationVersion)) == true;
+            if (JsonNode.DeepEquals(oldValue, newValue) && !hasPendingEdits) continue;
+            if (TryMergeCollection(path, oldValue, newValue, latest[key], automaticRemovals?.GetValueOrDefault(path),
+                    mutations?.GetValueOrDefault(path), appliedMutationVersion, out var collection, out var truncated))
+            {
                 latest[key] = collection;
+                if (mergedTruncations is not null) mergedTruncations[path] = truncated!;
+            }
             else if (oldValue is JsonObject oldObject && newValue is JsonObject newObject
                 && latest[key] is JsonObject currentObject)
-                ApplyChanges(oldObject, newObject, currentObject, path);
+                ApplyChanges(oldObject, newObject, currentObject, path, automaticRemovals, mergedTruncations, mutations, appliedMutationVersion);
             else if (!after.ContainsKey(key)) latest.Remove(key);
             else latest[key] = newValue?.DeepClone();
         }
     }
 
-    private static bool TryMergeCollection(string path, JsonNode? before, JsonNode? after, JsonNode? latest, out JsonArray? result)
+    private static bool TryMergeCollection(string path, JsonNode? before, JsonNode? after, JsonNode? latest,
+        IReadOnlySet<string>? automaticRemovals, IReadOnlyDictionary<string, CapturedMutation>? mutations,
+        long appliedMutationVersion, out JsonArray? result, out HashSet<string>? truncated)
     {
         Func<JsonNode?, JsonArray>? normalize = path switch
         {
@@ -201,10 +273,11 @@ public sealed class SettingsService
             _ => null
         };
         result = null;
+        truncated = null;
         if (normalize is null) return false;
         string Key(JsonNode node) => path switch
         {
-            "sitePrivacy.popupRules" or "pageZoomPreferences" => node["containerProfileId"]!.GetValue<string>() + "\n" + node["origin"]!.GetValue<string>(),
+            "sitePrivacy.popupRules" or "pageZoomPreferences" => SettingsCollectionEditTracking.SiteKey(node["containerProfileId"]!.GetValue<string>(), node["origin"]!.GetValue<string>()),
             "folderTabSortPreferences" => node["folderPath"]!.GetValue<string>().ToUpperInvariant(),
             _ => node["itemId"]!.GetValue<string>()
         };
@@ -218,10 +291,27 @@ public sealed class SettingsService
             oldEntries.TryGetValue(key, out var oldEntry);
             newEntries.TryGetValue(key, out var newEntry);
             if (JsonNode.DeepEquals(oldEntry, newEntry)) continue;
+            // ローカルの上限処理で落ちただけの項目は、最新側から明示削除しない。
+            if (newEntry is null && automaticRemovals?.Contains(key) == true) continue;
             if (newEntry is null) current.Remove(key);
             else current[key] = newEntry;
         }
+        // 日時の新旧によらず実際の操作を適用し、統合した最新一覧で上限を確定する。
+        // 同じmodelの先行保存で確定した操作は、後から捕捉した保存でも再適用しない。
+        if (mutations is not null)
+            foreach (var (key, edit) in mutations.Where(pair => pair.Value.Version > appliedMutationVersion)
+                .OrderBy(pair => pair.Value.Version))
+            {
+                // 上限以外の理由で編集後から消えた実編集は、後続の明示削除として扱う。
+                if (edit.Value is null || (!newEntries.ContainsKey(key) && automaticRemovals?.Contains(key) != true)) current.Remove(key);
+                else
+                {
+                    var normalized = normalize(new JsonArray((newEntries.GetValueOrDefault(key) ?? edit.Value).DeepClone()));
+                    if (normalized.Count == 1) current[Key(normalized[0]!)] = normalized[0]!;
+                }
+            }
         result = normalize(new JsonArray(current.Values.Select(node => node.DeepClone()).ToArray()));
+        truncated = current.Keys.Except(result.Select(node => Key(node!))).ToHashSet(StringComparer.Ordinal);
         return true;
     }
 

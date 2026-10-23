@@ -39,7 +39,7 @@ public static class SitePrivacySettingsProfile
         settings ??= new SitePrivacySettings();
         return new SitePrivacySettings
         {
-            PopupRules = (settings.PopupRules ?? [])
+            PopupRules = SettingsCollectionEditTracking.Limit(settings.PopupRules, (settings.PopupRules ?? [])
                 .Select(NormalizeRule)
                 .Where(static rule => rule is not null)
                 .Select(static rule => rule!)
@@ -49,9 +49,8 @@ public static class SitePrivacySettingsProfile
                 .Select(static group => group
                     .OrderByDescending(static rule => rule.UpdatedAt)
                     .First())
-                .OrderByDescending(static rule => rule.UpdatedAt)
-                .Take(PopupPermissionPolicy.MaximumRuleCount)
-                .ToList()
+                .OrderByDescending(static rule => rule.UpdatedAt), PopupPermissionPolicy.MaximumRuleCount,
+                static rule => SettingsCollectionEditTracking.SiteKey(rule.ContainerProfileId, rule.Origin))
         };
     }
 
@@ -89,14 +88,17 @@ public static class SitePrivacySettingsProfile
         normalized.PopupRules.RemoveAll(rule =>
             rule.Origin.Equals(origin, StringComparison.Ordinal)
             && rule.ContainerProfileId.Equals(normalizedContainerId, StringComparison.Ordinal));
-        normalized.PopupRules.Add(new PopupPermissionRule
+        var edit = new PopupPermissionRule
         {
             Origin = origin,
             ContainerProfileId = normalizedContainerId,
             Policy = PopupPermissionPolicy.Normalize(policy),
             UpdatedAt = updatedAt == default ? DateTimeOffset.UtcNow : updatedAt
-        });
-        return Normalize(normalized);
+        };
+        normalized.PopupRules.Add(edit);
+        var result = Normalize(normalized);
+        SettingsCollectionEditTracking.Record(result.PopupRules, SettingsCollectionEditTracking.SiteKey(normalizedContainerId, origin), edit);
+        return result;
     }
 
     public static SitePrivacySettings RemovePopupPolicy(
@@ -114,6 +116,8 @@ public static class SitePrivacySettingsProfile
         normalized.PopupRules.RemoveAll(rule =>
             rule.Origin.Equals(origin, StringComparison.Ordinal)
             && rule.ContainerProfileId.Equals(normalizedContainerId, StringComparison.Ordinal));
+        SettingsCollectionEditTracking.ExplicitlyRemove(normalized.PopupRules,
+            SettingsCollectionEditTracking.SiteKey(normalizedContainerId, origin));
         return normalized;
     }
 

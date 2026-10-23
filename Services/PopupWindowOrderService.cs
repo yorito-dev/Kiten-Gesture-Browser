@@ -135,7 +135,7 @@ internal static class PopupWindowOrderService
         return true;
     }
 
-    private static bool ApplyRelativeToOwner(
+    internal static bool ApplyRelativeToOwner(
         IntPtr popupHandle,
         IntPtr ownerHandle,
         int x,
