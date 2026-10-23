@@ -212,7 +212,7 @@ function muteRestoreHost({ muted = true, savedMuted = true, userOverride = false
         startJson: '10', endJson: '20', enabledJson: 'true', wholeLoopingJson: 'false', videoIdJson: '"fixture-video"'
     }) : '({ ok: true, skipped: true })';
     const restoreScript = miniPlayerScript('BuildMiniPlayerSavedStateReadyBridgeScript', {
-        videoIdJson: '"fixture-video"', requestKeyJson: '"fixture-request"', volumeScript, muteScript,
+        videoIdJson: '"fixture-video"', channelIdJson: 'null', requestKeyJson: '"fixture-request"', volumeScript, muteScript,
         playbackScript, initialLivePlaybackScript, abRepeatScript
     });
     return { context, video, player, handlers, transitions, volumeScript, restoreScript, adClasses, adObservers };

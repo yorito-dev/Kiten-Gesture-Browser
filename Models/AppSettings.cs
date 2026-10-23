@@ -256,7 +256,7 @@ public static class PageZoomPreferenceSettingsProfile
     public static List<PageZoomPreferenceSettings> Normalize(
         IEnumerable<PageZoomPreferenceSettings>? entries)
     {
-        return (entries ?? [])
+        return SettingsCollectionEditTracking.Limit(entries, (entries ?? [])
             .Select(NormalizeEntry)
             .Where(static entry => entry is not null)
             .Select(static entry => entry!)
@@ -266,9 +266,8 @@ public static class PageZoomPreferenceSettingsProfile
             .Select(static group => group
                 .OrderByDescending(static entry => entry.UpdatedAt)
                 .First())
-            .OrderByDescending(static entry => entry.UpdatedAt)
-            .Take(MaximumEntryCount)
-            .ToList();
+            .OrderByDescending(static entry => entry.UpdatedAt), MaximumEntryCount,
+            static entry => SettingsCollectionEditTracking.SiteKey(entry.ContainerProfileId, entry.Origin));
     }
 
     public static double GetZoomFactor(
@@ -306,14 +305,17 @@ public static class PageZoomPreferenceSettingsProfile
         normalized.RemoveAll(entry =>
             entry.Origin.Equals(origin, StringComparison.Ordinal)
             && entry.ContainerProfileId.Equals(normalizedContainerProfileId, StringComparison.Ordinal));
-        normalized.Add(new PageZoomPreferenceSettings
+        var edit = new PageZoomPreferenceSettings
         {
             Origin = origin,
             ContainerProfileId = normalizedContainerProfileId,
             ZoomFactor = NormalizeZoomFactor(zoomFactor),
             UpdatedAt = updatedAt
-        });
-        return Normalize(normalized);
+        };
+        normalized.Add(edit);
+        var result = Normalize(normalized);
+        SettingsCollectionEditTracking.Record(result, SettingsCollectionEditTracking.SiteKey(normalizedContainerProfileId, origin), edit);
+        return result;
     }
 
     public static double NormalizeZoomFactor(double zoomFactor)
@@ -594,16 +596,15 @@ public static class FolderTabSortPreferenceSettingsProfile
     public static List<FolderTabSortPreferenceSettings> Normalize(
         IEnumerable<FolderTabSortPreferenceSettings>? entries)
     {
-        return (entries ?? [])
+        return SettingsCollectionEditTracking.Limit(entries, (entries ?? [])
             .OfType<FolderTabSortPreferenceSettings>()
             .Select(NormalizeEntry)
             .Where(static entry => entry is not null)
             .Select(static entry => entry!)
             .GroupBy(static entry => entry.FolderPath, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.OrderByDescending(entry => entry.UpdatedAt).First())
-            .OrderByDescending(static entry => entry.UpdatedAt)
-            .Take(MaximumEntryCount)
-            .ToList();
+            .OrderByDescending(static entry => entry.UpdatedAt), MaximumEntryCount,
+            static entry => entry.FolderPath.ToUpperInvariant());
     }
 
     public static FolderTabSortPreferenceSettings? Find(
@@ -634,14 +635,17 @@ public static class FolderTabSortPreferenceSettingsProfile
 
         normalized.RemoveAll(
             entry => string.Equals(entry.FolderPath, normalizedPath, StringComparison.OrdinalIgnoreCase));
-        normalized.Add(new FolderTabSortPreferenceSettings
+        var edit = new FolderTabSortPreferenceSettings
         {
             FolderPath = normalizedPath,
             SortMode = FolderTabSortMode.Normalize(sortMode),
             SortDirection = FolderTabSortDirection.Normalize(sortDirection),
             UpdatedAt = updatedAt
-        });
-        return Normalize(normalized);
+        };
+        normalized.Add(edit);
+        var result = Normalize(normalized);
+        SettingsCollectionEditTracking.Record(result, normalizedPath.ToUpperInvariant(), edit);
+        return result;
     }
 
     private static FolderTabSortPreferenceSettings? NormalizeEntry(
@@ -869,19 +873,17 @@ public static class CommandPaletteUsageSettingsProfile
     public static List<CommandPaletteUsageSettings> Normalize(
         IEnumerable<CommandPaletteUsageSettings>? entries)
     {
-        return (entries ?? [])
+        return SettingsCollectionEditTracking.Limit(entries, (entries ?? [])
             .Where(entry => !string.IsNullOrWhiteSpace(entry.ItemId))
             .GroupBy(entry => entry.ItemId.Trim(), StringComparer.Ordinal)
             .Select(group => group.OrderByDescending(entry => entry.LastUsedAt).First())
             .OrderByDescending(entry => entry.LastUsedAt)
-            .Take(MaximumEntryCount)
             .Select(entry => new CommandPaletteUsageSettings
             {
                 ItemId = entry.ItemId.Trim(),
                 UseCount = Math.Max(1, entry.UseCount),
                 LastUsedAt = entry.LastUsedAt
-            })
-            .ToList();
+            }), MaximumEntryCount, static entry => entry.ItemId);
     }
 
     public static List<CommandPaletteUsageSettings> Record(
@@ -893,12 +895,13 @@ public static class CommandPaletteUsageSettingsProfile
         var entry = normalized.FirstOrDefault(candidate => candidate.ItemId == itemId);
         if (entry is null)
         {
-            normalized.Add(new CommandPaletteUsageSettings
+            entry = new CommandPaletteUsageSettings
             {
                 ItemId = itemId,
                 UseCount = 1,
                 LastUsedAt = usedAt
-            });
+            };
+            normalized.Add(entry);
         }
         else
         {
@@ -906,7 +909,13 @@ public static class CommandPaletteUsageSettingsProfile
             entry.LastUsedAt = usedAt;
         }
 
-        return Normalize(normalized);
+        var result = Normalize(normalized);
+        if (!string.IsNullOrWhiteSpace(itemId))
+        {
+            entry.ItemId = itemId.Trim();
+            SettingsCollectionEditTracking.Record(result, entry.ItemId, entry);
+        }
+        return result;
     }
 }
 

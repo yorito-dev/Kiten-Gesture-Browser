@@ -1,10 +1,56 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using TabBrowser.Models;
 
 namespace TabBrowser.Services;
 
 internal static class YouTubeMiniPlayerStateRestoreService
 {
+    private static readonly ConditionalWeakTable<YouTubeMiniPlayerState, string> RestoreChannels = new();
+
+    internal static async Task<YouTubeMiniPlayerState?> PrepareForDocumentAsync(
+        YouTubeMiniPlayerState state, Func<string> getSource, Func<bool> isCurrent,
+        Func<string, Task<string?>> executeScript, Action onVideoChanged)
+    {
+        if (!isCurrent()) return null;
+        var source = getSource();
+        string? channelId = null;
+        var videoUrl = source;
+        if (YouTubeMiniPlayerNavigationService.TryGetLiveChannelId(source, out var currentChannel))
+        {
+            string? identity;
+            try
+            {
+                // 期限切れの継続判定を再利用せず、同じ現在documentの動画同定を行う。
+                identity = await executeScript(YouTubeMiniPlayerWebViewService.BuildCurrentDocumentVideoIdentityScript());
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or COMException or OperationCanceledException)
+            {
+                return null;
+            }
+            if (!isCurrent() || !string.Equals(source, getSource(), StringComparison.Ordinal)
+                || !YouTubeMiniPlayerNavigationService.TryReadLiveContinuationVideoId(identity, currentChannel, out var videoId))
+                return null;
+            videoUrl = "https://www.youtube.com/watch?v=" + Uri.EscapeDataString(videoId);
+            channelId = currentChannel;
+        }
+        if (!isCurrent() || !YouTubeMiniPlayerNavigationService.TryCreateMiniPlayerUrl(videoUrl, out _)) return null;
+        if (YouTubeMiniPlayerNavigationService.TryApplyCurrentVideoUrl(state, videoUrl)) onVideoChanged();
+        var snapshot = YouTubeMiniPlayerNavigationService.CloneState(state);
+        if (channelId is not null) RestoreChannels.Add(snapshot, channelId);
+        return snapshot;
+    }
+
+    internal static string? BuildSavedStateScript(YouTubeMiniPlayerState state)
+    {
+        if (!YouTubeUrlService.TryGetVideoId(state.Url, out var videoId)) return null;
+        return YouTubeControlScriptService.BuildMiniPlayerSavedStateReadyBridgeScript(
+            videoId, state.LastPositionSeconds, state.PlaybackRate, state.IsPaused, state.IsLooping,
+            state.IsMuted, state.Volume, state.AbRepeatStartSeconds, state.AbRepeatEndSeconds, state.IsAbRepeatEnabled,
+            RestoreChannels.TryGetValue(state, out var channelId) ? channelId : null);
+    }
+
     public static async Task<long?> ApplyWatchPageModeAsync(
         YouTubeMiniPlayerState state,
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
@@ -97,7 +143,7 @@ internal static class YouTubeMiniPlayerStateRestoreService
             return;
         }
 
-        if (!YouTubeUrlService.TryGetVideoId(state.Url, out var videoId)
+        if (BuildSavedStateScript(state) is not { } script
             || !IsRestoreAttemptCurrent(
                 state,
                 runtimes,
@@ -111,17 +157,7 @@ internal static class YouTubeMiniPlayerStateRestoreService
         var result = await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(
             state,
             runtimes,
-            YouTubeControlScriptService.BuildMiniPlayerSavedStateReadyBridgeScript(
-                videoId,
-                state.LastPositionSeconds,
-                state.PlaybackRate,
-                state.IsPaused,
-                state.IsLooping,
-                state.IsMuted,
-                state.Volume,
-                state.AbRepeatStartSeconds,
-                state.AbRepeatEndSeconds,
-                state.IsAbRepeatEnabled),
+            script,
             showStatus: false,
             _ => { });
         runtime.IsInitialLivePlaybackResolved = !string.IsNullOrWhiteSpace(result);

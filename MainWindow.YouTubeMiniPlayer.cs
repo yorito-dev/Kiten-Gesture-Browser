@@ -1062,7 +1062,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
             BeginYouTubeLiveChatVideoTransition,
             ApplyYouTubeLiveChatAvailabilityAsync,
             RecordYouTubeMiniPlayerBrowsingHistory,
-            QueueYouTubeMiniPlayerInactiveSuspension);
+            QueueYouTubeMiniPlayerInactiveSuspension,
+            () => _isClosingWindow);
     }
 
     private Views.LocalVideoPlayerView CreateLocalVideoPlayerView(YouTubeMiniPlayerState state)
@@ -1227,7 +1228,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
                 RecordYouTubeMiniPlayerBrowsingHistory,
                 QueueYouTubeMiniPlayerAutoRecovery,
                 QueueYouTubeMiniPlayerInactiveSuspension,
-                UpdateYouTubeMiniPlayerStateCaptureTimer));
+                UpdateYouTubeMiniPlayerStateCaptureTimer,
+                () => _isClosingWindow));
         UpdateYouTubeMiniPlayerAudioIndicatorsForAllWindows();
     }
 

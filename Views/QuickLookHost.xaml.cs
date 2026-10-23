@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using TabBrowser.Models;
 using TabBrowser.Models.QuickLook;
+using TabBrowser.Services;
 using TabBrowser.Services.QuickLook;
 
 namespace TabBrowser.Views;
@@ -44,6 +45,7 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
     private QuickLookService _service;
     private QuickLookRequest? _request;
     private Task _closeTask = Task.CompletedTask;
+    private CancellationTokenSource? _showCancellation;
     private int _loadVersion;
     private bool _isDisposed;
     private bool _useRightSidePane;
@@ -154,47 +156,55 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         QuickLookRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (_isDisposed || request.Items.Count == 0)
+        if (_isDisposed || request.Items.Count == 0 || cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        await _closeTask;
-        // FolderTab・Workspace・パレットの共通入口で、表示元Windowの文脈を渡す。
-        for (var owner = Window.GetWindow(this); owner is not null; owner = owner.Owner)
-        {
-            if (owner is MainWindow main)
-            {
-                request = request with { IsPrivate = request.IsPrivate || main.IsPrivateBrowsing };
-                break;
-            }
-        }
         var loadVersion = ++_loadVersion;
-        _request = request;
-        Visibility = Visibility.Visible;
-        ApplyDockTargetLayout();
-        QuickLookRenderResult? immediateResult = null;
-        if (QuickLookWebSummaryRenderer.TryCreateImmediateResult(request, out immediateResult)
-            && immediateResult is not null)
-        {
-            ShowResult(immediateResult);
-        }
-        else
-        {
-            ShowLoading(request.PrimaryItem?.DisplayName ?? "QuickLook");
-        }
-
-        UpdateButtons();
+        CancelShow();
+        using var showCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _showCancellation = showCancellation;
+        var showToken = showCancellation.Token;
         try
         {
-            var result = immediateResult is null
-                ? await _service.LoadAsync(request, cancellationToken)
-                : await _service.LoadWithImmediateResultAsync(
+            // 表示だけを取り消せるようにし、以前のPDFの解放タスク自体は所有し続ける。
+            await _closeTask.WaitAsync(showToken);
+            if (_isDisposed || loadVersion != _loadVersion || showToken.IsCancellationRequested) return;
+            // FolderTab・Workspace・パレットの共通入口で、表示元Windowの文脈を渡す。
+            for (var owner = Window.GetWindow(this); owner is not null; owner = owner.Owner)
+            {
+                if (owner is MainWindow main)
+                {
+                    request = request with { IsPrivate = request.IsPrivate || main.IsPrivateBrowsing, PdfReleaseOwner = main.QuickLookReleases };
+                    break;
+                }
+            }
+            _request = request;
+            Visibility = Visibility.Visible;
+            ApplyDockTargetLayout();
+            QuickLookRenderResult? immediateResult = null;
+            if (QuickLookWebSummaryRenderer.TryCreateImmediateResult(request, out immediateResult)
+                && immediateResult is not null)
+            {
+                ShowResult(immediateResult);
+            }
+            else
+            {
+                ShowLoading(request.PrimaryItem?.DisplayName ?? "QuickLook");
+            }
+
+            UpdateButtons();
+            var load = immediateResult is null
+                ? _service.LoadAsync(request, showToken)
+                : _service.LoadWithImmediateResultAsync(
                     request,
                     immediateResult,
-                    cancellationToken);
+                    showToken);
+            var result = await load.WaitAsync(showToken);
             if (!_isDisposed
                 && loadVersion == _loadVersion
+                && !showToken.IsCancellationRequested
                 && IsOpen
                 && !Equals(result, immediateResult))
             {
@@ -203,7 +213,19 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         }
         catch (OperationCanceledException)
         {
+            if (!_isDisposed && loadVersion == _loadVersion) Close();
         }
+        finally
+        {
+            if (ReferenceEquals(_showCancellation, showCancellation)) _showCancellation = null;
+        }
+    }
+
+    private void CancelShow()
+    {
+        var cancellation = _showCancellation;
+        _showCancellation = null;
+        cancellation?.Cancel();
     }
 
     public void Close()
@@ -214,11 +236,19 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         }
 
         _loadVersion++;
+        CancelShow();
         Visibility = Visibility.Collapsed;
         ApplyDockTargetLayout();
         _request = null;
         ClearContent();
-        _closeTask = _service.CloseAsync().AsTask();
+        if (_closeTask.IsCompleted) _closeTask = _service.CloseAsync().AsTask();
+    }
+
+    internal Task<WindowTaskDrainResult> DisposeForWindowShutdownAsync(
+        WindowTaskSupervisor releases, TimeSpan timeout)
+    {
+        Dispose();
+        return releases.DrainAsync(timeout);
     }
 
     public void Dispose()
@@ -229,6 +259,7 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         }
 
         _loadVersion++;
+        CancelShow();
         Visibility = Visibility.Collapsed;
         RestoreDockTargetMargin();
         _request = null;

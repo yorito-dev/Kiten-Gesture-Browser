@@ -42,7 +42,8 @@ internal static class YouTubeMiniPlayerRuntimeCompositionCallbackFactory
         Action<YouTubeMiniPlayerState> beginLiveChatTransition,
         Func<YouTubeMiniPlayerState, YouTubeLiveChatAvailabilityResult, Task> applyLiveChatAvailabilityAsync,
         Action<YouTubeMiniPlayerRuntime> recordBrowsingHistory,
-        Action<YouTubeMiniPlayerState, bool> queueInactiveSuspension)
+        Action<YouTubeMiniPlayerState, bool> queueInactiveSuspension,
+        Func<bool>? isClosing = null)
     {
         return new YouTubeMiniPlayerRuntimeCompositionCallbacks(
             state => YouTubeMiniPlayerRuntimeContentFactory.CreateWebView(
@@ -57,7 +58,8 @@ internal static class YouTubeMiniPlayerRuntimeCompositionCallbackFactory
                 beginLiveChatTransition,
                 applyLiveChatAvailabilityAsync,
                 recordBrowsingHistory,
-                queueInactiveSuspension),
+                queueInactiveSuspension,
+                isClosing),
             state => YouTubeMiniPlayerRuntimeContentFactory.CreatePlaceholder(
                 state,
                 buttonStyle,

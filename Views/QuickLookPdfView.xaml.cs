@@ -15,6 +15,8 @@ public partial class QuickLookPdfView : UserControl, IDisposable
     private Uri? _documentUri;
     private bool _loadStarted;
     private bool _isDisposed;
+    private WindowTaskSupervisor? _releaseOwner;
+    internal Task ReleaseCompletion { get; private set; } = Task.CompletedTask;
 
     public QuickLookPdfView(string filePath, bool isPrivate = false)
     {
@@ -24,6 +26,13 @@ public partial class QuickLookPdfView : UserControl, IDisposable
         Loaded += QuickLookPdfView_Loaded;
     }
 
+    internal QuickLookPdfView(string filePath, QuickLookPdfEnvironmentScope scope, Task initialization, WindowTaskSupervisor owner)
+        : this(filePath)
+    {
+        _environmentScope = scope;
+        _loadTask = initialization;
+        _releaseOwner = owner;
+    }
     public void Dispose()
     {
         if (_isDisposed)
@@ -34,7 +43,24 @@ public partial class QuickLookPdfView : UserControl, IDisposable
         _isDisposed = true;
         Loaded -= QuickLookPdfView_Loaded;
         _loadCancellation.Cancel();
-        _ = _environmentScope.ReleaseAsync(_loadTask, ReleaseWebViewResources);
+        CaptureReleaseOwner();
+        ReleaseCompletion = _environmentScope.ReleaseAsync(_loadTask, ReleaseWebViewResources);
+        _releaseOwner?.TryTrack("quicklook-pdf-release", ReleaseCompletion);
+    }
+
+    internal void SetReleaseOwner(WindowTaskSupervisor? owner) => _releaseOwner ??= owner;
+
+    private void CaptureReleaseOwner()
+    {
+        if (_releaseOwner is not null) return;
+        for (var owner = Window.GetWindow(this); owner is not null; owner = owner.Owner)
+        {
+            if (owner is MainWindow main)
+            {
+                _releaseOwner = main.QuickLookReleases;
+                break;
+            }
+        }
     }
 
     private void ReleaseWebViewResources()
@@ -65,6 +91,7 @@ public partial class QuickLookPdfView : UserControl, IDisposable
             return;
         }
 
+        CaptureReleaseOwner();
         _loadStarted = true;
         _loadTask = LoadDocumentAsync();
         await _loadTask;
