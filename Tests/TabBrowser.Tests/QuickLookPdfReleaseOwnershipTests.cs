@@ -33,8 +33,11 @@ public sealed class QuickLookPdfReleaseOwnershipTests
             var view = new QuickLookPdfView("test.pdf", scope, pendingInitialization ? initialized.Task : Task.CompletedTask, owner);
             var renderer = new QuickLookPdfRenderer();
             typeof(QuickLookPdfRenderer).GetField("_view", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(renderer, view);
-            var unload = renderer.UnloadAsync().AsTask();
-            var drain = owner.DrainAsync(forceDeadline ? TimeSpan.Zero : Timeout.InfiniteTimeSpan);
+            using var host = new QuickLookHost();
+            var service = (QuickLookService)typeof(QuickLookHost).GetField("_service", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(host)!;
+            typeof(QuickLookService).GetField("_currentRenderer", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(service, renderer);
+            var drain = host.DisposeForWindowShutdownAsync(owner, forceDeadline ? TimeSpan.Zero : Timeout.InfiniteTimeSpan);
+            var unload = view.ReleaseCompletion;
             try
             {
                 Assert.False(unload.IsCompleted);
@@ -56,6 +59,27 @@ public sealed class QuickLookPdfReleaseOwnershipTests
                 initialized.TrySetResult(); deleted.TrySetResult(new(PrivateBrowsingDeleteStatus.Deleted, 1));
                 await view.ReleaseCompletion;
             }
+        });
+    }
+
+    [Fact]
+    public async Task HostDisposedWhileWaitingForCloseCannotReopenPreview()
+    {
+        await InSta(async () =>
+        {
+            using var host = new QuickLookHost();
+            var service = (QuickLookService)typeof(QuickLookHost).GetField("_service", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(host)!;
+            var renderer = new PendingRenderer();
+            typeof(QuickLookService).GetField("_renderers", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(service, new IQuickLookRenderer[] { renderer });
+            var request = new TabBrowser.Models.QuickLook.QuickLookRequest([new() { DisplayName = "test", SourceId = "test" }], "test");
+            await host.ShowAsync(request);
+            host.Close();
+            var reopen = host.ShowAsync(request);
+            host.Dispose();
+            renderer.Unloaded.SetResult();
+            await reopen;
+            Assert.Equal(1, renderer.RenderCalls);
+            Assert.False(host.IsOpen);
         });
     }
 

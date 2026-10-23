@@ -2457,7 +2457,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private async Task CleanupPrivateBrowsingDataAsync()
     {
         // 個別に閉じたPDFも含め、所有Windowの解放だけを終了前に非同期で待つ。
-        var pdfReleases = await QuickLookReleases.DrainAsync(TimeSpan.FromSeconds(3));
+        var pdfReleases = await CommandPaletteQuickLookHost.DisposeForWindowShutdownAsync(
+            QuickLookReleases, TimeSpan.FromSeconds(3));
         if (pdfReleases.TimedOut)
             AppendSessionDiagnostic("quicklook-pdf-release-timeout", new TimeoutException("PDFの後片付け待機が期限を超えました。"),
                 $"pending={pdfReleases.PendingTaskCount}");

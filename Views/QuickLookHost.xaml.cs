@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using TabBrowser.Models;
 using TabBrowser.Models.QuickLook;
+using TabBrowser.Services;
 using TabBrowser.Services.QuickLook;
 
 namespace TabBrowser.Views;
@@ -160,6 +161,7 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         }
 
         await _closeTask;
+        if (_isDisposed) return;
         // FolderTab・Workspace・パレットの共通入口で、表示元Windowの文脈を渡す。
         for (var owner = Window.GetWindow(this); owner is not null; owner = owner.Owner)
         {
@@ -219,6 +221,13 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         _request = null;
         ClearContent();
         _closeTask = _service.CloseAsync().AsTask();
+    }
+
+    internal Task<WindowTaskDrainResult> DisposeForWindowShutdownAsync(
+        WindowTaskSupervisor releases, TimeSpan timeout)
+    {
+        Dispose();
+        return releases.DrainAsync(timeout);
     }
 
     public void Dispose()
