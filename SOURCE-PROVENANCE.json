@@ -53,7 +53,7 @@
   "productGuiTested": false,
   "realPlaybackTested": false,
   "extendedStabilityTested": false,
-  "additionalManualValidation": "設定倍率往復は操作接続のWindow有効化失敗により未実施。実PDF・実動画・長時間安定性も今回未検証。",
+  "additionalManualValidation": "実機確認は所有者が担当。開発版でサイト倍率120%への変更と一般設定の表示まで確認済み。無変更保存・通常終了・再起動・新タブ確認、実PDF・実動画・長時間安定性は未確認。",
   "upstreamTree": "9705fb697c4000a94bb5caf4e6fb0085bab29ff8",
   "exportedFromCommit": "2f075cdad4de5fa1325d88624414ae654686f6d2",
   "exportTreeEqualsUpstreamTree": true,
