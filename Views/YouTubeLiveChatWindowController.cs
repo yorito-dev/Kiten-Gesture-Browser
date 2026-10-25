@@ -21,6 +21,7 @@ internal interface IYouTubeLiveChatHost
     Task<YouTubeLiveChatAvailabilityResult?> RefreshAvailabilityAsync(YouTubeMiniPlayerState state, WebView2 webView);
     Task CaptureStateAsync(YouTubeMiniPlayerState state);
     void UpdateChatButtonAvailability(YouTubeMiniPlayerRuntime runtime, bool? available);
+    void UpdateChatWindowOpen(YouTubeMiniPlayerRuntime runtime, bool isOpen);
     void UpdateLiveViewerCount(YouTubeMiniPlayerRuntime runtime, bool isLive, string? text);
     Task<CoreWebView2Environment> EnsureEnvironmentAsync(string? containerProfileId);
     IYouTubeLiveChatWindowSurface CreateWindow(
@@ -62,6 +63,17 @@ internal sealed class YouTubeLiveChatWindowController(IYouTubeLiveChatHost host)
         }
         window = null!;
         return false;
+    }
+
+    public Task ToggleYouTubeLiveChatAsync(YouTubeMiniPlayerState state)
+    {
+        if (_youTubeLiveChatWindows.ContainsKey(state.Id))
+        {
+            CloseYouTubeLiveChatWindow(state.Id);
+            return Task.CompletedTask;
+        }
+
+        return OpenYouTubeLiveChatAsync(state);
     }
 
     public async Task OpenYouTubeLiveChatAsync(YouTubeMiniPlayerState state)
@@ -199,11 +211,13 @@ internal sealed class YouTubeLiveChatWindowController(IYouTubeLiveChatHost host)
                     && ReferenceEquals(current, chatWindow))
                 {
                     _youTubeLiveChatWindows.Remove(state.Id);
+                    UpdateChatWindowOpen(state.Id, false);
                 }
             };
             chatWindow.LayoutChanged += (_, _) =>
                 _host.InvalidateArrangementPreviews(state.Id);
             _youTubeLiveChatWindows[state.Id] = chatWindow;
+            UpdateChatWindowOpen(state.Id, true);
             chatWindow.Show();
             UpdateYouTubeLiveChatFullScreenOverlay(runtime, runtime.IsFullScreen);
             _host.QueueSave();
@@ -222,7 +236,9 @@ internal sealed class YouTubeLiveChatWindowController(IYouTubeLiveChatHost host)
         finally
         {
             _openingYouTubeLiveChatWindows.Remove(state.Id);
-            if (runtime is not null
+            // Window生成後の利用可否は、動画の最新通知とCloseに任せる。
+            if (openedWindow is null
+                && runtime is not null
                 && requestedVideoId is not null
                 && _host.IsCurrentVideo(state, runtime, requestedVideoId))
             {
@@ -390,16 +406,26 @@ internal sealed class YouTubeLiveChatWindowController(IYouTubeLiveChatHost host)
         _openingYouTubeLiveChatWindows.Remove(miniPlayerId);
         if (_youTubeLiveChatWindows.Remove(miniPlayerId, out var chatWindow))
         {
+            UpdateChatWindowOpen(miniPlayerId, false);
             chatWindow.Close();
+        }
+    }
+
+    private void UpdateChatWindowOpen(Guid miniPlayerId, bool isOpen)
+    {
+        if (_host.TryGetRuntime(miniPlayerId, out var runtime)
+            && _host.IsCurrentRuntime(miniPlayerId, runtime))
+        {
+            _host.UpdateChatWindowOpen(runtime, isOpen);
         }
     }
 
     public void CloseAllYouTubeLiveChatWindows()
     {
         _openingYouTubeLiveChatWindows.Clear();
-        foreach (var chatWindow in _youTubeLiveChatWindows.Values.ToList())
+        foreach (var miniPlayerId in _youTubeLiveChatWindows.Keys.ToList())
         {
-            chatWindow.Close();
+            CloseYouTubeLiveChatWindow(miniPlayerId);
         }
 
         _youTubeLiveChatWindows.Clear();

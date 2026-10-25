@@ -116,7 +116,8 @@ internal static class YouTubeMiniPlayerResizeService
         bool resizeLeft,
         bool resizeTop,
         bool resizeRight,
-        bool resizeBottom)
+        bool resizeBottom,
+        Size? minimumSize = null)
     {
         return YouTubeMiniPlayerInputService.CalculateResizeBounds(
             YouTubeMiniPlayerLayoutService.GetVideoAspectRatio(state),
@@ -129,7 +130,8 @@ internal static class YouTubeMiniPlayerResizeService
             resizeLeft,
             resizeTop,
             resizeRight,
-            resizeBottom);
+            resizeBottom,
+            minimumSize ?? YouTubeMiniPlayerLayoutService.GetMinimumSize(state));
     }
 
     public static void ApplyCtrlDragResize(
@@ -141,7 +143,8 @@ internal static class YouTubeMiniPlayerResizeService
         double startHeight,
         double totalHorizontalChange,
         double totalVerticalChange,
-        Action<YouTubeMiniPlayerState, FrameworkElement, bool> clamp)
+        Action<YouTubeMiniPlayerState, FrameworkElement, bool> clamp,
+        Size? minimumSize = null)
     {
         var bounds = YouTubeMiniPlayerInputService.CalculateCtrlDragResizeBounds(
             YouTubeMiniPlayerLayoutService.GetVideoAspectRatio(state),
@@ -150,7 +153,8 @@ internal static class YouTubeMiniPlayerResizeService
             startWidth,
             startHeight,
             totalHorizontalChange,
-            totalVerticalChange);
+            totalVerticalChange,
+            minimumSize ?? YouTubeMiniPlayerLayoutService.GetMinimumSize(state));
         ApplyBounds(state, root, bounds, clamp);
     }
 

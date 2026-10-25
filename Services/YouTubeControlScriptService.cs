@@ -2518,6 +2518,12 @@ public static class YouTubeControlScriptService
                             return;
                         }
 
+                        // 別Window等でpointerupが届かなくても、解放済みの入力を移動にしない。
+                        if ((event.buttons & 1) !== 1) {
+                            finishDrag(event);
+                            return;
+                        }
+
                         const deltaX = Math.abs(event.screenX - state.startX);
                         const deltaY = Math.abs(event.screenY - state.startY);
                         if (!state.moved && deltaX < dragGestureThreshold && deltaY < dragGestureThreshold) {
@@ -2538,6 +2544,7 @@ public static class YouTubeControlScriptService
                     }, true);
                     document.addEventListener("pointerup", finishDrag, true);
                     document.addEventListener("pointercancel", finishDrag, true);
+                    document.addEventListener("lostpointercapture", finishDrag, true);
                     window.addEventListener("blur", () => {
                         if (!state.dragging || !state.moved || !window.chrome?.webview?.postMessage) {
                             return;

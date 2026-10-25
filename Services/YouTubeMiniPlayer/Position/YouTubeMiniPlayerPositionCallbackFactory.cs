@@ -79,7 +79,8 @@ internal static class YouTubeMiniPlayerPositionCallbackFactory
                 ensureVisible,
                 getHostOrigin,
                 getScreenBounds,
-                SetPosition);
+                SetPosition,
+                runtime is null ? null : YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime));
         }
 
         void ForceNativePosition(YouTubeMiniPlayerState state)

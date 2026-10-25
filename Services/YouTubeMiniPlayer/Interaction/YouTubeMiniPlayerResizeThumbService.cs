@@ -152,7 +152,8 @@ internal static class YouTubeMiniPlayerResizeThumbService
                 resizeLeft,
                 resizeTop,
                 resizeRight,
-                resizeBottom);
+                resizeBottom,
+                YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime));
             resizeFrameScheduler.Queue(bounds);
         };
         resizeThumb.DragCompleted += (_, _) =>

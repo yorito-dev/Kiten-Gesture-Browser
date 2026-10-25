@@ -25,6 +25,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private const string FolderFileDragFormat = "TabBrowser.FolderTabFileTransfer";
 
     private readonly FolderTabService _service = new();
+    private readonly ButtonContextMenuController _buttonContextMenuController = new();
     private readonly WorkspaceShellItemService _shellItemService = new();
     private readonly FolderTabIconService _iconService = new();
     private readonly string _initialPath;
@@ -1565,10 +1566,9 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private void SortButton_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
+        if (_buttonContextMenuController.CloseIfOpen(SortButton)) return;
         UpdateSortControls();
-        SortMenu.PlacementTarget = SortButton;
-        SortMenu.Placement = PlacementMode.Bottom;
-        SortMenu.IsOpen = true;
+        OpenButtonContextMenu(SortButton);
     }
 
     private async void SortModeMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1746,6 +1746,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private void HierarchyButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_buttonContextMenuController.CloseIfOpen(HierarchyButton)) return;
         HierarchyMenu.Items.Clear();
         if (string.IsNullOrWhiteSpace(CurrentPath))
         {
@@ -1776,6 +1777,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private void PlacesButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_buttonContextMenuController.CloseIfOpen(PlacesButton)) return;
         RebuildPlacesMenu();
         OpenButtonContextMenu(PlacesButton);
     }
@@ -2039,17 +2041,14 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         }
     }
 
-    private static void OpenButtonContextMenu(Button button)
-    {
-        if (button.ContextMenu is null)
-        {
-            return;
-        }
+    private void OpenButtonContextMenu(Button button)
+        => _buttonContextMenuController.Toggle(button, PlacementMode.Bottom);
 
-        button.ContextMenu.PlacementTarget = button;
-        button.ContextMenu.Placement = PlacementMode.Bottom;
-        button.ContextMenu.IsOpen = true;
-    }
+    private void ButtonContextMenu_MouseDownOutsideCapturedElement(object sender, MouseButtonEventArgs e)
+        => _buttonContextMenuController.OnOutsideCapturedPress(sender, e);
+
+    private void MenuButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        => _buttonContextMenuController.OnButtonPreviewPress(sender, e);
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {

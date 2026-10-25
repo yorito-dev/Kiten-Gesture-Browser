@@ -30,6 +30,14 @@ internal static class YouTubeMiniPlayerWebDragService
             return;
         }
 
+        // 遅延したページ通知から、解放後の追従やリサイズを再開しない。
+        if (phase is YouTubeMiniPlayerDragPhase.Start or YouTubeMiniPlayerDragPhase.Move
+            && !callbacks.IsLeftMouseButtonDown())
+        {
+            StopWebDrag(runtime, save: true, callbacks);
+            return;
+        }
+
         if (phase == YouTubeMiniPlayerDragPhase.Start)
         {
             callbacks.BringToFront(runtime.State.Id, false);
@@ -49,7 +57,7 @@ internal static class YouTubeMiniPlayerWebDragService
                 StartWebDrag(runtime, isResize, callbacks);
             }
 
-            UpdateWebDrag(runtime, stopWhenReleased: false, callbacks);
+            UpdateWebDrag(runtime, stopWhenReleased: true, callbacks);
             return;
         }
 
@@ -181,7 +189,8 @@ internal static class YouTubeMiniPlayerWebDragService
                 runtime.WebDragStartHeight,
                 currentScreenPoint.X - runtime.WebDragStartScreenPoint.X,
                 currentScreenPoint.Y - runtime.WebDragStartScreenPoint.Y,
-                callbacks.Clamp);
+                callbacks.Clamp,
+                YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime));
         }
         else
         {

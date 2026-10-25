@@ -41,7 +41,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
             runtime.SizeBasedQualityUpdateTimer?.Stop();
             runtime.SizeBasedQualityAppliedSignature = null;
             ResetLiveStatus(currentState, runtime);
-            YouTubeMiniPlayerChromeFactory.UpdateChatButtonAvailability(runtime.TitleBandChatButton, null);
+            YouTubeMiniPlayerChromeFactory.UpdateChatButtonAvailability(runtime, null);
             queueSave();
         }
 
@@ -60,6 +60,12 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                     queueSave);
                 YouTubeMiniPlayerRuntimeLifecycleService.AttachFullScreenHandler(
                     runtimes[currentState.Id]);
+                webView.ZoomFactorChanged += (_, _) =>
+                {
+                    if (IsCurrentWebView(currentState, webView, runtimes))
+                        YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtimes[currentState.Id]);
+                };
+                YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtimes[currentState.Id]);
             },
             (currentState, webView, args) =>
             {
@@ -86,7 +92,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                     runtime.SizeBasedQualityAppliedSignature = null;
                     ResetLiveStatus(currentState, runtime);
                     YouTubeMiniPlayerChromeFactory.UpdateChatButtonAvailability(
-                        runtime.TitleBandChatButton,
+                        runtime,
                         null);
                     queueInactiveSuspension(currentState, true);
                 }
@@ -490,7 +496,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
         }
 
         YouTubeMiniPlayerChromeFactory.UpdateChatButtonAvailability(
-            runtimes[state.Id].TitleBandChatButton,
+            runtimes[state.Id],
             isAvailable);
     }
 

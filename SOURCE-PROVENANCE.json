@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
-  "created": "2026-10-24",
-  "upstreamCommit": "f7ef7a0e33be2a42a3010072b0037195d94f25f0",
+  "created": "2026-10-26",
+  "upstreamCommit": "bc6076530a92560674086f74ab5c9f82df05b3b3",
   "publicRepositoryCommit": null,
   "buildVerification": "verified-clean",
-  "csharpExport": "既存の公開用生成・分離を維持し、直前のミニプレイヤー修正と再レビュー3件の12ファイルを公開用Release条件で再生成。有効C#トークン一致を確認。",
+  "csharpExport": "既存Roslyn公開用生成器を使用し、有効C#トークンを全比較。未公開の操作・表示改善を既存の公開専用構成へ反映。",
   "xamlExport": "既存の公開用XAML生成を使用。4件を元の相対パスへ配置。",
   "projectChanges": "公開専用に整理。実際の公開用パッケージ版・出力metadata・XAML不足検査は維持。",
   "unitTestFiles": [
@@ -44,7 +44,15 @@
     "QuickLookPdfReleaseOwnershipTests",
     "SettingsCollectionLimitMergeTests",
     "QuickLookHostPendingShowTests",
-    "YouTubeChannelRestoreTests"
+    "YouTubeChannelRestoreTests",
+    "ScopedContextMenuToggleTests",
+    "YouTubeLiveChatWindowControllerTests",
+    "YouTubeMiniPlayerMinimumViewportTests",
+    "YouTubeMiniPlayerLayoutServiceTests",
+    "YouTubeMiniPlayerContentTransformStateTests",
+    "YouTubeMiniPlayerWebDragServiceTests",
+    "WorkspaceNoteEditWindowTests",
+    "LocalVideoMiniPlayerCloseTests"
   ],
   "unitTestsAreSubset": true,
   "browserSuiteMinimumCounts": [
@@ -56,9 +64,9 @@
   "productGuiTested": false,
   "realPlaybackTested": false,
   "extendedStabilityTested": false,
-  "additionalManualValidation": "実機確認は所有者が担当。開発版でサイト倍率120%への変更と一般設定の表示まで確認済み。無変更保存・通常終了・再起動・新タブ確認、実PDF・実動画・長時間安定性は未確認。 今回の再レビュー修正に対する実GUI・実PDF・実動画・長時間確認は未実施（所有者担当）。",
-  "upstreamTree": "27e7e3bbd1e341074b56f898da6837d9212b3404",
-  "exportedFromCommit": "f7ef7a0e33be2a42a3010072b0037195d94f25f0",
+  "additionalManualValidation": "このpreview.6の実GUI・実PDF・実動画・混在DPI・長時間安定性は今回未実施。自動テストの成功と区別し、所有者による確認対象として保持。",
+  "upstreamTree": "e25e5ef07b023708611041b774df41daf83fb26e",
+  "exportedFromCommit": "bc6076530a92560674086f74ab5c9f82df05b3b3",
   "exportTreeEqualsUpstreamTree": true,
   "reviewBaselineCommit": "c93480158ba678112b298bbc88740bea09f2332e",
   "rereviewBaselineManagementCommit": "2f075cdad4de5fa1325d88624414ae654686f6d2",
@@ -72,6 +80,19 @@
     "activeCSharpFilesEqual": 12,
     "settingsDllRoundTripsPassed": 47,
     "productGuiTested": false,
-    "note": "再レビュー修正後に今回実行した結果。実PDF・実動画・長時間の実機確認は所有者担当。"
+    "note": "2026-10-24の再レビュー修正時の履歴。preview.6の検証件数とは区別する。"
+  },
+  "releaseVerification": {
+    "activeCSharpFilesEqual": 32,
+    "productGuiTested": false,
+    "note": "このpreview.6の公開用ソースで実行した結果。",
+    "publicSourceBuildWarnings": 0,
+    "version": "0.1.0-preview.6",
+    "publicSourceBuildErrors": 0,
+    "skipped": 0,
+    "configuration": "Release",
+    "failed": 0,
+    "publicTestsPassed": 1090,
+    "browserTestsPassed": 133
   }
 }

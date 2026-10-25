@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Media;
 using TabBrowser.Models;
 
 namespace TabBrowser.Services;
@@ -17,6 +18,60 @@ public static class YouTubeMiniPlayerLayoutService
     public const double ResizeBorderThickness = 8;
     public const double MinimumVisibleLength = 48;
     public const double InitialTopOffset = 48;
+    public const double MinimumYouTubeViewportCssPixels = 200;
+
+    public static Size GetMinimumSize(
+        YouTubeMiniPlayerState state,
+        double zoomFactor = 1,
+        double dpiScaleX = 1,
+        double dpiScaleY = 1)
+    {
+        if (state.SourceKind != MiniPlayerSourceKind.YouTube)
+            return new Size(MinimumWidth, MinimumHeight);
+
+        zoomFactor = double.IsFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
+        dpiScaleX = double.IsFinite(dpiScaleX) && dpiScaleX > 0 ? dpiScaleX : 1;
+        dpiScaleY = double.IsFinite(dpiScaleY) && dpiScaleY > 0 ? dpiScaleY : 1;
+        // WPFのDIPとCSS pxは別単位。モニター倍率は相殺し、ページズームだけが残る。
+        // HWNDと左右/上下の枠の端数丸めに備え、各軸に2物理pxの余裕を含める。
+        var inset = GetChromeInset();
+        var width = Math.Max(MinimumWidth,
+            (Math.Ceiling((MinimumYouTubeViewportCssPixels * zoomFactor + inset) * dpiScaleX) + 2) / dpiScaleX);
+        var height = Math.Max(MinimumHeight,
+            (Math.Ceiling((MinimumYouTubeViewportCssPixels * zoomFactor + inset) * dpiScaleY) + 2) / dpiScaleY);
+        var ratio = GetVideoAspectRatio(state);
+        var videoHeight = Math.Max(GetVideoHeight(height), GetVideoWidth(width) / ratio);
+        return new Size(videoHeight * ratio + inset, videoHeight + inset);
+    }
+
+    internal static Size GetMinimumSize(YouTubeMiniPlayerRuntime runtime)
+    {
+        var dpi = VisualTreeHelper.GetDpi(runtime.WebView ?? (Visual)runtime.Root);
+        return GetMinimumSize(runtime.State, runtime.WebView?.ZoomFactor ?? 1, dpi.DpiScaleX, dpi.DpiScaleY);
+    }
+
+    internal static void ApplyMinimumSize(YouTubeMiniPlayerRuntime runtime)
+    {
+        if (runtime.IsDisposed || runtime.IsFullScreen || runtime.IsApplyingMinimumSize
+            || runtime.State.SourceKind != MiniPlayerSourceKind.YouTube) return;
+        runtime.IsApplyingMinimumSize = true;
+        try
+        {
+            var minimum = GetMinimumSize(runtime);
+            // 下限を満たす既存サイズは維持し、ドラッグ開始等で無関係な寸法変更を起こさない。
+            var size = runtime.State.Width >= minimum.Width && runtime.State.Height >= minimum.Height
+                ? new Size(runtime.State.Width, runtime.State.Height)
+                : NormalizeSizeToVideo(runtime.State.Width, runtime.State.Height, false,
+                    GetVideoAspectRatio(runtime.State), minimum);
+            runtime.State.Width = size.Width;
+            runtime.State.Height = size.Height;
+            runtime.Root.MinWidth = runtime.TaskbarWindow.MinWidth = minimum.Width;
+            runtime.Root.MinHeight = runtime.TaskbarWindow.MinHeight = minimum.Height;
+            runtime.Root.Width = runtime.TaskbarWindow.Width = size.Width;
+            runtime.Root.Height = runtime.TaskbarWindow.Height = size.Height;
+        }
+        finally { runtime.IsApplyingMinimumSize = false; }
+    }
 
     public static Rect GetNextBounds(
         bool isShorts,
@@ -173,10 +228,12 @@ public static class YouTubeMiniPlayerLayoutService
         double width,
         double height,
         bool preferHeight,
-        double aspectRatio)
+        double aspectRatio,
+        Size? minimumSize = null)
     {
-        var normalizedWidth = Math.Max(MinimumWidth, width);
-        var normalizedHeight = Math.Max(MinimumHeight, height);
+        var minimum = minimumSize ?? new Size(MinimumWidth, MinimumHeight);
+        var normalizedWidth = Math.Max(minimum.Width, width);
+        var normalizedHeight = Math.Max(minimum.Height, height);
 
         if (preferHeight)
         {
@@ -187,15 +244,15 @@ public static class YouTubeMiniPlayerLayoutService
             normalizedHeight = GetOuterHeightForVideoWidth(normalizedWidth, aspectRatio);
         }
 
-        if (normalizedWidth < MinimumWidth)
+        if (normalizedWidth < minimum.Width)
         {
-            normalizedWidth = MinimumWidth;
+            normalizedWidth = minimum.Width;
             normalizedHeight = GetOuterHeightForVideoWidth(normalizedWidth, aspectRatio);
         }
 
-        if (normalizedHeight < MinimumHeight)
+        if (normalizedHeight < minimum.Height)
         {
-            normalizedHeight = MinimumHeight;
+            normalizedHeight = minimum.Height;
             normalizedWidth = GetOuterWidthForVideoHeight(normalizedHeight, aspectRatio);
         }
 
@@ -213,11 +270,13 @@ public static class YouTubeMiniPlayerLayoutService
     public static Size NormalizeCornerSizeToVideo(
         double width,
         double height,
-        double aspectRatio)
+        double aspectRatio,
+        Size? minimumSize = null)
     {
+        var minimum = minimumSize ?? new Size(MinimumWidth, MinimumHeight);
         var inset = GetChromeInset();
-        var requestedVideoWidth = Math.Max(GetVideoWidth(MinimumWidth), width - inset);
-        var requestedVideoHeight = Math.Max(GetVideoHeight(MinimumHeight), height - inset);
+        var requestedVideoWidth = Math.Max(GetVideoWidth(minimum.Width), width - inset);
+        var requestedVideoHeight = Math.Max(GetVideoHeight(minimum.Height), height - inset);
         var projectedVideoHeight = ((aspectRatio * requestedVideoWidth) + requestedVideoHeight) / ((aspectRatio * aspectRatio) + 1);
         var projectedVideoWidth = aspectRatio * projectedVideoHeight;
 
@@ -225,7 +284,7 @@ public static class YouTubeMiniPlayerLayoutService
             projectedVideoWidth + inset,
             projectedVideoHeight + inset,
             preferHeight: false,
-            aspectRatio);
+            aspectRatio, minimum);
     }
 
     public static bool HasEnoughVisibleArea(Rect bounds, Rect screenBounds)

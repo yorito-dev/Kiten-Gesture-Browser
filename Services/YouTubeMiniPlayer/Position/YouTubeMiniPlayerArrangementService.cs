@@ -31,7 +31,8 @@ public sealed record YouTubeMiniPlayerArrangementItem(
     double Width,
     double Height,
     double? AspectRatio = null,
-    bool HasChat = false);
+    bool HasChat = false,
+    Size? MinimumSize = null);
 
 public sealed record YouTubeMiniPlayerArrangementResult(
     Guid Id,
@@ -50,6 +51,33 @@ public static class YouTubeMiniPlayerArrangementService
         System.Random? random = null,
         IReadOnlyCollection<Guid>? focusIds = null,
         YouTubeMiniPlayerLinearPlacement linearPlacement = YouTubeMiniPlayerLinearPlacement.Second)
+    {
+        var layout = CreateLayoutCore(mode, workArea, items, random, focusIds, linearPlacement);
+        var byId = items.ToDictionary(item => item.Id);
+        return layout.Select(result =>
+        {
+            var item = byId[result.Id];
+            if (item.MinimumSize is not { } minimum) return result;
+            // 整列用セルや作業領域が小さい場合も、YouTubeの表示下限を優先する。
+            var size = YouTubeMiniPlayerLayoutService.NormalizeSizeToVideo(
+                result.Bounds.Width, result.Bounds.Height, false, GetAspectRatio(item), minimum);
+            return result with
+            {
+                Bounds = new Rect(
+                    Math.Clamp(result.Bounds.Left, workArea.Left, Math.Max(workArea.Left, workArea.Right - size.Width)),
+                    Math.Clamp(result.Bounds.Top, workArea.Top, Math.Max(workArea.Top, workArea.Bottom - size.Height)),
+                    size.Width, size.Height)
+            };
+        }).ToList();
+    }
+
+    private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreateLayoutCore(
+        YouTubeMiniPlayerArrangeMode mode,
+        Rect workArea,
+        IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
+        System.Random? random,
+        IReadOnlyCollection<Guid>? focusIds,
+        YouTubeMiniPlayerLinearPlacement linearPlacement)
     {
         if (items.Count == 0 || workArea.IsEmpty || workArea.Width <= 0 || workArea.Height <= 0)
         {
@@ -280,7 +308,7 @@ public static class YouTubeMiniPlayerArrangementService
                 cellWidth,
                 cellHeight);
             if (!item.HasChat
-                || cell.Width < YouTubeMiniPlayerLayoutService.MinimumWidth
+                || cell.Width < (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth)
                     + Gap
                     + YouTubeLiveChatWindowState.MinimumWidth
                 || cell.Height < YouTubeLiveChatWindowState.MinimumHeight)
@@ -295,7 +323,7 @@ public static class YouTubeMiniPlayerArrangementService
             var chatWidth = Math.Clamp(
                 cell.Width * 0.36,
                 YouTubeLiveChatWindowState.MinimumWidth,
-                cell.Width - Gap - YouTubeMiniPlayerLayoutService.MinimumWidth);
+                cell.Width - Gap - (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth));
             var playerArea = new Rect(
                 cell.Left,
                 cell.Top,
@@ -504,6 +532,8 @@ public static class YouTubeMiniPlayerArrangementService
             YouTubeMiniPlayerLayoutService.MinimumHeight,
             preferHeight: false,
             aspectRatio: aspectRatio);
+        if (item.MinimumSize is { } required)
+            return YouTubeMiniPlayerLayoutService.NormalizeSizeToVideo(width, height, false, aspectRatio, required);
         if ((width < minimumSize.Width || height < minimumSize.Height)
             && minimumSize.Width <= areaWidth
             && minimumSize.Height <= areaHeight)
