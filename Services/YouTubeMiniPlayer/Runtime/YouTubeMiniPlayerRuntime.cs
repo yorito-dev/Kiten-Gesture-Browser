@@ -91,6 +91,8 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public bool IsDisposed { get; set; }
 
+    public bool IsApplyingMinimumSize { get; set; }
+
     public YouTubeMiniPlayerNavigationHistoryController NavigationHistory { get; } = new();
 
     public bool IsLiveEdgeSeekInProgress { get; set; }
@@ -165,6 +167,10 @@ internal sealed class YouTubeMiniPlayerRuntime(
     public string? LiveChatAvailabilityAttemptVideoId { get; set; }
 
     public int LiveChatAvailabilityAttemptCount { get; set; }
+
+    public bool? LiveChatAvailability { get; set; }
+
+    public bool IsLiveChatWindowOpen { get; set; }
 
     public bool IsToolbarMenuOpen { get; set; }
 

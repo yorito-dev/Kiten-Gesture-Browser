@@ -2518,6 +2518,12 @@ public static class YouTubeControlScriptService
                             return;
                         }
 
+                        // 別Window等でpointerupが届かなくても、解放済みの入力を移動にしない。
+                        if ((event.buttons & 1) !== 1) {
+                            finishDrag(event);
+                            return;
+                        }
+
                         const deltaX = Math.abs(event.screenX - state.startX);
                         const deltaY = Math.abs(event.screenY - state.startY);
                         if (!state.moved && deltaX < dragGestureThreshold && deltaY < dragGestureThreshold) {
@@ -2538,6 +2544,7 @@ public static class YouTubeControlScriptService
                     }, true);
                     document.addEventListener("pointerup", finishDrag, true);
                     document.addEventListener("pointercancel", finishDrag, true);
+                    document.addEventListener("lostpointercapture", finishDrag, true);
                     window.addEventListener("blur", () => {
                         if (!state.dragging || !state.moved || !window.chrome?.webview?.postMessage) {
                             return;
@@ -4108,12 +4115,15 @@ public static class YouTubeControlScriptService
         double? volume,
         double? abRepeatStartSeconds,
         double? abRepeatEndSeconds,
-        bool isAbRepeatEnabled)
+        bool isAbRepeatEnabled,
+        string? expectedChannelId = null)
     {
         var videoIdJson = JsonSerializer.Serialize(videoId);
+        var channelIdJson = JsonSerializer.Serialize(expectedChannelId);
         var requestKeyJson = JsonSerializer.Serialize(JsonSerializer.Serialize(new
         {
             videoId,
+            expectedChannelId,
             positionSeconds = NormalizePlaybackPosition(positionSeconds),
             speed = NormalizePlaybackSpeed(speed),
             isPaused,
@@ -4155,6 +4165,7 @@ public static class YouTubeControlScriptService
             (() => {
                 const key = "__tabBrowserYouTubeMiniPlayerSavedStateReadyBridge";
                 const expectedVideoId = {{videoIdJson}};
+                const expectedChannelId = {{channelIdJson}};
                 const requestKey = {{requestKeyJson}};
                 const existing = window[key];
                 if (existing?.requestKey === requestKey) {
@@ -4198,6 +4209,19 @@ public static class YouTubeControlScriptService
                         return "";
                     }
                 };
+                const isExpectedLocation = () => {
+                    if (readLocationVideoId() === expectedVideoId) return true;
+                    if (!expectedChannelId) return false;
+                    try {
+                        const url = new URL(location.href);
+                        if (url.protocol !== "https:" || url.hostname !== "www.youtube.com"
+                            || url.pathname !== "/channel/" + expectedChannelId + "/live") return false;
+                        const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                        const response = player?.getPlayerResponse?.() || window.ytInitialPlayerResponse || null;
+                        return String(response?.videoDetails?.videoId || "") === expectedVideoId
+                            && String(response?.videoDetails?.channelId || "") === expectedChannelId;
+                    } catch { return false; }
+                };
                 const isExpectedVideoReady = () => {
                     const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
                     if (state.adPlayer !== player) {
@@ -4209,7 +4233,7 @@ public static class YouTubeControlScriptService
                     if ({{AdvertisementPlayingExpression}}) {
                         return false;
                     }
-                    if (readLocationVideoId() !== expectedVideoId) {
+                    if (!isExpectedLocation()) {
                         return false;
                     }
 
@@ -4243,7 +4267,9 @@ public static class YouTubeControlScriptService
                             return false;
                         }
 
+                        if (!isExpectedVideoReady()) return false;
                         await {{volumeScript}};
+                        if (!isExpectedVideoReady()) return false;
                         const playbackResult = await {{playbackScript}};
                         if (!playbackResult?.ok || !playbackResult.found) {
                             return false;
@@ -4253,11 +4279,13 @@ public static class YouTubeControlScriptService
                         await {{initialLivePlaybackScript}};
                         if (!isExpectedVideoReady()) return false;
                         await {{abRepeatScript}};
+                        if (!isExpectedVideoReady()) return false;
                         const finalMuteResult = await {{muteScript}};
                         if (!finalMuteResult?.ok || !finalMuteResult.found) {
                             return false;
                         }
 
+                        if (!isExpectedVideoReady()) return false;
                         state.applied = true;
                         removeListeners();
                         return true;

@@ -7,7 +7,7 @@
 
 Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブブラウザです。本体ソースはMIT Licenseで提供します。
 
-**[無料の公開アルファをダウンロード（v0.1.0-preview.5）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.5)**
+**[無料の公開アルファをダウンロード（v0.1.0-preview.6）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.6)**
 
 **[初めて使う方へ：ダウンロード・起動・基本操作・バックアップ](docs/getting-started.md)**
 
@@ -40,7 +40,7 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 
 ## ダウンロードと導入
 
-[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.5)のAssetsにある[Kiten-Gesture-Browser-0.1.0-preview.5-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.5/Kiten-Gesture-Browser-0.1.0-preview.5-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.5/Kiten-Gesture-Browser-0.1.0-preview.5-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
+[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.6)のAssetsにある[Kiten-Gesture-Browser-0.1.0-preview.6-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.6/Kiten-Gesture-Browser-0.1.0-preview.6-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.6/Kiten-Gesture-Browser-0.1.0-preview.6-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
 
 1. 入手元とZIPのSHA-256を確認します。
 2. 新しい空フォルダーへZIPをすべて展開します。
@@ -66,7 +66,7 @@ AIに聞けばすぐに答えが返ってくる時代になりました。それ
 
 本体のダウンロードと利用は無料です。開発支援は任意で、支援の有無による機能差はありません。
 
-本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.5)で無料提供しています。
+本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.6)で無料提供しています。
 
 ## 利用条件・プライバシー・報告
 
@@ -94,6 +94,7 @@ pwsh -NoProfile -File .\Build-Source.ps1
 ```
 
 アプリとDataToolをビルドし、同梱の公開構成向けテストを実行します。
+テストでは本番の復元JavaScriptも実行するため、Node.js 22以上をPATH上で使用できる状態にしてください。
 出力は`bin/Release/public/net10.0-windows/TabBrowser.exe`と
 `tools/Kiten.DataTool/bin/Release/net10.0-windows/Kiten.DataTool.exe`です。
 開発データを使う場合はアプリに`--channel development`を指定します。

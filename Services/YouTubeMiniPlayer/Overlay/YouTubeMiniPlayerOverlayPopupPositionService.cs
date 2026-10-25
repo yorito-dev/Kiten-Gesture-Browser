@@ -1,6 +1,8 @@
 using System;
 using System.Windows;
 using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace TabBrowser.Services;
 
@@ -117,7 +119,20 @@ internal static class YouTubeMiniPlayerOverlayPopupPositionService
         PopupWindowOrderService.ApplyRelativeToOwner(
             popup,
             popupRoot,
-            runtime.Root);
+            GetOverlayOrderOwner(runtime));
+    }
+
+    internal static Visual GetOverlayOrderOwner(YouTubeMiniPlayerRuntime runtime)
+    {
+        // LibVLCの操作面は本体とは別Windowにあるため、その手前へタイトル帯を置く。
+        if (runtime.LocalVideoView is { } localVideoView
+            && PresentationSource.FromVisual(localVideoView.DragSurface) is HwndSource { Handle: var handle }
+            && handle != IntPtr.Zero)
+        {
+            return localVideoView.DragSurface;
+        }
+
+        return runtime.Root;
     }
 
     public static void RefreshOverlayPopupPosition(

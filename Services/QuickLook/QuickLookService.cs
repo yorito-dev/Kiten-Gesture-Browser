@@ -17,6 +17,7 @@ public sealed class QuickLookService : IDisposable, IAsyncDisposable
     private IQuickLookRenderer? _currentRenderer;
     private int _generation;
     private bool _isDisposed;
+    private Task _disposalTask = Task.CompletedTask;
 
     public QuickLookService(QuickLookSettings settings)
     {
@@ -67,6 +68,7 @@ public sealed class QuickLookService : IDisposable, IAsyncDisposable
         var generation = Interlocked.Increment(ref _generation);
         _loadCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var currentCancellation = _loadCancellation;
+        var loadToken = currentCancellation.Token;
         try
         {
             if (_currentRenderer is not null)
@@ -74,14 +76,16 @@ public sealed class QuickLookService : IDisposable, IAsyncDisposable
                 await _currentRenderer.UnloadAsync();
             }
 
+            // 前のPDFの解放待ち中に閉じられた要求から、新しいプレビューを開始しない。
+            loadToken.ThrowIfCancellationRequested();
             var renderer = _renderers.First(renderer => renderer.CanRender(request));
             _currentRenderer = renderer;
             var result = immediateResult is not null
                 && renderer is QuickLookWebSummaryRenderer
                 && !QuickLookWebSummaryRenderer.NeedsAsyncRefresh(request, immediateResult)
                     ? immediateResult
-                    : await renderer.RenderAsync(request, currentCancellation.Token);
-            currentCancellation.Token.ThrowIfCancellationRequested();
+                    : await renderer.RenderAsync(request, loadToken);
+            loadToken.ThrowIfCancellationRequested();
             if (generation != Volatile.Read(ref _generation))
             {
                 throw new OperationCanceledException(currentCancellation.Token);
@@ -190,25 +194,20 @@ public sealed class QuickLookService : IDisposable, IAsyncDisposable
         _currentRenderer = null;
         if (renderer is not null)
         {
-            try
-            {
-                renderer.UnloadAsync().AsTask().GetAwaiter().GetResult();
-            }
-            catch (Exception ex) when (!IsFatalException(ex))
-            {
-            }
+            _disposalTask = UnloadAfterDisposeAsync(renderer);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_isDisposed)
-        {
-            return;
-        }
+        Dispose();
+        await _disposalTask;
+    }
 
-        await CloseAsync();
-        _isDisposed = true;
+    private static async Task UnloadAfterDisposeAsync(IQuickLookRenderer renderer)
+    {
+        try { await renderer.UnloadAsync(); }
+        catch (Exception ex) when (!IsFatalException(ex)) { }
     }
 
     private void CancelCurrentLoad()

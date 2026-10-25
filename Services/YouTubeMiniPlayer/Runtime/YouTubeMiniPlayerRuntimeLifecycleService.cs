@@ -256,6 +256,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         }
 
         ApplyFullScreenChrome(runtime, false);
+        YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtime);
         runtime.Root.Width = runtime.State.Width;
         runtime.Root.Height = runtime.State.Height;
         runtime.FullScreenRestoreBounds = System.Windows.Rect.Empty;
@@ -291,6 +292,8 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         if (isFullScreen)
         {
             runtime.ListHighlightBorder.Visibility = Visibility.Collapsed;
+            runtime.Root.MinWidth = runtime.TaskbarWindow.MinWidth = YouTubeMiniPlayerLayoutService.MinimumWidth;
+            runtime.Root.MinHeight = runtime.TaskbarWindow.MinHeight = YouTubeMiniPlayerLayoutService.MinimumHeight;
         }
 
         if (runtime.Root is Border rootBorder)

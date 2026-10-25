@@ -91,6 +91,9 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
             if (message == WmDpiChanged)
             {
                 runtime.OverlayPlacementGeneration++;
+                // WPF/WebView2が新しいDPIを受け取った後で下限を再計算する。
+                window.Dispatcher.BeginInvoke((Action)(() => YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtime)),
+                    System.Windows.Threading.DispatcherPriority.Render);
                 queueOverlayPositionRefresh(runtime);
                 return IntPtr.Zero;
             }
@@ -222,6 +225,7 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
         if (!runtime.TaskbarWindow.IsVisible
             || runtime.TaskbarWindow.WindowState == WindowState.Minimized
             || runtime.IsFullScreen
+            || runtime.IsApplyingMinimumSize
             || runtime.IsResizing)
         {
             return;

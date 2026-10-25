@@ -1426,10 +1426,12 @@
                 <Button x:Name="ArrangeMenuButton"
                         Content="{Binding ArrangeMenuText}"
                         Click="ArrangeMenuButton_Click"
+                        PreviewMouseLeftButtonDown="MenuButton_PreviewMouseLeftButtonDown"
                         Style="{StaticResource WorkspaceUtilityButtonStyle}"
                         ToolTip="カードの整列方法を選択">
                     <Button.ContextMenu>
-                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                     Mouse.PreviewMouseDownOutsideCapturedElement="ButtonContextMenu_MouseDownOutsideCapturedElement">
                             <MenuItem Header="{Binding ArrangeSelectionMenuText}"
                                       IsEnabled="{Binding CanArrangeSelection}">
                                 <MenuItem Header="コンパクト配置" Tag="Selection|CurrentPosition" Click="ArrangeMenuItem_Click" />

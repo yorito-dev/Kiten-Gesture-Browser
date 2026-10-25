@@ -297,7 +297,10 @@ public static class YouTubeMiniPlayerContentTransformState
         var maximumTop = videoHeight - cropHeight;
         var left = (uint)Math.Round(((1 - panX) / 2) * maximumLeft);
         var top = (uint)Math.Round(((1 - panY) / 2) * maximumTop);
-        return $"{cropWidth}x{cropHeight}+{left}+{top}";
+        // LibVLC 3の窓指定は幅・高さが右端・下端として扱われるため、四辺の除去量で指定する。
+        var right = maximumLeft - left;
+        var bottom = maximumTop - top;
+        return $"{left}+{top}+{right}+{bottom}";
     }
 
     private static double NormalizeZoomFactor(double zoomFactor)

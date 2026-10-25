@@ -17,7 +17,8 @@ internal sealed record YouTubeMiniPlayerArrangementCandidate(
     double Width,
     double Height,
     double? VideoAspectRatio,
-    bool HasChat);
+    bool HasChat,
+    Size? MinimumSize = null);
 
 internal sealed record YouTubeMiniPlayerArrangementPlanningResult(
     IReadOnlyList<Guid> TargetIds,
@@ -80,7 +81,8 @@ internal static class YouTubeMiniPlayerArrangementPlanningService
                 candidate.Width,
                 candidate.Height,
                 candidate.VideoAspectRatio,
-                candidate.HasChat)).ToList(),
+                candidate.HasChat,
+                candidate.MinimumSize)).ToList(),
             random,
             focusIds,
             linearPlacement);

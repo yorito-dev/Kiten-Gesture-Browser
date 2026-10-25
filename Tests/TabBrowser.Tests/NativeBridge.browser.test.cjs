@@ -4,6 +4,91 @@ const assert = require('node:assert/strict');
 const { readFileSync, existsSync, readdirSync } = require('node:fs');
 const { resolve } = require('node:path');
 const vm = require('node:vm');
+
+// 製品の入力処理をそのまま実行し、Window境界等で解放通知が欠落した順序を制御する。
+function miniPlayerDragHost() {
+    const source = readFileSync(resolve(__dirname, '../../Services/YouTubeControlScriptService.cs'), 'utf8');
+    const bridge = source.indexOf('const dragBridgeKey =');
+    const start = source.indexOf('const state = {', bridge);
+    const prefixEnd = source.indexOf('const isYouTubeEndScreenTarget', start);
+    const handlersStart = source.indexOf('const finishDrag = (event) => {', prefixEnd);
+    const end = source.indexOf('const holdSeekState = {', handlersStart);
+    assert.ok(bridge > 0 && start > bridge && prefixEnd > start && handlersStart > prefixEnd && end > handlersStart);
+    const handlers = new Map(), messages = [];
+    const emit = (target, type, values = {}) => {
+        const event = { type, button: 0, buttons: 1, pointerId: 1, isPrimary: true,
+            screenX: 20, screenY: 100, ctrlKey: false, target: { closest: () => null },
+            preventDefault() {}, stopPropagation() {}, ...values };
+        for (const handler of handlers.get(target + ':' + type) || []) handler(event);
+    };
+    const surface = target => ({ addEventListener(type, handler) {
+        const key = target + ':' + type;
+        handlers.set(key, [...(handlers.get(key) || []), handler]);
+    } });
+    const document = { ...surface('document'), getElementById: () => null, querySelector: () => null,
+        documentElement: { setPointerCapture() {}, releasePointerCapture(pointerId) {
+            emit('document', 'lostpointercapture', { pointerId });
+        } } };
+    const window = { ...surface('window'), chrome: { webview: { postMessage(message) { messages.push(message); } } } };
+    const context = { document, window, isYouTubeNativeMenuOpen: () => false,
+        dragGestureThreshold: Number(source.match(/const dragGestureThreshold = (\d+);/)[1]) };
+    vm.createContext(context);
+    vm.runInContext(source.slice(start, prefixEnd) + source.slice(handlersStart, end)
+        + '\nglobalThis.dragState = () => ({ ...state });', context);
+    return { messages, emit, state: () => context.dragState(),
+        down: values => emit('document', 'pointerdown', { screenX: 0, ...values }),
+        move: values => emit('document', 'pointermove', values),
+        phases: () => messages.map(message => message.phase) };
+}
+
+test('動画面ドラッグ: 通常解放は一度だけ終了し、以後の移動を送らない', () => {
+    const h = miniPlayerDragHost(); h.down(); h.move();
+    h.emit('document', 'pointerup', { buttons: 0 }); h.move({ buttons: 0, screenX: 50 });
+    assert.deepEqual(h.phases(), ['start', 'move', 'end']); assert.equal(h.state().dragging, false);
+});
+test('動画面ドラッグ: pointerup欠落でもbuttons=0の移動で終了する', () => {
+    const h = miniPlayerDragHost(); h.down(); h.move();
+    h.move({ buttons: 0, screenX: 40 }); h.move({ buttons: 0, screenX: 60 });
+    assert.deepEqual(h.phases(), ['start', 'move', 'end']); assert.equal(h.state().dragging, false);
+});
+for (const buttons of [0, 1]) {
+    test('動画面ドラッグ: 捕捉喪失で終了し古い移動から再開しない buttons=' + buttons, () => {
+        const h = miniPlayerDragHost(); h.down(); h.move();
+        h.emit('document', 'lostpointercapture', { buttons }); h.move({ buttons, screenX: 50 });
+        assert.deepEqual(h.phases(), ['start', 'move', 'end']); assert.equal(h.state().dragging, false);
+        h.down(); h.move();
+        assert.deepEqual(h.phases(), ['start', 'move', 'end', 'start', 'move']);
+    });
+}
+for (const [target, type] of [['document', 'pointercancel'], ['window', 'blur']]) {
+    test('動画面ドラッグ: ' + type + 'で終了し、終了後の移動を送らない', () => {
+        const h = miniPlayerDragHost(); h.down(); h.move();
+        h.emit(target, type); h.move({ buttons: 0 });
+        assert.deepEqual(h.phases(), ['start', 'move', 'end']); assert.equal(h.state().dragging, false);
+    });
+}
+test('動画面ドラッグ: 別pointerの捕捉喪失では現在の入力を取り消さない', () => {
+    const h = miniPlayerDragHost(); h.down(); h.move();
+    h.emit('document', 'lostpointercapture', { pointerId: 2 }); h.move({ screenX: 40 });
+    assert.deepEqual(h.phases(), ['start', 'move', 'move']); assert.equal(h.state().dragging, true);
+});
+test('動画面ドラッグ: 閾値未満の解放取り逃しを後からドラッグに変えない', () => {
+    const h = miniPlayerDragHost(); h.down(); h.move({ screenX: 3 });
+    h.move({ screenX: 30, buttons: 0 });
+    assert.deepEqual(h.phases(), []); assert.equal(h.state().dragging, false);
+});
+test('動画面ドラッグ: Ctrlリサイズのモードは開始時のまま終了する', () => {
+    const h = miniPlayerDragHost(); h.down({ ctrlKey: true }); h.move({ ctrlKey: false });
+    h.move({ buttons: 0 });
+    assert.deepEqual(h.phases(), ['start', 'move', 'end']);
+    assert.ok(h.messages.every(message => message.resize === true));
+});
+test('動画面ドラッグ: 純正操作部では開始せず通常クリックも移動にしない', () => {
+    const h = miniPlayerDragHost(); h.down({ target: { closest: () => ({}) } }); h.move();
+    assert.deepEqual(h.phases(), []);
+    h.down(); h.emit('document', 'pointerup', { buttons: 0 });
+    assert.deepEqual(h.phases(), []);
+});
 // 公開ソースは既存の来歴ファイルで識別し、除外機能はskipせず不存在を検査する。
 const sourceRoot = resolve(__dirname, '../..');
 const provenancePath = resolve(sourceRoot, 'SOURCE-PROVENANCE.json');
@@ -212,7 +297,7 @@ function muteRestoreHost({ muted = true, savedMuted = true, userOverride = false
         startJson: '10', endJson: '20', enabledJson: 'true', wholeLoopingJson: 'false', videoIdJson: '"fixture-video"'
     }) : '({ ok: true, skipped: true })';
     const restoreScript = miniPlayerScript('BuildMiniPlayerSavedStateReadyBridgeScript', {
-        videoIdJson: '"fixture-video"', requestKeyJson: '"fixture-request"', volumeScript, muteScript,
+        videoIdJson: '"fixture-video"', channelIdJson: 'null', requestKeyJson: '"fixture-request"', volumeScript, muteScript,
         playbackScript, initialLivePlaybackScript, abRepeatScript
     });
     return { context, video, player, handlers, transitions, volumeScript, restoreScript, adClasses, adObservers };

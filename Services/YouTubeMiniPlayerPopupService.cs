@@ -121,6 +121,7 @@ public static class YouTubeMiniPlayerPopupService
             return;
         }
 
+        YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtime);
         SyncTaskbarWindowPosition(runtime, screenPosition);
         queueNativePositionRefresh(runtime);
         if (runtime.ToolbarPopup.IsOpen)

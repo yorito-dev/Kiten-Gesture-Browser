@@ -135,13 +135,15 @@ public static class YouTubeMiniPlayerPositionService
         bool ensureVisible,
         Func<Point> getHostOrigin,
         Func<Rect> getScreenBounds,
-        Action<YouTubeMiniPlayerState, UIElement> setPosition)
+        Action<YouTubeMiniPlayerState, UIElement> setPosition,
+        Size? minimumSize = null)
     {
         var fittedSize = YouTubeMiniPlayerLayoutService.NormalizeSizeToVideo(
             state.Width,
             state.Height,
             preferHeight: false,
-            aspectRatio: YouTubeMiniPlayerLayoutService.GetVideoAspectRatio(state));
+            aspectRatio: YouTubeMiniPlayerLayoutService.GetVideoAspectRatio(state),
+            minimumSize: minimumSize ?? YouTubeMiniPlayerLayoutService.GetMinimumSize(state));
         state.Width = fittedSize.Width;
         state.Height = fittedSize.Height;
         root.Width = state.Width;

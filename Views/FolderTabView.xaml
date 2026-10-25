@@ -158,19 +158,23 @@
                     <Button x:Name="HierarchyButton"
                             Content="階層"
                             Click="HierarchyButton_Click"
+                            PreviewMouseLeftButtonDown="MenuButton_PreviewMouseLeftButtonDown"
                             Style="{StaticResource FolderTabButtonStyle}"
                             ToolTip="親フォルダーを選択">
                         <Button.ContextMenu>
-                            <ContextMenu x:Name="HierarchyMenu" />
+                            <ContextMenu x:Name="HierarchyMenu"
+                                         Mouse.PreviewMouseDownOutsideCapturedElement="ButtonContextMenu_MouseDownOutsideCapturedElement" />
                         </Button.ContextMenu>
                     </Button>
                     <Button x:Name="PlacesButton"
                             Content="場所"
                             Click="PlacesButton_Click"
+                            PreviewMouseLeftButtonDown="MenuButton_PreviewMouseLeftButtonDown"
                             Style="{StaticResource FolderTabButtonStyle}"
                         ToolTip="主要な場所へ移動">
                         <Button.ContextMenu>
-                            <ContextMenu x:Name="PlacesMenu" />
+                            <ContextMenu x:Name="PlacesMenu"
+                                         Mouse.PreviewMouseDownOutsideCapturedElement="ButtonContextMenu_MouseDownOutsideCapturedElement" />
                         </Button.ContextMenu>
                     </Button>
                 </StackPanel>
@@ -210,10 +214,12 @@
                             ToolTip="サブフォルダーを含めて検索。size&gt;10MB、date&gt;=2026-01-01も使用可能" />
                     <Button x:Name="SortButton"
                             Click="SortButton_Click"
+                            PreviewMouseLeftButtonDown="MenuButton_PreviewMouseLeftButtonDown"
                             Style="{StaticResource FolderTabButtonStyle}"
                             ToolTip="並び替え">
                         <Button.ContextMenu>
-                            <ContextMenu x:Name="SortMenu">
+                            <ContextMenu x:Name="SortMenu"
+                                         Mouse.PreviewMouseDownOutsideCapturedElement="ButtonContextMenu_MouseDownOutsideCapturedElement">
                                 <MenuItem x:Name="SortByNameMenuItem"
                                           Header="名前順"
                                           IsCheckable="True"

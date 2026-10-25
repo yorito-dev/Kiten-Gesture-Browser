@@ -22,6 +22,7 @@ namespace TabBrowser.Views;
 
 public partial class WorkspaceCanvasView : UserControl, IDisposable
 {
+    private readonly ButtonContextMenuController _buttonContextMenuController = new();
     private const double CanvasOverscrollLimit = 240;
     private const double CanvasWidth = 4800;
     private const double CanvasHeight = 3200;
@@ -1796,12 +1797,17 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
 
     private void ArrangeMenuButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { ContextMenu: { } menu } button)
+        if (sender is Button button)
         {
-            menu.PlacementTarget = button;
-            menu.IsOpen = true;
+            _buttonContextMenuController.Toggle(button);
         }
     }
+
+    private void ButtonContextMenu_MouseDownOutsideCapturedElement(object sender, MouseButtonEventArgs e)
+        => _buttonContextMenuController.OnOutsideCapturedPress(sender, e);
+
+    private void MenuButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        => _buttonContextMenuController.OnButtonPreviewPress(sender, e);
 
     private void RestoreArrangeButton_Click(object sender, RoutedEventArgs e)
     {

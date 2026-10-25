@@ -401,7 +401,10 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
         => YouTubeMiniPlayerRuntimeContentFactory.UpdateLiveChatButtonAvailabilityAsync(state, webView, _youTubeMiniPlayerRuntimes);
     Task IYouTubeLiveChatHost.CaptureStateAsync(YouTubeMiniPlayerState state) => CaptureYouTubeMiniPlayerStateAsync(state);
     void IYouTubeLiveChatHost.UpdateChatButtonAvailability(YouTubeMiniPlayerRuntime runtime, bool? available)
-        => YouTubeMiniPlayerChromeFactory.UpdateChatButtonAvailability(runtime.TitleBandChatButton, available);
+        => YouTubeMiniPlayerChromeFactory.UpdateChatButtonAvailability(runtime, available);
+
+    void IYouTubeLiveChatHost.UpdateChatWindowOpen(YouTubeMiniPlayerRuntime runtime, bool isOpen)
+        => YouTubeMiniPlayerChromeFactory.UpdateChatWindowOpen(runtime, isOpen);
     void IYouTubeLiveChatHost.UpdateLiveViewerCount(YouTubeMiniPlayerRuntime runtime, bool isLive, string? text)
         => YouTubeMiniPlayerChromeFactory.UpdateLiveViewerCount(runtime, isLive, text);
     Task<CoreWebView2Environment> IYouTubeLiveChatHost.EnsureEnvironmentAsync(string? containerProfileId)
@@ -853,7 +856,7 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
                 QueueYouTubeMiniPlayerSizeBasedQualityUpdate(runtime, immediate: true, force: true);
             };
             runtime.TitleBandChatButton.Click += async (_, _) =>
-                await OpenYouTubeLiveChatAsync(state);
+                await ToggleYouTubeLiveChatAsync(state);
             runtime.TaskbarWindow.LocationChanged += (_, _) =>
                 SynchronizeYouTubeLiveChatWindow(state.Id);
             runtime.TaskbarWindow.SizeChanged += (_, _) =>
@@ -937,8 +940,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
         }
     }
 
-    private Task OpenYouTubeLiveChatAsync(YouTubeMiniPlayerState state)
-        => _youTubeLiveChatController.OpenYouTubeLiveChatAsync(state);
+    private Task ToggleYouTubeLiveChatAsync(YouTubeMiniPlayerState state)
+        => _youTubeLiveChatController.ToggleYouTubeLiveChatAsync(state);
 
     private bool IsCurrentYouTubeMiniPlayerRuntime(Guid miniPlayerId, YouTubeMiniPlayerRuntime runtime)
     {
@@ -1062,7 +1065,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
             BeginYouTubeLiveChatVideoTransition,
             ApplyYouTubeLiveChatAvailabilityAsync,
             RecordYouTubeMiniPlayerBrowsingHistory,
-            QueueYouTubeMiniPlayerInactiveSuspension);
+            QueueYouTubeMiniPlayerInactiveSuspension,
+            () => _isClosingWindow);
     }
 
     private Views.LocalVideoPlayerView CreateLocalVideoPlayerView(YouTubeMiniPlayerState state)
@@ -1227,7 +1231,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
                 RecordYouTubeMiniPlayerBrowsingHistory,
                 QueueYouTubeMiniPlayerAutoRecovery,
                 QueueYouTubeMiniPlayerInactiveSuspension,
-                UpdateYouTubeMiniPlayerStateCaptureTimer));
+                UpdateYouTubeMiniPlayerStateCaptureTimer,
+                () => _isClosingWindow));
         UpdateYouTubeMiniPlayerAudioIndicatorsForAllWindows();
     }
 
@@ -3076,7 +3081,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
     {
         var runtime = _youTubeMiniPlayerRuntimes[state.Id];
         return new(state.Id, state.IsMinimized, runtime.IsFullScreen, state.IsShorts, state.Width,
-            state.Height, state.VideoAspectRatio, _youTubeLiveChatController.ContainsWindow(state.Id));
+            state.Height, state.VideoAspectRatio, _youTubeLiveChatController.ContainsWindow(state.Id),
+            state.SourceKind == MiniPlayerSourceKind.YouTube ? YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime) : null);
     }
 
     YouTubeMiniPlayerArrangementPreviewValidationItem IYouTubeMiniPlayerArrangementOwner.CaptureValidation(Guid id, bool requireRuntime)

@@ -1106,74 +1106,12 @@ public partial class SettingsWindow : Window
         return false;
     }
 
-    private static AppSettings CloneSettings(AppSettings settings)
+    internal static AppSettings CloneSettings(AppSettings settings)
     {
-        return new AppSettings
-        {
-            Version = settings.Version,
-            SearchEngine = settings.SearchEngine,
-            SearchUrlTemplate = settings.SearchUrlTemplate,
-            SearchAliases = SearchAliasSettingsProfile.Normalize(settings.SearchAliases),
-            GestureStartThreshold = settings.GestureStartThreshold,
-            GestureDirectionThreshold = settings.GestureDirectionThreshold,
-            PreserveContextMenuOnShortRightClick = settings.PreserveContextMenuOnShortRightClick,
-            EnableLinkHoverPreview = settings.EnableLinkHoverPreview,
-            GestureMappings = GestureSettingsCatalog.NormalizeMappings(settings.GestureMappings),
-            EnableFocusedViewingCpuSaver = settings.EnableFocusedViewingCpuSaver,
-            FocusedViewingCpuSaverDelaySeconds = settings.FocusedViewingCpuSaverDelaySeconds,
-            EnableInactiveTabMemorySaver = settings.EnableInactiveTabMemorySaver,
-            ClipboardHistory = ClipboardHistorySettingsProfile.Normalize(settings.ClipboardHistory),
-            BrowsingHistory = BrowsingHistorySettingsProfile.Normalize(settings.BrowsingHistory),
-            SitePrivacy = SitePrivacySettingsProfile.Normalize(settings.SitePrivacy),
-            EnableBrowserExtensions = settings.EnableBrowserExtensions,
+        var copy = SettingsService.CloneForEdit(settings);
 
-            PreservedCompatibilitySettings = PublicSettingsCompatibility.Clone(settings.PreservedCompatibilitySettings),
-
-            AlwaysOnTop = settings.AlwaysOnTop,
-
-            Downloads = DownloadSettingsProfile.Normalize(settings.Downloads),
-            TabLayout = CloneTabLayout(settings.TabLayout),
-            FolderTabViewMode = FolderTabViewMode.Normalize(settings.FolderTabViewMode),
-            FolderTabPinnedPlaces = FolderTabPlacesService.NormalizePinnedPlaces(
-                settings.FolderTabPinnedPlaces),
-            ShowHiddenFolderTabItems = settings.ShowHiddenFolderTabItems,
-            QuickLook = QuickLookSettingsProfile.Normalize(settings.QuickLook),
-            EnableYouTubeMiniPlayerLiveContinuation =
-                settings.EnableYouTubeMiniPlayerLiveContinuation,
-            EnableYouTubeMiniPlayerHoverAudioPreview =
-                settings.EnableYouTubeMiniPlayerHoverAudioPreview,
-            EnableYouTubeMiniPlayerSizeBasedQuality =
-                settings.EnableYouTubeMiniPlayerSizeBasedQuality,
-            YouTubeMiniPlayerQualityLowWidthThreshold =
-                settings.YouTubeMiniPlayerQualityLowWidthThreshold,
-            YouTubeMiniPlayerQualityHighWidthThreshold =
-                settings.YouTubeMiniPlayerQualityHighWidthThreshold,
-            WindowPlacement = settings.WindowPlacement is null
-                ? null
-                : new WindowPlacementSettings
-                {
-                    Left = settings.WindowPlacement.Left,
-                    Top = settings.WindowPlacement.Top,
-                    Width = settings.WindowPlacement.Width,
-                    Height = settings.WindowPlacement.Height,
-                    State = settings.WindowPlacement.State
-                },
-            BookmarkManagerWindowSize = settings.BookmarkManagerWindowSize is null
-                ? null
-                : new BookmarkManagerWindowSizeSettings
-                {
-                    Width = settings.BookmarkManagerWindowSize.Width,
-                    Height = settings.BookmarkManagerWindowSize.Height
-                },
-            WorkspaceNoteEditorWindowPlacement = WorkspaceNoteEditorWindowPlacementProfile.Normalize(
-                settings.WorkspaceNoteEditorWindowPlacement),
-            WorkspaceFolderWindowPlacements = WorkspaceFolderWindowPlacementProfile.Normalize(
-                settings.WorkspaceFolderWindowPlacements),
-            LastWorkspaceId = settings.LastWorkspaceId,
-            ToolbarVisibility = CloneToolbarVisibility(settings.ToolbarVisibility)
-        };
+        return copy;
     }
-
     private static TabLayoutSettings CloneTabLayout(TabLayoutSettings? settings)
     {
         settings = TabLayoutSettingsProfile.Normalize(settings);

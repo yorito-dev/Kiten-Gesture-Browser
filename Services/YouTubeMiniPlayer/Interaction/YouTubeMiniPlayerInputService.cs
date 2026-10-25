@@ -121,8 +121,10 @@ public static class YouTubeMiniPlayerInputService
         bool resizeLeft,
         bool resizeTop,
         bool resizeRight,
-        bool resizeBottom)
+        bool resizeBottom,
+        Size? minimumSize = null)
     {
+        var minimum = minimumSize ?? new Size(YouTubeMiniPlayerLayoutService.MinimumWidth, YouTubeMiniPlayerLayoutService.MinimumHeight);
         var hasHorizontalResize = resizeLeft || resizeRight;
         var hasVerticalResize = resizeTop || resizeBottom;
         var requestedWidth = startWidth;
@@ -153,7 +155,7 @@ public static class YouTubeMiniPlayerInputService
             var fittedSize = YouTubeMiniPlayerLayoutService.NormalizeCornerSizeToVideo(
                 requestedWidth,
                 requestedHeight,
-                aspectRatio);
+                aspectRatio, minimum);
             newWidth = fittedSize.Width;
             newHeight = fittedSize.Height;
         }
@@ -163,20 +165,20 @@ public static class YouTubeMiniPlayerInputService
                 requestedWidth,
                 requestedHeight,
                 preferHeight: hasVerticalResize,
-                aspectRatio: aspectRatio);
+                aspectRatio: aspectRatio, minimumSize: minimum);
             newWidth = fittedSize.Width;
             newHeight = fittedSize.Height;
         }
 
-        if (newWidth < YouTubeMiniPlayerLayoutService.MinimumWidth)
+        if (newWidth < minimum.Width)
         {
-            newWidth = YouTubeMiniPlayerLayoutService.MinimumWidth;
+            newWidth = minimum.Width;
             newHeight = YouTubeMiniPlayerLayoutService.GetOuterHeightForVideoWidth(newWidth, aspectRatio);
         }
 
-        if (newHeight < YouTubeMiniPlayerLayoutService.MinimumHeight)
+        if (newHeight < minimum.Height)
         {
-            newHeight = YouTubeMiniPlayerLayoutService.MinimumHeight;
+            newHeight = minimum.Height;
             newWidth = YouTubeMiniPlayerLayoutService.GetOuterWidthForVideoHeight(newHeight, aspectRatio);
         }
 
@@ -196,7 +198,8 @@ public static class YouTubeMiniPlayerInputService
         double startWidth,
         double startHeight,
         double totalHorizontalChange,
-        double totalVerticalChange)
+        double totalVerticalChange,
+        Size? minimumSize = null)
     {
         var resizeByWidth = Math.Abs(totalHorizontalChange)
             >= Math.Abs(totalVerticalChange * aspectRatio);
@@ -211,7 +214,8 @@ public static class YouTubeMiniPlayerInputService
             resizeLeft: false,
             resizeTop: false,
             resizeRight: resizeByWidth,
-            resizeBottom: !resizeByWidth);
+            resizeBottom: !resizeByWidth,
+            minimumSize: minimumSize);
     }
 
     public static Rect CalculateConstrainedMoveBounds(

@@ -138,6 +138,7 @@ internal static class YouTubeMiniPlayerRuntimeFactory
             runtime,
             state.IsLiveBroadcast,
             state.LiveViewerCountText);
+        YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtime);
         return new YouTubeMiniPlayerRuntimeParts(runtime, chrome, titleBandParts, toolbarParts);
     }
 

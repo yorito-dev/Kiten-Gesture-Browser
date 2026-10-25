@@ -8,6 +8,7 @@ namespace TabBrowser.Services.QuickLook;
 internal sealed class QuickLookPdfRenderer : IQuickLookRenderer
 {
     private QuickLookPdfView? _view;
+    private Task _releaseTask = Task.CompletedTask;
 
     public bool CanRender(QuickLookRequest request)
     {
@@ -28,6 +29,7 @@ internal sealed class QuickLookPdfRenderer : IQuickLookRenderer
         }
 
         _view = new QuickLookPdfView(item.FilePath!, request.IsPrivate);
+        _view.SetReleaseOwner(request.PdfReleaseOwner);
         return Task.FromResult(new QuickLookRenderResult(
             QuickLookRenderKind.Interactive,
             item.DisplayName,
@@ -38,9 +40,13 @@ internal sealed class QuickLookPdfRenderer : IQuickLookRenderer
 
     public ValueTask UnloadAsync()
     {
-        _view?.Dispose();
-        _view = null;
-        return ValueTask.CompletedTask;
+        if (_view is { } view)
+        {
+            view.Dispose();
+            _releaseTask = view.ReleaseCompletion;
+            _view = null;
+        }
+        return new ValueTask(_releaseTask);
     }
 }
 

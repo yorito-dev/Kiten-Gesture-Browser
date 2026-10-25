@@ -151,7 +151,7 @@ public static class YouTubeMiniPlayerChromeFactory
         Grid.SetColumn(liveViewerCountButton, 1);
         headerGrid.Children.Add(liveViewerCountButton);
 
-        var chatButton = CreateButton("チャット", "ライブチャット／リプレイを開く", ChatButtonWidth, buttonStyle);
+        var chatButton = CreateButton("チャット", "ライブチャット／リプレイを開く／閉じる", ChatButtonWidth, buttonStyle);
         UpdateChatButtonAvailability(chatButton, null);
         Grid.SetColumn(chatButton, 2);
         headerGrid.Children.Add(chatButton);
@@ -297,10 +297,25 @@ public static class YouTubeMiniPlayerChromeFactory
             : "常に最前面に表示";
     }
 
-    public static void UpdateChatButtonAvailability(Button button, bool? isAvailable)
+    internal static void UpdateChatButtonAvailability(YouTubeMiniPlayerRuntime runtime, bool? isAvailable)
     {
-        button.IsEnabled = isAvailable == true;
-        button.ToolTip = isAvailable switch
+        runtime.LiveChatAvailability = isAvailable;
+        ApplyChatButtonState(runtime.TitleBandChatButton, isAvailable, runtime.IsLiveChatWindowOpen);
+    }
+
+    internal static void UpdateChatWindowOpen(YouTubeMiniPlayerRuntime runtime, bool isOpen)
+    {
+        runtime.IsLiveChatWindowOpen = isOpen;
+        ApplyChatButtonState(runtime.TitleBandChatButton, runtime.LiveChatAvailability, isOpen);
+    }
+
+    public static void UpdateChatButtonAvailability(Button button, bool? isAvailable)
+        => ApplyChatButtonState(button, isAvailable, false);
+
+    private static void ApplyChatButtonState(Button button, bool? isAvailable, bool isWindowOpen)
+    {
+        button.IsEnabled = isWindowOpen || isAvailable == true;
+        button.ToolTip = isWindowOpen ? "ライブチャット／リプレイを閉じる" : isAvailable switch
         {
             true => "ライブチャット／リプレイを開く",
             false => "この動画ではチャットを利用できません",

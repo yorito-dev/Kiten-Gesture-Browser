@@ -112,7 +112,8 @@ internal static class YouTubeMiniPlayerDragWiringService
                     startHeight,
                     currentScreen.X - dragStartScreen.X,
                     currentScreen.Y - dragStartScreen.Y,
-                    callbacks.Clamp);
+                    callbacks.Clamp,
+                    YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime));
             }
             else
             {

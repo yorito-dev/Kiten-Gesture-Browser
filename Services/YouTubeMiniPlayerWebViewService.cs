@@ -572,6 +572,20 @@ internal static class YouTubeMiniPlayerWebViewService
             """;
     }
 
+    internal static string BuildCurrentDocumentVideoIdentityScript()
+    {
+        return """
+            (() => {
+                const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                const response = (player?.getPlayerResponse?.()) || window.ytInitialPlayerResponse || null;
+                const details = response?.videoDetails;
+                const playerId = String(player?.getVideoData?.()?.video_id || "");
+                if (!details || !playerId || playerId !== String(details.videoId || "")) return { ok: false };
+                return { ok: true, videoId: playerId, channelId: String(details.channelId || "") };
+            })();
+            """;
+    }
+
     public static string BuildLiveStatusScript(string expectedVideoId)
     {
         var serializedVideoId = JsonSerializer.Serialize(expectedVideoId);
