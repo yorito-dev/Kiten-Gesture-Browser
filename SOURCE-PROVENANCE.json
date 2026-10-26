@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
   "created": "2026-10-26",
-  "upstreamCommit": "bc6076530a92560674086f74ab5c9f82df05b3b3",
+  "upstreamCommit": "d5f79f550f35a97d9b8d8c4f8319b282e12d52c6",
   "publicRepositoryCommit": null,
   "buildVerification": "verified-clean",
   "csharpExport": "既存Roslyn公開用生成器を使用し、有効C#トークンを全比較。未公開の操作・表示改善を既存の公開専用構成へ反映。",
@@ -65,8 +65,8 @@
   "realPlaybackTested": false,
   "extendedStabilityTested": false,
   "additionalManualValidation": "このpreview.6の実GUI・実PDF・実動画・混在DPI・長時間安定性は今回未実施。自動テストの成功と区別し、所有者による確認対象として保持。",
-  "upstreamTree": "e25e5ef07b023708611041b774df41daf83fb26e",
-  "exportedFromCommit": "bc6076530a92560674086f74ab5c9f82df05b3b3",
+  "upstreamTree": "64d443478e88f74c0b39c4c206357b2675eb6ca5",
+  "exportedFromCommit": "d5f79f550f35a97d9b8d8c4f8319b282e12d52c6",
   "exportTreeEqualsUpstreamTree": true,
   "reviewBaselineCommit": "c93480158ba678112b298bbc88740bea09f2332e",
   "rereviewBaselineManagementCommit": "2f075cdad4de5fa1325d88624414ae654686f6d2",
@@ -85,7 +85,7 @@
   "releaseVerification": {
     "activeCSharpFilesEqual": 32,
     "productGuiTested": false,
-    "note": "このpreview.6の公開用ソースで実行した結果。",
+    "note": "公開用.NET1090件は80771f4の結果を再利用。最終mainとの有効C#32ファイルの一致を再確認し、その後の差分は同梱文書の対象版と出所記録だけ。",
     "publicSourceBuildWarnings": 0,
     "version": "0.1.0-preview.6",
     "publicSourceBuildErrors": 0,
@@ -93,6 +93,7 @@
     "configuration": "Release",
     "failed": 0,
     "publicTestsPassed": 1090,
-    "browserTestsPassed": 133
+    "browserTestsPassed": 133,
+    "verifiedPublicSourceCommit": "80771f4a0ecc20fe9134e0bb883d53213edae34c"
   }
 }
