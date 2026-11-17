@@ -93,13 +93,26 @@
     "sourceCommit": "2a357d562e9cb007580ca56ee27eb4c7ebc4471a",
     "sourceTree": "cc41c9ab97d72ce80b02b1bf3e16e4fd075a830b",
     "archiveFile": "Kiten-Gesture-Browser-0.2.0-preview.1-win-x64.zip",
-    "archiveSha256": "5f7c7c1618f7f24a14608b8d2430c6fdf00fe0b665cc257c7c68a6dcd706a5d3",
-    "manifestSha256": "67c7b48b7b233a1c99d6c4c327e75972283269f3d9b71c31d16ebe5f4d3320d9",
+    "archiveSha256": "a8a754785d0b6e3decc5b42f49f22ad1784afb2bac9cbdff24680e5a6598bfb6",
+    "manifestSha256": "e9805422b567daddc2f61ca6b0a19fff59e643da95f9e44ebf944e98280becd6",
     "packageFiles": 431,
     "signingStatus": "unsigned",
     "managementTestCases": 6963,
     "managementBrowserTestCases": 374,
     "settingsCompatibilityCases": 48,
-    "mediaElementNonGuiCases": 24
+    "mediaElementNonGuiCases": 24,
+    "documentationTestCases": 21,
+    "candidateRevision": 2,
+    "binariesReusedByteIdentically": true
+  },
+  "documentationOverlay": {
+    "basePublicSourceCommit": "37e80e45ef1a4fafcdb5c71a4f7ec6f27a685cd9",
+    "scope": [
+      "CHANGELOG.md",
+      "docs/release-notes-0.2.0-preview.1.md"
+    ],
+    "changeLogSha256": "05d69bdee9fa1bda9abd04813d48e088915627915fa3e95f0b287ceffd90cf80",
+    "releaseNotesSha256": "3dba94fa0b66a6046c67d8c868dabdc9776c963d642f228885532d90bc2cda25",
+    "description": "前公開版からの変更を13分野・86項目へ補足。製品ソース・依存・構成・実行ファイルは同一。文書だけを更新して再梱包し、標準のZIP検証を再実行。"
   }
 }
