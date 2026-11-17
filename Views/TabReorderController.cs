@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -53,6 +54,20 @@ internal sealed class TabReorderController : IDisposable
         _dropPreviewClearTimer = clearTimer;
         _host = host;
         _dropPreviewClearTimer.Tick += DropPreviewClearTimer_Tick;
+        _tabs.CollectionChanged += Tabs_CollectionChanged;
+    }
+
+    private void Tabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        // 並べ替え中の Move は予告を維持する。増減後は末尾のタブが変わるため余白を捨てる。
+        if (!_disposed
+            && e.Action != NotifyCollectionChangedAction.Move
+            && (_lastTabDropPreviewList is not null
+                || _externalTabDropPreviewList is not null
+                || _externalTabDropPreviewTrailingItem is not null))
+        {
+            ClearDropPreview(animateExternalPreview: false);
+        }
     }
 
     private void DropPreviewClearTimer_Tick(object? sender, EventArgs e)
@@ -528,6 +543,7 @@ internal sealed class TabReorderController : IDisposable
         if (_disposed) return;
         _dropPreviewClearTimer.Stop();
         _dropPreviewClearTimer.Tick -= DropPreviewClearTimer_Tick;
+        _tabs.CollectionChanged -= Tabs_CollectionChanged;
         ClearDropPreview(animateExternalPreview: false);
         _disposed = true;
     }

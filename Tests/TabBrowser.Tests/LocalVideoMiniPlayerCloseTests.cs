@@ -123,6 +123,13 @@ public sealed class LocalVideoMiniPlayerCloseTests
             YouTubeMiniPlayerRuntimeWiringService.Attach(state, parts, controller.Runtimes, wiring);
             try
             {
+                // OSの前面化は行わず、内部アクティブ化中の通知でも履歴を更新することを確認する。
+                Assert.Equal(0, parts.Runtime.LastActivatedTimestamp);
+                parts.Runtime.IsTaskbarActivationInProgress = true;
+                typeof(Window).GetMethod("OnActivated", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                    .Invoke(parts.Runtime.TaskbarWindow, [EventArgs.Empty]);
+                Assert.True(parts.Runtime.LastActivatedTimestamp > 0);
+                parts.Runtime.IsTaskbarActivationInProgress = false;
                 // 画面を表示せず、本番のボタンと終了経路を通す。
                 parts.TitleBandParts.CloseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert.Empty(controller.States);

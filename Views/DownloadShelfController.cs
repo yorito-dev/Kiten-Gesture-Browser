@@ -17,7 +17,8 @@ internal sealed record DownloadShelfElements(
     Button DownloadsButton,
     Popup DownloadShelfPopup,
     TextBlock DownloadsButtonText,
-    ProgressBar DownloadsButtonProgress);
+    ProgressBar DownloadsButtonProgress,
+    ComboBox DownloadStateFilterBox);
 
 // 一覧表示とその購読を所有する。取得処理、危険ファイル確認、実ファイル操作は担当しない。
 internal sealed class DownloadShelfController : IDisposable
@@ -59,6 +60,16 @@ internal sealed class DownloadShelfController : IDisposable
             new("その他", nameof(DownloadFileKind.Other))
         };
         _elements.DownloadKindFilterBox.SelectedValue = "all";
+        _elements.DownloadStateFilterBox.ItemsSource = new List<DownloadFilterOption>
+        {
+            new("すべての状態", "all"),
+            new("進行中", "active"),
+            new("一時停止", nameof(DownloadItemState.Paused)),
+            new("失敗", nameof(DownloadItemState.Failed)),
+            new("完了", nameof(DownloadItemState.Completed)),
+            new("キャンセル", nameof(DownloadItemState.Canceled))
+        };
+        _elements.DownloadStateFilterBox.SelectedValue = "all";
 
         _downloadItemsView = CollectionViewSource.GetDefaultView(_downloadService.Items);
         _downloadItemsView.Filter = FilterDownloadItem;
@@ -106,6 +117,7 @@ internal sealed class DownloadShelfController : IDisposable
 
     private void DownloadItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(DownloadItem.State)) Refresh();
         if (e.PropertyName is nameof(DownloadItem.State) or nameof(DownloadItem.CanResumeOperation)
             or nameof(DownloadItem.ProgressPercent))
         {
@@ -116,6 +128,18 @@ internal sealed class DownloadShelfController : IDisposable
     private bool FilterDownloadItem(object value)
     {
         if (value is not DownloadItem item)
+        {
+            return false;
+        }
+
+        var selectedState = _elements.DownloadStateFilterBox.SelectedValue as string;
+        if (selectedState == "active")
+        {
+            if (item.State is not DownloadItemState.Pending and not DownloadItemState.InProgress) return false;
+        }
+        else if (!string.IsNullOrWhiteSpace(selectedState)
+            && selectedState != "all"
+            && !item.State.ToString().Equals(selectedState, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -150,7 +174,8 @@ internal sealed class DownloadShelfController : IDisposable
         var hasProgress = activeItems.Length > 0 && unknownCount == 0;
         var average = hasProgress ? activeItems.Average(static item => item.ProgressPercent) : 0;
         var progressText = hasProgress ? $"{average:0}%" : "…";
-        var label = activeItems.Length > 0 ? $"DL{Math.Min(activeItems.Length, 9)} {progressText}" : "DL";
+        var countText = activeItems.Length > 9 ? "9+" : $"{activeItems.Length}";
+        var label = activeItems.Length > 0 ? $"DL{countText} {progressText}" : "DL";
         var toolTip = activeItems.Length == 0
             ? "ダウンロード"
             : $"ダウンロード中: {activeItems.Length} 件\n"

@@ -332,7 +332,7 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
         Assert.Equal(506, first.Left, precision: 3);
         Assert.Equal(62, first.Top, precision: 3);
         Assert.Equal(480, first.Width, precision: 3);
-        Assert.Equal(277.875, first.Height, precision: 3);
+        Assert.Equal(270, first.Height, precision: 3);
         Assert.Equal(first.Left - 28, second.Left, precision: 3);
         Assert.Equal(first.Top + 28, second.Top, precision: 3);
     }
@@ -347,7 +347,7 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
             hostActualHeight: 800);
 
         Assert.Equal(330, bounds.Width, precision: 3);
-        Assert.Equal(572.667, bounds.Height, precision: 3);
+        Assert.Equal(586.667, bounds.Height, precision: 3);
         var videoWidth = YouTubeMiniPlayerLayoutService.GetVideoWidth(bounds.Width);
         var videoHeight = YouTubeMiniPlayerLayoutService.GetVideoHeight(bounds.Height);
         Assert.Equal(

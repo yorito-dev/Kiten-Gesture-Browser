@@ -214,26 +214,27 @@ internal sealed class YouTubeMiniPlayerActivityController
         }
 
         var isEnabled = _host.IsQualityEnabled;
-        if (!isEnabled && runtime.SizeBasedQualityAppliedSignature is null)
+        var displayWidth = 0d;
+        if (isEnabled)
         {
-            return;
+            displayWidth = _host.GetWebHostWidth(runtime);
+            if (!double.IsFinite(displayWidth) || displayWidth <= 0)
+            {
+                displayWidth = _host.GetTaskbarWindowWidth(runtime);
+            }
+            if (!double.IsFinite(displayWidth) || displayWidth <= 0)
+            {
+                displayWidth = runtime.State.Width;
+            }
         }
 
-        var displayWidth = _host.GetWebHostWidth(runtime);
-        if (!double.IsFinite(displayWidth) || displayWidth <= 0)
-        {
-            displayWidth = _host.GetTaskbarWindowWidth(runtime);
-        }
-        if (!double.IsFinite(displayWidth) || displayWidth <= 0)
-        {
-            displayWidth = runtime.State.Width;
-        }
-
-        var qualityCap = YouTubeControlScriptService.ResolveMiniPlayerQualityCap(
-            displayWidth,
-            runtime.IsFullScreen,
-            _host.LowQualityWidthThreshold,
-            _host.HighQualityWidthThreshold);
+        var qualityCap = isEnabled
+            ? YouTubeControlScriptService.ResolveMiniPlayerQualityCap(
+                displayWidth,
+                runtime.IsFullScreen,
+                _host.LowQualityWidthThreshold,
+                _host.HighQualityWidthThreshold)
+            : "highres";
         var signature = $"{isEnabled}:{qualityCap}";
         if (!force
             && string.Equals(

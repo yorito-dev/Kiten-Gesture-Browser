@@ -16,6 +16,62 @@ public sealed class WorkspaceNoteEditWindowStaCollection
 [Collection(WorkspaceNoteEditWindowStaCollection.Name)]
 public sealed class WorkspaceNoteEditWindowTests
 {
+    [Theory]
+    [InlineData("既存のメモ")]
+    [InlineData("メモを追加")]
+    public void NewNoteOpensAndSavesIndependentlyWhileAnotherEditorRemainsOpen(string existingTitle)
+    {
+        RunInSta(() =>
+        {
+            var owner = CreateHiddenOwner();
+            var existing = new WorkspaceNoteEditWindow(existingTitle, "失わない編集中の本文")
+            {
+                Owner = owner,
+                Opacity = 0,
+                ShowActivated = false,
+                ShowInTaskbar = false
+            };
+            var added = new WorkspaceNoteEditWindow("メモを追加", "新しいメモの本文")
+            {
+                Owner = owner,
+                Opacity = 0,
+                ShowActivated = false,
+                ShowInTaskbar = false
+            };
+            var saved = 0;
+            added.SaveAndCloseAsync = (content, _) =>
+            {
+                Assert.Equal("新しいメモの本文", content);
+                saved++;
+                return Task.FromResult(true);
+            };
+            try
+            {
+                var existingCompletion = ModelessWindowService.ShowAsync(existing, allowMultiple: true);
+                var addedCompletion = WorkspaceCanvasView.ShowNewNoteEditorAsync(added);
+
+                Assert.True(added.IsVisible);
+                Assert.True(existing.IsVisible);
+                Assert.False(addedCompletion.IsCompleted);
+                Assert.False(existingCompletion.IsCompleted);
+                Assert.Equal(2, owner.OwnedWindows.OfType<WorkspaceNoteEditWindow>().Count());
+                Assert.True(added.TrySaveAndCloseAsync().GetAwaiter().GetResult());
+                Assert.True(addedCompletion.GetAwaiter().GetResult());
+                Assert.Equal(1, saved);
+                Assert.True(existing.IsVisible);
+                Assert.False(existingCompletion.IsCompleted);
+                Assert.False(existing.IsAccepted);
+                Assert.Equal("失わない編集中の本文", existing.EditorContent);
+            }
+            finally
+            {
+                added.Close();
+                existing.Close();
+                owner.Close();
+            }
+        });
+    }
+
     [Fact]
     public void SuppressedDuplicateEditorIsClosedWithoutChangingExistingNote()
     {

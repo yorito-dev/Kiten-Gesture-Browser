@@ -17,6 +17,15 @@
             <Setter Property="Cursor" Value="Hand" />
         </Style>
 
+        <Style x:Key="DownloadActionButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource ToolbarButtonStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="AddressInformationButtonStyle" TargetType="{x:Type Button}">
             <Setter Property="Width" Value="32" />
             <Setter Property="Height" Value="28" />
@@ -60,6 +69,196 @@
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
+
+        <Style x:Key="YouTubeMiniPlayerLoadedPlaybackButtonStyle" TargetType="Button" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+            <Setter Property="IsEnabled" Value="{Binding CanControlPlayback}" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding CanControlPlayback}" Value="False">
+                    <Setter Property="ToolTip" Value="読込後に操作できます" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="YouTubeMiniPlayerGlobalActionStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+            <Setter Property="Height" Value="Auto" />
+            <Setter Property="MinHeight" Value="48" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#3A404D" />
+            <Setter Property="Foreground" Value="#F3F4F6" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="ActionBorder" Padding="{TemplateBinding Padding}" CornerRadius="3" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ActionBorder" Property="Background" Value="#17323B" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ActionBorder" Property="BorderBrush" Value="#22D3EE" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ActionBorder" Property="Background" Value="#22606B" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="YouTubeMiniPlayerPrimaryButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+            <Setter Property="Background" Value="#17323B" />
+            <Setter Property="BorderBrush" Value="#22D3EE" />
+        </Style>
+
+        <Style x:Key="YouTubeMiniPlayerArrangeButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+            <Setter Property="Height" Value="60" />
+        </Style>
+
+        <Style x:Key="YouTubeMiniPlayerPlaybackButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="#163A2A" />
+            <Setter Property="BorderBrush" Value="#4ADE80" />
+            <Setter Property="Foreground" Value="#DCFCE7" />
+            <Setter Property="ToolTip" Value="クリックで再生" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="PlaybackBorder" CornerRadius="2" Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PlaybackBorder" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="PlaybackBorder" Property="Opacity" Value="0.65" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="PlaybackBorder" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding PrimaryPlaybackButtonText}" Value="一時停止">
+                    <Setter Property="Background" Value="#422B12" />
+                    <Setter Property="BorderBrush" Value="#F59E0B" />
+                    <Setter Property="Foreground" Value="#FDE68A" />
+                    <Setter Property="ToolTip" Value="再生中：クリックで一時停止" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding PrimaryPlaybackButtonText}" Value="読込">
+                    <Setter Property="Background" Value="#283140" />
+                    <Setter Property="BorderBrush" Value="#94A3B8" />
+                    <Setter Property="Foreground" Value="#E2E8F0" />
+                    <Setter Property="ToolTip" Value="動画を読み込んで再生" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DrawingImage x:Key="YouTubeMiniPlayerArrangeGridImage">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#242F3D" Geometry="M1,1 L34,1 34,15 1,15 Z M38,1 L71,1 71,15 38,15 Z M1,19 L34,19 34,33 1,33 Z M38,19 L71,19 71,33 38,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#AEB6C4" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+
+        <DrawingImage x:Key="YouTubeMiniPlayerArrangeHorizontalImage">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#242F3D" Geometry="M1,8 L21,8 21,26 1,26 Z M26,8 L46,8 46,26 26,26 Z M51,8 L71,8 71,26 51,26 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#AEB6C4" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+
+        <DrawingImage x:Key="YouTubeMiniPlayerArrangeVerticalImage">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#242F3D" Geometry="M15,1 L57,1 57,9 15,9 Z M15,13 L57,13 57,21 15,21 Z M15,25 L57,25 57,33 15,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#AEB6C4" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+
+        <DrawingImage x:Key="YouTubeMiniPlayerArrangeMonitorImage">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#242F3D" Geometry="M1,1 L21,1 21,15 1,15 Z M26,1 L46,1 46,15 26,15 Z M51,1 L71,1 71,15 51,15 Z M1,19 L21,19 21,33 1,33 Z M26,19 L46,19 46,33 26,33 Z M51,19 L71,19 71,33 51,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#AEB6C4" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+
+        <DrawingImage x:Key="YouTubeMiniPlayerArrangeNormalAndShortsImage">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#242F3D" Geometry="M1,1 L42,1 42,15 1,15 Z M1,19 L42,19 42,33 1,33 Z M47,1 L57,1 57,33 47,33 Z M61,1 L71,1 71,33 61,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#AEB6C4" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+
+        <DrawingImage x:Key="YouTubeMiniPlayerArrangeFocusImage">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#242F3D" Geometry="M59,1 L71,1 71,9 59,9 Z M59,13 L71,13 71,21 59,21 Z M59,25 L71,25 71,33 59,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#AEB6C4" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#17323B" Geometry="M1,1 L55,1 55,33 1,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#22D3EE" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+
+        <DrawingImage x:Key="YouTubeMiniPlayerArrangeChatImage">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#242F3D" Geometry="M1,1 L52,1 52,33 1,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#AEB6C4" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#3A3020" Geometry="M57,1 L71,1 71,33 57,33 Z">
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#FBBF24" Thickness="1.5" />
+                        </GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
 
         <Style x:Key="ToolbarNavigationButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource ToolbarButtonStyle}">
             <Setter Property="Background" Value="Transparent" />
@@ -137,6 +336,9 @@
                     <Setter TargetName="MenuChevron" Property="Visibility" Value="Visible" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding}" Value="ツール">
+                    <Setter TargetName="MenuChevron" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding}" Value="マウス操作">
                     <Setter TargetName="MenuChevron" Property="Visibility" Value="Visible" />
                 </DataTrigger>
             </DataTemplate.Triggers>
@@ -1156,6 +1358,8 @@
                             <Border Padding="9,7" Background="#10151D" BorderBrush="#303847" BorderThickness="1" CornerRadius="3">
                                 <TextBlock x:Name="SiteInformationPermissionText" Foreground="#B8C0CC" FontSize="11" LineHeight="17" TextWrapping="Wrap" />
                             </Border>
+                            <TextBlock x:Name="SiteInformationAdBlockingText" Foreground="#B8C0CC" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,5" />
+                            <Button x:Name="SiteInformationAdBlockingButton" Height="28" Width="Auto" MinWidth="174" HorizontalAlignment="Left" Padding="10,0" Click="SiteInformationAdBlockingButton_Click" ToolTip="変更後は必要に応じてページを再読み込みしてください。" Style="{StaticResource ToolbarButtonStyle}" />
                             <DockPanel Margin="0,12,0,0">
                                 <Button x:Name="SiteInformationManageButton" DockPanel.Dock="Right" MinWidth="104" Height="28" Margin="6,0,0,0" Content="権限を管理" Click="OpenSitePrivacyFromInformationButton_Click" Style="{StaticResource ToolbarButtonStyle}" />
                                 <Button DockPanel.Dock="Right" MinWidth="84" Height="28" Content="URLをコピー" Click="CopySiteInformationUrlButton_Click" Style="{StaticResource ToolbarButtonStyle}" />
@@ -1183,7 +1387,14 @@
                 <Button x:Name="BookmarkListButton" Tag="{StaticResource ToolbarBookmarkIcon}" Grid.Column="9" Width="Auto" Height="30" Margin="0,0,6,0" Content="栞" Click="BookmarkListButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="ブックマーク一覧" Visibility="Collapsed" />
                 <Button x:Name="WorkspaceOSButton" Tag="{StaticResource ToolbarGridIcon}" Grid.Column="10" Width="Auto" Height="30" Margin="0,0,6,0" Content="WS" Click="WorkspaceOSButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="Workspace OS" Visibility="Collapsed" />
 
-                <Button x:Name="GestureSettingsButton" Tag="{StaticResource ToolbarGestureIcon}" Grid.Column="15" Width="Auto" Height="30" Margin="0,0,6,0" Content="ジェス" Click="GestureSettingsButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="マウスジェスチャー設定" Visibility="Collapsed" />
+                <Button x:Name="GestureSettingsButton" Tag="{StaticResource ToolbarGestureIcon}" Grid.Column="15" Width="Auto" Height="30" Margin="0,0,6,0" Content="マウス操作" Click="MouseOperationsButton_Click" PreviewMouseLeftButtonDown="ToolbarMenuButton_PreviewMouseLeftButtonDown" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="右ドラッグとスーパードラッグの設定" Visibility="Collapsed">
+                    <Button.ContextMenu>
+                        <ContextMenu Mouse.PreviewMouseDownOutsideCapturedElement="ToolbarContextMenu_MouseDownOutsideCapturedElement">
+                            <MenuItem Header="マウスジェスチャー設定" ToolTip="右ボタンのマウスジェスチャーを設定" Click="GestureSettingsButton_Click" />
+                            <MenuItem Header="スーパードラッグ設定" ToolTip="テキスト・リンク・画像の左ドラッグを設定" Click="SuperDragSettingsMenuItem_Click" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
                 <Button x:Name="SettingsButton" Tag="{StaticResource ToolbarSettingsIcon}" Grid.Column="16" Width="Auto" Height="30" Margin="0,0,6,0" Content="設定" Click="SettingsButton_Click" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="設定" Visibility="Collapsed" />
                 <Button x:Name="ToolsButton" Tag="{StaticResource ToolbarToolsIcon}" Grid.Column="17" Width="Auto" Height="30" Margin="0,0,6,0" Content="ツール" Click="ToolsButton_Click" PreviewMouseLeftButtonDown="ToolbarMenuButton_PreviewMouseLeftButtonDown" Style="{StaticResource ToolbarLabeledActionButtonStyle}" ToolTip="拡張機能、ジェスチャー、設定">
                     <Button.ContextMenu>
@@ -1213,6 +1424,7 @@
 
                             <Separator />
                             <MenuItem Header="マウスジェスチャー設定" Click="GestureSettingsButton_Click" />
+                            <MenuItem Header="スーパードラッグ設定" Click="SuperDragSettingsMenuItem_Click" />
                             <MenuItem Header="設定" Click="SettingsButton_Click" />
                         </ContextMenu>
                     </Button.ContextMenu>
@@ -1251,48 +1463,422 @@
                         </StackPanel>
                     </Border>
                 </Popup>
-                <Popup x:Name="YouTubeMiniPlayerListPopup" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerListButton}" Placement="Bottom" HorizontalOffset="-696" VerticalOffset="4" StaysOpen="True" AllowsTransparency="False" Opened="YouTubeMiniPlayerListPopup_Opened" Closed="YouTubeMiniPlayerListPopup_Closed" PopupAnimation="Fade">
-                    <Border x:Name="YouTubeMiniPlayerListPopupRoot" Width="780" MaxHeight="680" AllowDrop="True" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4" SizeChanged="YouTubeMiniPlayerListPopupRoot_SizeChanged" PreviewMouseLeftButtonDown="YouTubeMiniPlayerListPopupContent_PreviewMouseLeftButtonDown" DragOver="YouTubeMiniPlayerLocalVideo_DragOver" Drop="YouTubeMiniPlayerLocalVideo_Drop">
+                <Decorator x:Name="YouTubeMiniPlayerListContentStorage" Visibility="Collapsed">
+                    <Border x:Name="YouTubeMiniPlayerListPopupRoot" AllowDrop="True" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4" SizeChanged="YouTubeMiniPlayerListPopupRoot_SizeChanged" PreviewMouseLeftButtonDown="YouTubeMiniPlayerListPopupContent_PreviewMouseLeftButtonDown" DragOver="YouTubeMiniPlayerLocalVideo_DragOver" Drop="YouTubeMiniPlayerLocalVideo_Drop">
                         <DockPanel>
-                            <Grid DockPanel.Dock="Top" Margin="10,8,10,8">
+                <Popup x:Name="YouTubeMiniPlayerItemMorePopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="True" Closed="YouTubeMiniPlayerItemMorePopup_Closed" PopupAnimation="Fade">
+                    <Border Width="280" Padding="6" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
+                        <StackPanel>
+                            <TextBlock Foreground="#F3F4F6" FontSize="13" FontWeight="SemiBold" Text="この動画の操作" />
+                            <TextBlock Margin="0,3,0,7" Foreground="#AEB6C4" FontSize="12" Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                            <TextBlock Margin="2,0,2,3" Foreground="#9CA3AF" FontSize="11" Text="再生の設定" />
+                            <UniformGrid Columns="2">
+                                <Button Height="30" Margin="2" Content="{Binding LoopButtonText}" Click="YouTubeMiniPlayerItemLoopButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button Height="30" Margin="2" Content="{Binding AbRepeatButtonText}" Tag="YouTubeMiniPlayerAbRepeatPopupTrigger" Click="YouTubeMiniPlayerItemAbRepeatMenuButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                            </UniformGrid>
+                            <Border Height="1" Margin="2,7" Background="#343B48" />
+                            <TextBlock Margin="2,0,2,3" Foreground="#9CA3AF" FontSize="11" Text="ウィンドウ" />
+                            <UniformGrid Columns="3">
+                                <Button Height="30" Margin="2" Content="{Binding SourceButtonText}" Click="YouTubeMiniPlayerItemSourceTabButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button Height="30" Margin="2" Content="{Binding MinimizeButtonText}" Click="YouTubeMiniPlayerItemMinimizeButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button Height="30" Margin="2" Content="{Binding TopmostButtonText}" Click="YouTubeMiniPlayerItemTopmostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                            </UniformGrid>
+                            <UniformGrid Columns="2">
+                                <Button x:Name="YouTubeMiniPlayerItemBringToFrontButton" Height="30" Margin="2" Content="前面に表示" Click="YouTubeMiniPlayerItemBringToFrontButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button x:Name="YouTubeMiniPlayerItemReloadMenuButton" Height="30" Margin="2" Content="再読み込み" Click="YouTubeMiniPlayerItemReloadMenuButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                            </UniformGrid>
+                            <Button x:Name="YouTubeMiniPlayerItemChatButton" Height="30" Margin="2,4,2,0" Content="{Binding ChatButtonText}" IsEnabled="{Binding CanToggleChat}" ToolTip="{Binding ChatToolTip}" ToolTipService.ShowOnDisabled="True" Click="YouTubeMiniPlayerItemChatButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                            <Border Height="1" Margin="2,7" Background="#343B48" />
+                            <TextBlock Margin="2,0,2,3" Foreground="#9CA3AF" FontSize="11" Text="ほかのプレイヤーとの連動" />
+                            <UniformGrid Columns="2">
+                                <Button Height="30" Margin="2" Content="ソロ音声" Click="YouTubeMiniPlayerItemSoloAudioButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="このプレイヤーだけ音声を出す" />
+                                <Button Height="30" Margin="2" Content="ソロ再生" Click="YouTubeMiniPlayerItemSoloPlaybackButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="このプレイヤーだけ再生する" />
+                            </UniformGrid>
+                            <UniformGrid Columns="2" Margin="2,3,2,2">
+                                <TextBlock Foreground="#9CA3AF" FontSize="10" Text="この動画だけ音声" HorizontalAlignment="Center" />
+                                <TextBlock Foreground="#9CA3AF" FontSize="10" Text="この動画だけ再生" HorizontalAlignment="Center" />
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+                <Popup x:Name="YouTubeMiniPlayerSpeedPopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="False" Closed="YouTubeMiniPlayerSpeedPopup_Closed">
+                    <Border Width="300" Padding="6" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
+                        <StackPanel>
+                            <DockPanel Margin="2,2,2,5">
+                                <TextBlock DockPanel.Dock="Right" Foreground="#22D3EE" FontSize="13" FontWeight="SemiBold" Text="{Binding PlaybackRateText, StringFormat=現在 {0}}" />
+                                <TextBlock Foreground="#F3F4F6" FontSize="13" FontWeight="SemiBold" Text="再生速度" />
+                            </DockPanel>
+                            <TextBlock Margin="2,0,2,8" Foreground="#AEB6C4" FontSize="12" Text="{Binding Title, StringFormat=対象：{0}}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                            <UniformGrid Columns="4">
+                                <Button Width="68" Height="30" Margin="2" Content="0.25x" Tag="0.25" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="0.25">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Width="68" Height="30" Margin="2" Content="0.5x" Tag="0.5" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="0.5">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Width="68" Height="30" Margin="2" Content="0.75x" Tag="0.75" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="0.75">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Width="68" Height="30" Margin="2" Content="1x" Tag="1" ToolTip="標準速度" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="1">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Width="68" Height="30" Margin="2" Content="1.25x" Tag="1.25" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="1.25">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Width="68" Height="30" Margin="2" Content="1.5x" Tag="1.5" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="1.5">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Width="68" Height="30" Margin="2" Content="1.75x" Tag="1.75" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="1.75">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Width="68" Height="30" Margin="2" Content="2x" Tag="2" Click="YouTubeMiniPlayerItemSpeedButton_Click">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PlaybackRate}" Value="2">
+                                                    <Setter Property="Background" Value="#17323B" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="BorderThickness" Value="2" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </UniformGrid>
+                            <TextBlock Margin="2,7,2,2" Foreground="#9CA3AF" FontSize="11" Text="速度を選ぶと、この動画に反映" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
+                <Popup x:Name="YouTubeMiniPlayerAbRepeatPopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="False" Closed="YouTubeMiniPlayerAbRepeatPopup_Closed">
+                    <Border Width="380" Padding="10" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
+                        <StackPanel>
+                            <DockPanel Margin="0,0,0,6">
+                                <TextBlock DockPanel.Dock="Right" Foreground="#22D3EE" FontSize="12" Text="{Binding AbRepeatStatusText}" />
+                                <TextBlock Foreground="#F3F4F6" FontSize="13" FontWeight="SemiBold" Text="A-Bリピート" />
+                            </DockPanel>
+                            <TextBlock x:Name="YouTubeMiniPlayerAbRepeatTitleText" Foreground="#F3F4F6" FontSize="12" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Margin="0,4,0,8" Foreground="#AEB6C4" FontSize="12" Text="{Binding TimeText}" />
+                            <UniformGrid Columns="2">
+                                <StackPanel>
+                                    <TextBlock Foreground="#9CA3AF" FontSize="11" Text="A 開始点" HorizontalAlignment="Center" />
+                                    <TextBlock Foreground="#F3F4F6" FontSize="20" FontWeight="SemiBold" Text="{Binding AbRepeatStartText}" HorizontalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Foreground="#9CA3AF" FontSize="11" Text="B 終了点" HorizontalAlignment="Center" />
+                                    <TextBlock Foreground="#F3F4F6" FontSize="20" FontWeight="SemiBold" Text="{Binding AbRepeatEndText}" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </UniformGrid>
+                            <TextBlock x:Name="YouTubeMiniPlayerAbRepeatRangeText" Margin="0,4,0,6" Foreground="#AEB6C4" FontSize="12" Text="{Binding AbRepeatDurationText}" />
+                            <StackPanel Visibility="{Binding AbRepeatTimelineVisibility}" IsHitTestVisible="False" Margin="0,2,0,8">
+                                <Viewbox Stretch="Fill" Height="38">
+                                    <Canvas Width="360" Height="38">
+                                        <Border Canvas.Top="22" Width="352" Height="6" CornerRadius="2" Background="#343B48" />
+                                        <Border Canvas.Left="{Binding AbRepeatStartOffset}" Canvas.Top="22" Width="{Binding AbRepeatRangeWidth}" Height="6" Background="#22606B" />
+                                        <StackPanel Canvas.Left="{Binding AbRepeatStartOffset}">
+                                            <TextBlock Foreground="#22D3EE" FontSize="11" Text="A" />
+                                            <Border Width="2" Height="20" Background="#22D3EE" HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                        <StackPanel Canvas.Left="{Binding AbRepeatEndOffset}">
+                                            <TextBlock Foreground="#22D3EE" FontSize="11" Text="B" />
+                                            <Border Width="2" Height="20" Background="#22D3EE" HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                        <Border Canvas.Left="{Binding AbRepeatPositionOffset}" Canvas.Top="17" Width="1" Height="16" Background="#F3F4F6" Visibility="{Binding AbRepeatPositionVisibility}" />
+                                    </Canvas>
+                                </Viewbox>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Foreground="#9CA3AF" FontSize="11" Text="{Binding AbRepeatTimelineDurationText}" />
+                                    <TextBlock Foreground="#9CA3AF" FontSize="11" Text="0:00" />
+                                </DockPanel>
+                            </StackPanel>
+                            <UniformGrid Columns="4">
+                                <Button x:Name="YouTubeMiniPlayerAbRepeatSetStartButton" Height="30" Margin="2" Content="A点設定" Tag="SetStart" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button x:Name="YouTubeMiniPlayerAbRepeatSetEndButton" Height="30" Margin="2" Content="B点設定" Tag="SetEnd" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button x:Name="YouTubeMiniPlayerAbRepeatToggleButton" Height="30" Margin="2" Content="開始" Tag="Toggle" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button x:Name="YouTubeMiniPlayerAbRepeatClearButton" Height="30" Margin="2" Content="消去" Tag="Clear" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                            </UniformGrid>
+                            <TextBlock Margin="2,6,2,0" Foreground="#9CA3AF" FontSize="11" Text="A点・B点は現在の再生位置で設定" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
+                <Popup x:Name="YouTubeMiniPlayerVolumePopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="False" Closed="YouTubeMiniPlayerVolumePopup_Closed">
+                    <Border Width="280" Padding="12,10" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
+                        <StackPanel>
+                            <TextBlock x:Name="YouTubeMiniPlayerVolumeTitleText" Foreground="#F3F4F6" FontSize="12" TextTrimming="CharacterEllipsis" />
+                            <Button x:Name="YouTubeMiniPlayerVolumeMuteButton" Margin="0,8,0,0" Content="{Binding MuteButtonText}" ToolTip="{Binding MuteButtonText}" Click="YouTubeMiniPlayerItemMuteButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                            <Grid Margin="0,7,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="48" />
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="YouTubeMiniPlayerVolumeSlider" Height="26" Minimum="0" Maximum="100" TickFrequency="5" PreviewMouseWheel="YouTubeMiniPlayerVolumeSlider_PreviewMouseWheel" ValueChanged="YouTubeMiniPlayerVolumeSlider_ValueChanged" />
+                                <TextBlock x:Name="YouTubeMiniPlayerVolumeValueText" Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#AEB6C4" FontSize="12" TextAlignment="Right" />
+                            </Grid>
+                            <Border Margin="0,8,0,7" BorderBrush="#343B48" BorderThickness="0,1,0,0" />
+                            <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Grid>
-                                    <Thumb x:Name="YouTubeMiniPlayerListPopupDragHandle" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Cursor="SizeAll" DragStarted="YouTubeMiniPlayerListPopupDragHandle_DragStarted" DragDelta="YouTubeMiniPlayerListPopupDragHandle_DragDelta" DragCompleted="YouTubeMiniPlayerListPopupDragHandle_DragCompleted" Focusable="False" MouseDoubleClick="YouTubeMiniPlayerListPopupDragHandle_MouseDoubleClick" ToolTip="ドラッグして移動（他のディスプレイへ移動可能）。ダブルクリックで初期位置に戻す">
-                                        <Thumb.Template>
-                                            <ControlTemplate TargetType="{x:Type Thumb}">
-                                                <Border Background="Transparent" />
-                                            </ControlTemplate>
-                                        </Thumb.Template>
-                                    </Thumb>
-                                    <TextBlock x:Name="YouTubeMiniPlayerListSummaryText" Margin="0,0,6,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="#F3F4F6" FontSize="12" FontWeight="SemiBold" Text="YTミニプレイヤー  0件｜再生0｜音声0  ⋮⋮" TextTrimming="CharacterEllipsis" />
-                                </Grid>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <Button x:Name="YouTubeMiniPlayerPlayPauseAllButton" Width="82" Height="30" Margin="4,0,0,0" Content="全一時停止" Click="YouTubeMiniPlayerPlayPauseAllButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                    <Button x:Name="YouTubeMiniPlayerMuteAllToggleButton" Width="104" Height="30" Margin="4,0,0,0" Content="全ミュート" Click="YouTubeMiniPlayerMuteAllToggleButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                    <Button x:Name="YouTubeMiniPlayerArrangeMenuButton" Width="72" Height="30" Margin="4,0,0,0" Content="整列 ▼" Click="YouTubeMiniPlayerArrangeMenuButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="配置方法を選択" />
-                                    <Button Width="74" Height="30" Margin="4,0,0,0" Content="動画追加" Click="YouTubeMiniPlayerOpenLocalVideoButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="ローカル動画ファイルをミニプレイヤーで再生" />
-                                    <Button x:Name="YouTubeMiniPlayerRestoreClosedButton" Width="124" Height="30" Margin="4,0,0,0" Content="閉じた動画を復元" Click="YouTubeMiniPlayerRestoreClosedButton_Click" IsEnabled="False" Visibility="Collapsed" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="直前に閉じたミニプレイヤーを復元" />
-                                    <Button x:Name="YouTubeMiniPlayerGlobalActionsButton" Width="72" Height="30" Margin="4,0,0,0" Content="その他 ▼" Click="YouTubeMiniPlayerGlobalActionsButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                </StackPanel>
+                                <TextBlock Foreground="#F3F4F6" FontSize="12" FontWeight="SemiBold" Text="音量ブースト" />
+                                <TextBlock x:Name="YouTubeMiniPlayerAudioBoostValueText" Grid.Column="1" Foreground="#F59E0B" FontSize="12" FontWeight="SemiBold" Text="OFF" />
                             </Grid>
-                            <Popup x:Name="YouTubeMiniPlayerArrangePopup" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerListPopupRoot}" Placement="Left" HorizontalOffset="-12" VerticalOffset="0" StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
+                            <UniformGrid x:Name="YouTubeMiniPlayerAudioBoostPanel" Margin="0,6,0,0" Columns="4">
+                                <Button x:Name="YouTubeMiniPlayerAudioBoostOffButton" Margin="2" Content="OFF" Tag="0" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button x:Name="YouTubeMiniPlayerAudioBoost3Button" Margin="2" Content="+3 dB" Tag="3" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button x:Name="YouTubeMiniPlayerAudioBoost6Button" Margin="2" Content="+6 dB" Tag="6" ToolTip="推奨" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                <Button x:Name="YouTubeMiniPlayerAudioBoost9Button" Margin="2" Content="+9 dB" Tag="9" ToolTip="音割れに注意" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                            </UniformGrid>
+                            <TextBlock x:Name="YouTubeMiniPlayerAudioBoostHintText" Margin="2,5,2,0" Foreground="#AEB6C4" FontSize="10" Text="+6 dB推奨。+9 dBは音割れに注意" />
+                        </StackPanel>
+                    </Border>
+                </Popup>
+                            <Grid x:Name="YouTubeMiniPlayerListHeader" DockPanel.Dock="Top" Margin="10,8,10,8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="30" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border x:Name="YouTubeMiniPlayerListWindowDragArea" Background="Transparent" IsHitTestVisible="False" />
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True" IsHitTestVisible="False">
+                                        <TextBlock Margin="0,0,9,0" Foreground="#9CA3AF" FontSize="15" Text="⋮⋮" />
+                                        <TextBlock x:Name="YouTubeMiniPlayerListSummaryText" Foreground="#F3F4F6" FontSize="14" FontWeight="SemiBold" Text="YTミニプレイヤー  0件｜再生0｜音声0" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
+                                        <Button x:Name="YouTubeMiniPlayerListTopmostButton" Margin="0,0,4,0" shell:WindowChrome.IsHitTestVisibleInChrome="True" Click="YouTubeMiniPlayerListTopmostButton_Click">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                                    <Setter Property="Content" Value="最前面" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                    <Setter Property="BorderBrush" Value="#22D3EE" />
+                                                    <Setter Property="Foreground" Value="#F3F4F6" />
+                                                    <Setter Property="ToolTip" Value="常に最前面：有効（クリックで無効にします）" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="{x:Type Button}">
+                                                                <Border x:Name="TopmostBorder" CornerRadius="2" Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" SnapsToDevicePixels="True">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="TopmostBorder" Property="Opacity" Value="0.9" />
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsPressed" Value="True">
+                                                                        <Setter TargetName="TopmostBorder" Property="Opacity" Value="0.8" />
+                                                                    </Trigger>
+                                                                    <Trigger Property="IsEnabled" Value="False">
+                                                                        <Setter TargetName="TopmostBorder" Property="Opacity" Value="0.45" />
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Topmost}" Value="False">
+                                                            <Setter Property="BorderBrush" Value="#343842" />
+                                                            <Setter Property="Foreground" Value="#9CA3AF" />
+                                                            <Setter Property="ToolTip" Value="常に最前面：無効（クリックで有効にします）" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                        <Button x:Name="YouTubeMiniPlayerListMinimizeButton" Width="30" Margin="0" Padding="0" Content="−" FontSize="18" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" shell:WindowChrome.IsHitTestVisibleInChrome="True" Click="YouTubeMiniPlayerListMinimizeButton_Click" ToolTip="一覧を最小化" />
+                                        <Button x:Name="YouTubeMiniPlayerListCloseButton" Width="30" Margin="4,0,0,0" Padding="0" Content="×" FontSize="18" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" shell:WindowChrome.IsHitTestVisibleInChrome="True" Click="YouTubeMiniPlayerListCloseButton_Click" AutomationProperties.Name="一覧を閉じる" ToolTip="一覧を閉じる（動画の再生は続けます）" />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid x:Name="YouTubeMiniPlayerListToolbar" Grid.Row="1" Margin="0,5,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition>
+                                            <ColumnDefinition.Style>
+                                                <Style TargetType="{x:Type ColumnDefinition}">
+                                                    <Setter Property="Width" Value="*" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Visibility, ElementName=YouTubeMiniPlayerRestoreClosedButton}" Value="Collapsed">
+                                                            <Setter Property="Width" Value="0" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ColumnDefinition.Style>
+                                        </ColumnDefinition>
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="YouTubeMiniPlayerGlobalActionsButton" Height="30" Margin="2,0" Content="まとめて操作 ▼" Click="YouTubeMiniPlayerGlobalActionsButton_Click" Style="{StaticResource YouTubeMiniPlayerPrimaryButtonStyle}" ToolTip="チェックした行があればその行、なければすべてのプレイヤーの再生・音声・ウィンドウ操作" />
+                                    <Button x:Name="YouTubeMiniPlayerArrangeMenuButton" Grid.Column="1" Height="30" Margin="2,0" Content="整列 ▼" Click="YouTubeMiniPlayerArrangeMenuButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="配置方法を選択" />
+                                    <Button Grid.Column="2" Height="30" Margin="2,0" Content="動画追加" Click="YouTubeMiniPlayerOpenLocalVideoButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="ローカル動画ファイルをミニプレイヤーで再生" />
+                                    <Button x:Name="YouTubeMiniPlayerRestoreClosedButton" Grid.Column="3" Height="30" Margin="2,0" Padding="4,0,30,0" Content="閉じた動画を復元" Click="YouTubeMiniPlayerRestoreClosedButton_Click" IsEnabled="False" Visibility="Collapsed" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="直前に閉じたミニプレイヤーを復元" />
+                                    <Button x:Name="YouTubeMiniPlayerClosedHistoryButton" Grid.Column="3" Width="28" Height="30" Margin="0,0,2,0" Padding="0" HorizontalAlignment="Right" Content="▼" FontSize="11" Visibility="{Binding Visibility, ElementName=YouTubeMiniPlayerRestoreClosedButton}" IsEnabled="{Binding IsEnabled, ElementName=YouTubeMiniPlayerRestoreClosedButton}" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" Click="YouTubeMiniPlayerClosedHistoryButton_Click" AutomationProperties.Name="閉じた動画を選んで復元" ToolTip="閉じた動画の履歴から選んで復元" />
+                                </Grid>
+                            </Grid>
+                            <Popup x:Name="YouTubeMiniPlayerClosedHistoryPopup" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerRestoreClosedButton}" Placement="Bottom" VerticalOffset="4" StaysOpen="True" AllowsTransparency="True" Opened="YouTubeMiniPlayerClosedHistoryPopup_Opened" Closed="YouTubeMiniPlayerClosedHistoryPopup_Closed">
+                                <Border Width="360" MaxHeight="420" Padding="8" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4" KeyboardNavigation.TabNavigation="Cycle" KeyboardNavigation.DirectionalNavigation="Contained" PreviewKeyDown="YouTubeMiniPlayerClosedHistoryPopup_PreviewKeyDown">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Top" Margin="4,2,4,8" Text="閉じた動画から復元" FontSize="13" FontWeight="SemiBold" Foreground="#F3F4F6" />
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <ItemsControl x:Name="YouTubeMiniPlayerClosedHistoryList">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Margin="0,0,0,2" Padding="6" Height="Auto" MinHeight="62" HorizontalContentAlignment="Stretch" Style="{StaticResource YouTubeMiniPlayerGlobalActionStyle}" Click="YouTubeMiniPlayerClosedHistoryItem_Click" ToolTip="{Binding Title}" AutomationProperties.Name="{Binding Title}">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="76" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <Border Width="68" Height="44" HorizontalAlignment="Left" Background="#242830" ClipToBounds="True">
+                                                                    <Grid>
+                                                                        <TextBlock Text="{Binding IconText}" Foreground="#9CA3AF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                        <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+                                                                    </Grid>
+                                                                </Border>
+                                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding Title}" TextWrapping="Wrap" MaxHeight="36" FontSize="13" LineHeight="18" LineStackingStrategy="BlockLineHeight" Foreground="#F3F4F6" />
+                                                                    <TextBlock Margin="0,3,0,0" Text="{Binding ClosedHistoryPositionText}" FontSize="11" Foreground="#9CA3AF" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </DockPanel>
+                                </Border>
+                            </Popup>
+                            <Popup x:Name="YouTubeMiniPlayerArrangePopup" Closed="YouTubeMiniPlayerArrangePopup_Closed" PreviewKeyDown="YouTubeMiniPlayerArrangement_KeyDown" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerListPopupRoot}" Placement="Left" HorizontalOffset="-12" VerticalOffset="0" StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
                                 <Border Width="420" Padding="10" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
                                     <StackPanel>
+                                        <TextBlock x:Name="YouTubeMiniPlayerArrangeTargetText" Text="対象：全0件" Foreground="#67E8F9" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                        <TextBlock Foreground="#9CA3AF" FontSize="12" Text="整列先のディスプレイ" />
+                                        <ComboBox x:Name="YouTubeMiniPlayerArrangeDisplayComboBox" Height="30" Margin="2,4,2,8" DisplayMemberPath="DisplayName" SelectedValuePath="DeviceName" SelectionChanged="YouTubeMiniPlayerArrangeDisplayComboBox_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
                                         <TextBlock Foreground="#9CA3AF" FontSize="12" Text="基本配置" />
                                         <UniformGrid Margin="0,4,0,0" Columns="3">
-                                            <Button Height="30" Margin="2" Content="グリッド" Click="YouTubeMiniPlayerArrangeGridButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                            <Button x:Name="YouTubeMiniPlayerArrangeHorizontalButton" Height="30" Margin="2" Content="横一列" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeHorizontalButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="横一列の配置位置を選択" />
-                                            <Button x:Name="YouTubeMiniPlayerArrangeVerticalButton" Height="30" Margin="2" Content="縦一列" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeVerticalButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="縦一列の配置位置を選択" />
+                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeGridButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}">
+                                                <StackPanel>
+                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeGridImage}" />
+                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="グリッド" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button x:Name="YouTubeMiniPlayerArrangeHorizontalButton" Height="60" Margin="2" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeHorizontalButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="横一列の配置位置を選択">
+                                                <StackPanel>
+                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeHorizontalImage}" />
+                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="横一列" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button x:Name="YouTubeMiniPlayerArrangeVerticalButton" Height="60" Margin="2" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeVerticalButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="縦一列の配置位置を選択">
+                                                <StackPanel>
+                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeVerticalImage}" />
+                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="縦一列" />
+                                                </StackPanel>
+                                            </Button>
                                         </UniformGrid>
                                         <TextBlock Margin="0,7,0,0" Foreground="#9CA3AF" FontSize="12" Text="用途別" />
                                         <UniformGrid Margin="0,4,0,0" Columns="2">
-                                            <Button Height="30" Margin="2" Content="フォーカス" Click="YouTubeMiniPlayerArrangeFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="選択した動画を大きくし、残りを右側または下側へ配置。複数選択にも対応" />
-                                            <Button Height="30" Margin="2" Content="監視" Click="YouTubeMiniPlayerArrangeMonitorButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="通常動画とShortsを分けず均等なセルへ配置" />
-                                            <Button Height="30" Margin="2" Content="通常＋Shorts" Click="YouTubeMiniPlayerArrangeNormalAndShortsButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="横長動画と縦長動画を別領域へ配置" />
-                                            <Button Height="30" Margin="2" Content="チャット付き" Click="YouTubeMiniPlayerArrangeChatButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="開いているチャットWindowを動画の右側へ吸着して配置" />
+                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="選択した動画を大きくし、残りを右側または下側へ配置。複数選択にも対応">
+                                                <StackPanel>
+                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeFocusImage}" />
+                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="フォーカス" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeMonitorButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="通常動画とShortsを分けず均等なセルへ配置">
+                                                <StackPanel>
+                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeMonitorImage}" />
+                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="監視" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeNormalAndShortsButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="横長動画と縦長動画を別領域へ配置">
+                                                <StackPanel>
+                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeNormalAndShortsImage}" />
+                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="通常＋Shorts" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeChatButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="開いているチャットWindowを動画の右側へ吸着して配置">
+                                                <StackPanel>
+                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeChatImage}" />
+                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="チャット付き" />
+                                                </StackPanel>
+                                            </Button>
                                         </UniformGrid>
                                         <Border Height="1" Margin="2,7,2,5" Background="#303744" />
                                         <Button Height="30" Margin="2" Content="ランダム配置＋再生位置" Click="YouTubeMiniPlayerArrangeRandomButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="配置と、読み込み済み動画の再生位置をランダムに変更" />
@@ -1301,12 +1887,131 @@
                                     </StackPanel>
                                 </Border>
                             </Popup>
-                            <Popup x:Name="YouTubeMiniPlayerGlobalActionsPopup" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerGlobalActionsButton}" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
-                                <Border Width="180" Padding="6" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
-                                    <StackPanel>
-                                        <Button x:Name="YouTubeMiniPlayerMinimizeRestoreAllButton" Height="30" Content="全最小" Click="YouTubeMiniPlayerMinimizeRestoreAllButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <Button Height="30" Margin="0,4,0,0" Content="全閉じ" Click="YouTubeMiniPlayerCloseAllButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="すべてのミニプレイヤーを閉じる" />
-                                    </StackPanel>
+                            <Popup x:Name="YouTubeMiniPlayerGlobalActionsPopup" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerListPopupRoot}" Placement="Left" HorizontalOffset="-12" VerticalOffset="0" StaysOpen="True" AllowsTransparency="True" Opened="YouTubeMiniPlayerGlobalActionsPopup_Opened" PopupAnimation="Fade">
+                                <Border x:Name="YouTubeMiniPlayerGlobalActionsRoot" Width="680" MaxHeight="500" Padding="10" Focusable="True" KeyboardNavigation.TabNavigation="Cycle" PreviewKeyDown="YouTubeMiniPlayerGlobalActionsPopup_PreviewKeyDown" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel>
+                                            <TextBlock FontSize="17" FontWeight="SemiBold" Foreground="#F3F4F6" Text="まとめて操作" />
+                                            <TextBlock Margin="0,3,0,7" FontSize="12" Foreground="#9CA3AF" TextWrapping="Wrap" Text="{Binding ScopeText}" />
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="18" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Margin="10,0,0,2" FontSize="13" FontWeight="SemiBold" Foreground="#AEB6C4" Text="再生" />
+                                        <Button x:Name="YouTubeMiniPlayerPlayPauseAllButton" Click="YouTubeMiniPlayerPlayPauseAllButton_Click" Style="{StaticResource YouTubeMiniPlayerGlobalActionStyle}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18" Text="" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding PlayActionText}" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="#AEB6C4" Text="読込済みの動画をまとめて再生" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" FontSize="13" Text="{Binding LoadedCountText}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Button>
+                                        <Button x:Name="YouTubeMiniPlayerPauseAllButton" Click="YouTubeMiniPlayerPauseAllButton_Click" Style="{StaticResource YouTubeMiniPlayerGlobalActionStyle}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18" Text="" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding PauseActionText}" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="#AEB6C4" Text="読込済みの動画をまとめて一時停止" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" FontSize="13" Text="{Binding LoadedCountText}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Button>
+                                        <Button x:Name="YouTubeMiniPlayerLiveEdgeAllButton" Click="YouTubeMiniPlayerLiveEdgeAllButton_Click" Style="{StaticResource YouTubeMiniPlayerGlobalActionStyle}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18" Text="" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding LiveActionText}" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="#AEB6C4" Text="配信中のライブを現在の配信位置へ" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" FontSize="13" Text="{Binding LiveCountText}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Button>
+                                                </StackPanel>
+                                                <Border Grid.Column="1" Width="1" Background="#3A404D" />
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Margin="10,0,0,2" FontSize="13" FontWeight="SemiBold" Foreground="#AEB6C4" Text="音声・ウィンドウ" />
+                                        <Button x:Name="YouTubeMiniPlayerMuteAllToggleButton" Click="YouTubeMiniPlayerMuteAllToggleButton_Click" Style="{StaticResource YouTubeMiniPlayerGlobalActionStyle}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18" Text="" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding MuteActionText}" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="#AEB6C4" Text="{Binding MuteDescription}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" FontSize="13" Text="{Binding TotalCountText}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Button>
+                                        <Button x:Name="YouTubeMiniPlayerMinimizeRestoreAllButton" Click="YouTubeMiniPlayerMinimizeRestoreAllButton_Click" Style="{StaticResource YouTubeMiniPlayerGlobalActionStyle}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18" Text="" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding MinimizeActionText}" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="#AEB6C4" Text="{Binding MinimizeDescription}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" FontSize="13" Text="{Binding TotalCountText}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Button>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Border Height="1" Margin="0,5" Background="#3A404D" />
+                                        <Button x:Name="YouTubeMiniPlayerCloseAllButton" Click="YouTubeMiniPlayerCloseAllButton_Click" Style="{StaticResource YouTubeMiniPlayerGlobalActionStyle}" Foreground="#FCA5A5">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="26" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="18" Text="" VerticalAlignment="Center" />
+                                                <StackPanel Grid.Column="1" Margin="6,0,8,0" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding CloseActionText}" TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,2,0,0" FontSize="11" Foreground="#AEB6C4" Text="対象のプレイヤーだけを閉じる" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" FontSize="13" Text="{Binding TotalCountText}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Button>
+                                            <Border Margin="0,10,0,0" Padding="6" BorderBrush="#3A404D" BorderThickness="1">
+                                                <StackPanel>
+                                                    <TextBlock Text="一時操作（解除で元に戻す）" Foreground="#67E8F9" FontWeight="SemiBold" />
+                                                    <TextBlock Text="チェックした動画を基準に、選択外の再生・音声も一時的に変更します" Foreground="#AEB6C4" FontSize="11" Margin="0,3,0,4" TextWrapping="Wrap" />
+                                                    <WrapPanel>
+                                            <Button x:Name="YouTubeMiniPlayerPlaySelectedOnlyButton" Width="106" Height="30" Margin="4,0,0,0" Content="選択だけ再生" Click="YouTubeMiniPlayerPlaySelectedOnlyButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                            <Button x:Name="YouTubeMiniPlayerPauseOutsideSelectionButton" Width="128" Height="30" Margin="4,0,0,0" Content="選択外一時停止" Click="YouTubeMiniPlayerPauseOutsideSelectionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                            <Button x:Name="YouTubeMiniPlayerMuteOutsideSelectionButton" Width="138" Height="30" Margin="4,0,0,0" Content="選択外ミュート" Click="YouTubeMiniPlayerMuteOutsideSelectionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                            <Button x:Name="YouTubeMiniPlayerRestoreAudioFocusButton" Width="106" Height="30" Margin="4,0,0,0" Content="一時操作を解除" Click="YouTubeMiniPlayerRestoreAudioFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </ScrollViewer>
                                 </Border>
                             </Popup>
                             <Popup x:Name="YouTubeMiniPlayerLinearPlacementPopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="True" Closed="YouTubeMiniPlayerLinearPlacementPopup_Closed" PopupAnimation="Fade">
@@ -1318,24 +2023,8 @@
                                     </StackPanel>
                                 </Border>
                             </Popup>
-                            <Border x:Name="YouTubeMiniPlayerArrangementPreviewBar" DockPanel.Dock="Top" Margin="10,0,10,8" Padding="8,6" Background="#151B24" BorderBrush="#22D3EE" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="YouTubeMiniPlayerArrangementPreviewText" VerticalAlignment="Center" Foreground="#E5E7EB" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                    <Button x:Name="YouTubeMiniPlayerArrangementPreviewEditButton" Grid.Column="1" Width="66" Height="30" Margin="8,0,0,0" Content="調整" ToolTip="予告中の動画枠を移動・四隅リサイズ" Click="YouTubeMiniPlayerArrangementPreviewEditButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                    <Button x:Name="YouTubeMiniPlayerArrangementPreviewResetButton" Grid.Column="2" Width="104" Height="30" Margin="4,0,0,0" Content="配置案に戻す" ToolTip="手動調整を破棄して最初の配置予告へ戻す" Click="YouTubeMiniPlayerArrangementPreviewResetButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                    <Button Grid.Column="3" Width="74" Height="30" Margin="4,0,0,0" Content="適用" Click="YouTubeMiniPlayerArrangementPreviewApplyButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                    <Button Grid.Column="4" Width="84" Height="30" Margin="4,0,0,0" Content="キャンセル" Click="YouTubeMiniPlayerArrangementPreviewCancelButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                </Grid>
-                            </Border>
-                            <Grid x:Name="YouTubeMiniPlayerAudioFocusHost" DockPanel.Dock="Top" Height="42" Margin="10,0,10,8">
-                                <Border x:Name="YouTubeMiniPlayerAudioFocusBar" Padding="6" Background="#171B22" BorderBrush="#303744" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
+                            <DockPanel x:Name="YouTubeMiniPlayerListBody">
+                                <Border x:Name="YouTubeMiniPlayerArrangementPreviewBar" DockPanel.Dock="Top" Margin="10,0,10,8" Padding="8,6" Background="#151B24" BorderBrush="#22D3EE" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1344,196 +2033,319 @@
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="YouTubeMiniPlayerAudioFocusSelectionText" VerticalAlignment="Center" Foreground="#D1D5DB" FontSize="12" Text="選択なし" />
-                                        <Button x:Name="YouTubeMiniPlayerPlaySelectedOnlyButton" Grid.Column="1" Width="106" Height="30" Margin="4,0,0,0" Content="選択だけ再生" Click="YouTubeMiniPlayerPlaySelectedOnlyButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <Button x:Name="YouTubeMiniPlayerPauseOutsideSelectionButton" Grid.Column="2" Width="98" Height="30" Margin="4,0,0,0" Content="選択外停止" Click="YouTubeMiniPlayerPauseOutsideSelectionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <Button x:Name="YouTubeMiniPlayerMuteOutsideSelectionButton" Grid.Column="3" Width="114" Height="30" Margin="4,0,0,0" Content="選択外ミュート" Click="YouTubeMiniPlayerMuteOutsideSelectionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <Button x:Name="YouTubeMiniPlayerRestoreAudioFocusButton" Grid.Column="4" Width="106" Height="30" Margin="4,0,0,0" Content="フォーカス解除" Click="YouTubeMiniPlayerRestoreAudioFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                        <TextBlock x:Name="YouTubeMiniPlayerArrangementPreviewText" VerticalAlignment="Center" Foreground="#E5E7EB" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                        <Button x:Name="YouTubeMiniPlayerArrangementPreviewEditButton" Grid.Column="1" Width="66" Height="30" Margin="8,0,0,0" Content="調整" ToolTip="予告中の動画枠を移動・四隅リサイズ" Click="YouTubeMiniPlayerArrangementPreviewEditButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                        <Button x:Name="YouTubeMiniPlayerArrangementPreviewResetButton" Grid.Column="2" Width="104" Height="30" Margin="4,0,0,0" Content="配置案に戻す" ToolTip="手動調整を破棄して最初の配置予告へ戻す" Click="YouTubeMiniPlayerArrangementPreviewResetButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                        <Button Grid.Column="3" Width="74" Height="30" Margin="4,0,0,0" Content="適用" Click="YouTubeMiniPlayerArrangementPreviewApplyButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                        <Button Grid.Column="4" Width="84" Height="30" Margin="4,0,0,0" Content="キャンセル" Click="YouTubeMiniPlayerArrangementPreviewCancelButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
                                     </Grid>
                                 </Border>
-                                <Border x:Name="YouTubeMiniPlayerActiveAudioFocusBar" Padding="6" Background="#13252A" BorderBrush="#22606B" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
-                                    <DockPanel LastChildFill="True">
-                                        <Button x:Name="YouTubeMiniPlayerActiveAudioFocusRestoreButton" DockPanel.Dock="Right" Width="124" Height="30" Margin="8,0,0,0" Content="フォーカス解除" Click="YouTubeMiniPlayerRestoreAudioFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <TextBlock x:Name="YouTubeMiniPlayerActiveAudioFocusText" VerticalAlignment="Center" Foreground="#67E8F9" FontSize="12" Text="音声フォーカス中" />
-                                    </DockPanel>
+                                <Grid x:Name="YouTubeMiniPlayerAudioFocusHost" DockPanel.Dock="Top" Height="42" Margin="10,0,10,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="YouTubeMiniPlayerSelectAllButton" Width="64" Height="30" Margin="0,0,4,0" Content="全選択" Click="YouTubeMiniPlayerSelectAllButton_Click" ToolTip="一覧のすべてのプレイヤーを選択（スクロール外も含む）">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Items.Count, ElementName=YouTubeMiniPlayerList}" Value="0">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                        <Button x:Name="YouTubeMiniPlayerClearSelectionButton" Width="64" Height="30" Margin="0,0,4,0" Content="全解除" Click="YouTubeMiniPlayerClearSelectionButton_Click" ToolTip="すべてのプレイヤーのチェックを外す">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SelectedItems.Count, ElementName=YouTubeMiniPlayerList}" Value="0">
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                        <TextBlock x:Name="YouTubeMiniPlayerAudioFocusSelectionText" Margin="2,0,8,0" VerticalAlignment="Center" Foreground="#67E8F9" FontSize="12" FontWeight="SemiBold" Text="選択 0 / 0件" ToolTip="タイトルや余白をクリックして、その行を選択／解除できます" />
+                                    </StackPanel>
+                                    <Border x:Name="YouTubeMiniPlayerAudioFocusBar" Grid.Column="1" Padding="6" Background="#13252A" BorderBrush="#22606B" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
+                                        <DockPanel LastChildFill="False">
+                                            <TextBlock Text="選択した動画へ" Foreground="#67E8F9" VerticalAlignment="Center" Margin="3,0,8,0" />
+                                            <Button x:Name="YouTubeMiniPlayerPauseSelectedButton" Width="82" Height="30" Margin="4,0,0,0" Content="一時停止" Click="YouTubeMiniPlayerPauseSelectedButton_Click" ToolTip="チェックした読込済み動画を一時停止します。選択外は変更しません" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                            <Button x:Name="YouTubeMiniPlayerMuteSelectedButton" Width="76" Height="30" Margin="4,0,0,0" Content="ミュート" Click="YouTubeMiniPlayerMuteSelectedButton_Click" ToolTip="チェックした動画をミュートします。選択外は変更しません" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                            <Button x:Name="YouTubeMiniPlayerCloseSelectedButton" Width="68" Height="30" Margin="16,0,0,0" Content="閉じる" Click="YouTubeMiniPlayerCloseSelectedButton_Click" ToolTip="チェックした動画だけを閉じます。閉じた動画から戻せます（履歴は最大20件）" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                        </DockPanel>
+                                    </Border>
+                                    <Border x:Name="YouTubeMiniPlayerActiveAudioFocusBar" Grid.Column="1" Padding="6" Background="#13252A" BorderBrush="#22606B" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
+                                        <DockPanel LastChildFill="True">
+                                            <Button x:Name="YouTubeMiniPlayerActiveAudioFocusRestoreButton" DockPanel.Dock="Right" Width="124" Height="30" Margin="8,0,0,0" Content="フォーカス解除" Click="YouTubeMiniPlayerRestoreAudioFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                            <TextBlock x:Name="YouTubeMiniPlayerActiveAudioFocusText" VerticalAlignment="Center" Foreground="#67E8F9" FontSize="12" Text="音声フォーカス中" />
+                                        </DockPanel>
+                                    </Border>
+                                </Grid>
+                                <Border x:Name="YouTubeMiniPlayerListOperationStatusBar" DockPanel.Dock="Bottom" Margin="10,0,10,8" Padding="7,4" Background="#13252A" BorderBrush="#22606B" BorderThickness="1" CornerRadius="3" MouseLeftButtonUp="YouTubeMiniPlayerInformationBar_MouseLeftButtonUp">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding InformationText}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding OperationStatus}" Value="">
+                                                    <Setter Property="Cursor" Value="Hand" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Foreground="#67E8F9" FontSize="11" Margin="0,1,8,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="操作結果" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding OperationStatus}" Value="">
+                                                            <Setter Property="Text" Value="アクティブ" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <Border Grid.Column="1" MaxHeight="32" ClipToBounds="True">
+                                            <TextBlock x:Name="YouTubeMiniPlayerListOperationStatusText" Text="{Binding InformationText}" Foreground="#F3F4F6" FontSize="12" TextTrimming="CharacterEllipsis" LineHeight="16" LineStackingStrategy="BlockLineHeight" AutomationProperties.LiveSetting="Polite">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="TextWrapping" Value="Wrap" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding OperationStatus}" Value="">
+                                                                <Setter Property="TextWrapping" Value="NoWrap" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                                <TextBlock.ToolTip>
+                                                    <ToolTip MaxWidth="640" Background="#11141A" Foreground="#F3F4F6" BorderBrush="#3A404D">
+                                                        <TextBlock Text="{Binding PlacementTarget.Text, RelativeSource={RelativeSource AncestorType={x:Type ToolTip}}}" TextWrapping="Wrap" />
+                                                    </ToolTip>
+                                                </TextBlock.ToolTip>
+                                            </TextBlock>
+                                        </Border>
+                                    </Grid>
                                 </Border>
-                            </Grid>
-                            <Grid>
-                                <TextBlock x:Name="YouTubeMiniPlayerListEmptyText" Margin="12,20" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#9CA3AF" Text="起動中のミニプレイヤーはありません" />
-                                <ListBox x:Name="YouTubeMiniPlayerList" MaxHeight="560" AllowDrop="True" Background="Transparent" BorderThickness="0" Foreground="#F3F4F6" PreviewDragOver="YouTubeMiniPlayerList_PreviewDragOver" PreviewMouseMove="YouTubeMiniPlayerList_PreviewMouseMove" Drop="YouTubeMiniPlayerList_Drop" SelectionMode="Extended" SelectionChanged="YouTubeMiniPlayerList_SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="{x:Type ListBoxItem}">
-                                        <Setter Property="Padding" Value="0" />
-                                        <Setter Property="Margin" Value="6,0" />
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-                                        <EventSetter Event="MouseEnter" Handler="YouTubeMiniPlayerListItem_MouseEnter" />
-                                        <EventSetter Event="MouseLeave" Handler="YouTubeMiniPlayerListItem_MouseLeave" />
-                                         <EventSetter Event="PreviewMouseLeftButtonDown" Handler="YouTubeMiniPlayerListItem_PreviewMouseLeftButtonDown" />
-                                         <EventSetter Event="PreviewMouseLeftButtonUp" Handler="YouTubeMiniPlayerListItem_PreviewMouseLeftButtonUp" />
-                                        <EventSetter Event="MouseDoubleClick" Handler="YouTubeMiniPlayerListItem_MouseDoubleClick" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                                                    <Border x:Name="YouTubeMiniPlayerSelectionBorder" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="3" SnapsToDevicePixels="True">
-                                                        <ContentPresenter />
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="Background" Value="#1A212B" />
-                                                            <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#303B4B" />
-                                                        </Trigger>
-                                                         <Trigger Property="IsSelected" Value="True">
-                                                            <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="Background" Value="#243746" />
-                                                            <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#22D3EE" />
-                                                             <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderThickness" Value="3,1,1,1" />
-                                                         </Trigger>
-                                                         <DataTrigger Binding="{Binding IsDropBefore}" Value="True">
-                                                             <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#38BDF8" />
-                                                             <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderThickness" Value="1,3,1,1" />
-                                                         </DataTrigger>
-                                                         <DataTrigger Binding="{Binding IsDropAfter}" Value="True">
-                                                             <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#38BDF8" />
-                                                             <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderThickness" Value="1,1,1,3" />
-                                                         </DataTrigger>
-                                                     </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid MinHeight="84" Margin="8,4">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="112" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <Grid Width="108" Height="68" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <Button Width="104" Height="62" Padding="0" HorizontalAlignment="Left" VerticalAlignment="Center" Click="YouTubeMiniPlayerItemThumbnailButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="{Binding ThumbnailToolTip}">
-                                                    <Grid Background="#0D1117">
-                                                        <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
-                                                            <Image.Style>
-                                                                <Style TargetType="{x:Type Image}">
+                                <Grid>
+                                    <TextBlock x:Name="YouTubeMiniPlayerListEmptyText" Margin="12,20" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#9CA3AF" Text="起動中のミニプレイヤーはありません" />
+                                    <ListBox x:Name="YouTubeMiniPlayerList" SizeChanged="YouTubeMiniPlayerListPopupRoot_SizeChanged" AllowDrop="True" Background="Transparent" BorderThickness="0" Foreground="#F3F4F6" PreviewDragOver="YouTubeMiniPlayerList_PreviewDragOver" PreviewMouseMove="YouTubeMiniPlayerList_PreviewMouseMove" Drop="YouTubeMiniPlayerList_Drop" SelectionMode="Extended" SelectionChanged="YouTubeMiniPlayerList_SelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="{x:Type ListBoxItem}">
+                                            <EventSetter Event="SizeChanged" Handler="YouTubeMiniPlayerListPopupRoot_SizeChanged" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="Margin" Value="6,0" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                            <EventSetter Event="MouseEnter" Handler="YouTubeMiniPlayerListItem_MouseEnter" />
+                                            <EventSetter Event="MouseLeave" Handler="YouTubeMiniPlayerListItem_MouseLeave" />
+                                            <EventSetter Event="LostMouseCapture" Handler="YouTubeMiniPlayerListItem_LostMouseCapture" />
+                                             <EventSetter Event="PreviewMouseLeftButtonDown" Handler="YouTubeMiniPlayerListItem_PreviewMouseLeftButtonDown" />
+                                             <EventSetter Event="PreviewMouseLeftButtonUp" Handler="YouTubeMiniPlayerListItem_PreviewMouseLeftButtonUp" />
+                                            <EventSetter Event="MouseDoubleClick" Handler="YouTubeMiniPlayerListItem_MouseDoubleClick" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                        <Border x:Name="YouTubeMiniPlayerSelectionBorder" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="3" SnapsToDevicePixels="True">
+                                                            <ContentPresenter />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="Background" Value="#1A212B" />
+                                                                <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#303B4B" />
+                                                            </Trigger>
+                                                             <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="Background" Value="#243746" />
+                                                                <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#22D3EE" />
+                                                                 <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderThickness" Value="3,1,1,1" />
+                                                             </Trigger>
+                                                             <DataTrigger Binding="{Binding IsDropBefore}" Value="True">
+                                                                 <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#38BDF8" />
+                                                                 <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderThickness" Value="1,3,1,1" />
+                                                             </DataTrigger>
+                                                             <DataTrigger Binding="{Binding IsDropAfter}" Value="True">
+                                                                 <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderBrush" Value="#38BDF8" />
+                                                                 <Setter TargetName="YouTubeMiniPlayerSelectionBorder" Property="BorderThickness" Value="1,1,1,3" />
+                                                             </DataTrigger>
+                                                         </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid MinHeight="78" Margin="8,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="100" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="*" />
+                                                </Grid.RowDefinitions>
+                                                <Grid Width="96" Grid.RowSpan="2" Height="60" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Button Width="92" Height="54" Padding="0" HorizontalAlignment="Left" VerticalAlignment="Center" Click="YouTubeMiniPlayerItemThumbnailButton_Click" Style="{StaticResource ToolbarButtonStyle}" ToolTip="{Binding ThumbnailToolTip}">
+                                                        <Grid Background="#0D1117">
+                                                            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill">
+                                                                <Image.Style>
+                                                                    <Style TargetType="{x:Type Image}">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding HasThumbnail}" Value="True">
+                                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Image.Style>
+                                                            </Image>
+                                                            <Border Background="{Binding IconBackground}" CornerRadius="3">
+                                                                <Border.Style>
+                                                                    <Style TargetType="{x:Type Border}">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding HasThumbnail}" Value="True">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
+                                                                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" FontSize="16" Text="{Binding IconText}" />
+                                                            </Border>
+                                                        </Grid>
+                                                    </Button>
+                                                    <CheckBox x:Name="YouTubeMiniPlayerSelectionCheckBox" Width="26" Height="26" Margin="2" HorizontalAlignment="Left" VerticalAlignment="Top" Panel.ZIndex="2" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Mode=TwoWay}" Style="{StaticResource DarkCheckBoxStyle}" ToolTip="操作対象として選択（タイトルや余白のクリックでも切替）" />
+                                                    <Button Width="26" Height="24" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="YouTubeMiniPlayerItemMuteButton_Click" PreviewMouseRightButtonUp="YouTubeMiniPlayerItemMuteButton_PreviewMouseRightButtonUp" Style="{StaticResource ToolbarButtonStyle}" ToolTip="{Binding MuteButtonToolTip}">
+                                                        <Grid Width="18" Height="18">
+                                                            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="{Binding AudioStateBrush}" Text="{Binding MuteIconGlyph}" />
+                                                            <Border Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Background="#F59E0B" CornerRadius="5" Visibility="{Binding AudioBoostBadgeVisibility}">
+                                                                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#111827" FontSize="8" FontWeight="Bold" Text="+" />
+                                                            </Border>
+                                                        </Grid>
+                                                    </Button>
+                                                </Grid>
+                                                <TextBlock x:Name="YouTubeMiniPlayerListItemTitleText" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,0,2,3" Foreground="#F9FAFB" FontSize="14" FontWeight="SemiBold" Text="{Binding Title}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                                                <StackPanel Grid.Column="1" Grid.Row="1" x:Name="YouTubeMiniPlayerListItemDetails" Margin="8,0,8,0" VerticalAlignment="Center">
+                                                    <Grid Margin="0,3,0,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Foreground="#AEB6C4" FontSize="12" Text="{Binding TimeText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TimeText}" />
+                                                        <Border Grid.Column="1" Margin="8,0,0,0" Padding="3,0" Background="#1B252B" BorderBrush="{Binding PlaybackStateBrush}" BorderThickness="1" CornerRadius="2">
+                                                            <TextBlock Foreground="{Binding PlaybackStateBrush}" FontSize="11" FontWeight="SemiBold" Text="{Binding PlaybackStateText}" />
+                                                        </Border>
+                                                        <Border Grid.Column="2" Margin="8,0,0,0" Padding="3,0" Background="#1B252B" BorderBrush="{Binding AudioStateBrush}" BorderThickness="1" CornerRadius="2">
+                                                            <TextBlock Foreground="{Binding AudioStateBrush}" FontSize="11" Text="{Binding AudioStateText}" />
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid Margin="0,3,0,0" Visibility="{Binding PlaybackProgressVisibility}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Button x:Name="YouTubeMiniPlayerProgressSeekButton" Height="16" MinHeight="0" Margin="0" Padding="0" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" Focusable="False" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" IsEnabled="{Binding CanSeekPlaybackProgress}" MouseMove="YouTubeMiniPlayerProgress_MouseMove" Click="YouTubeMiniPlayerProgress_Click" ToolTipService.InitialShowDelay="0">
+                                                            <Button.ToolTip>
+                                                                <ToolTip Content="クリックして再生位置を変更" Placement="Mouse" Background="#171B22" Foreground="#E5E7EB" BorderBrush="#3A404D" BorderThickness="1" />
+                                                            </Button.ToolTip>
+                                                            <Button.Template>
+                                                                <ControlTemplate TargetType="{x:Type Button}">
+                                                                    <Border Background="{TemplateBinding Background}">
+                                                                        <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                                                                    </Border>
+                                                                </ControlTemplate>
+                                                            </Button.Template>
+                                                            <ProgressBar Height="4" Minimum="0" Maximum="1" IsHitTestVisible="False" Value="{Binding PlaybackProgress, Mode=OneWay}" VerticalAlignment="Center" Focusable="False" Background="#343B48" Foreground="#22D3EE">
+                                                                <ProgressBar.Template>
+                                                                    <ControlTemplate TargetType="{x:Type ProgressBar}">
+                                                                        <Grid x:Name="PART_Track" Background="{TemplateBinding Background}" ClipToBounds="True">
+                                                                            <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" />
+                                                                        </Grid>
+                                                                    </ControlTemplate>
+                                                                </ProgressBar.Template>
+                                                            </ProgressBar>
+                                                        </Button>
+                                                        <TextBlock Grid.Column="1" Margin="7,0,0,0" Foreground="#AEB6C4" FontSize="11" Text="{Binding RemainingTimeText}" />
+                                                    </Grid>
+                                                    <WrapPanel Margin="0,2,0,0" MinHeight="16">
+                                                        <Border x:Name="YouTubeMiniPlayerActivePlayerBadge" Margin="0,0,7,0" Padding="3,0" Background="#1B252B" BorderBrush="#596271" BorderThickness="1" CornerRadius="2" ToolTip="最後にアクティブになった動画">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
                                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                                     <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding HasThumbnail}" Value="True">
+                                                                        <DataTrigger Binding="{Binding IsActivePlayer}" Value="True">
                                                                             <Setter Property="Visibility" Value="Visible" />
                                                                         </DataTrigger>
                                                                     </Style.Triggers>
                                                                 </Style>
-                                                            </Image.Style>
-                                                        </Image>
-                                                        <Border Background="{Binding IconBackground}" CornerRadius="3">
-                                                            <Border.Style>
-                                                                <Style TargetType="{x:Type Border}">
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding HasThumbnail}" Value="True">
-                                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
                                                             </Border.Style>
-                                                            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" FontSize="16" Text="{Binding IconText}" />
+                                                            <TextBlock Text="アクティブ" Foreground="#AEB6C4" FontSize="11" />
                                                         </Border>
-                                                    </Grid>
-                                                </Button>
-                                                <CheckBox x:Name="YouTubeMiniPlayerSelectionCheckBox" Width="26" Height="26" Margin="2" HorizontalAlignment="Left" VerticalAlignment="Top" Panel.ZIndex="2" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}, Mode=TwoWay}" Style="{StaticResource DarkCheckBoxStyle}" ToolTip="配置対象として選択" />
-                                                <Button Width="26" Height="24" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="YouTubeMiniPlayerItemMuteButton_Click" PreviewMouseRightButtonUp="YouTubeMiniPlayerItemMuteButton_PreviewMouseRightButtonUp" Style="{StaticResource ToolbarButtonStyle}" ToolTip="{Binding MuteButtonToolTip}">
-                                                    <Grid Width="18" Height="18">
-                                                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="Segoe MDL2 Assets" FontSize="11" Foreground="{Binding AudioStateBrush}" Text="{Binding MuteIconGlyph}" />
-                                                        <Border Width="10" Height="10" HorizontalAlignment="Right" VerticalAlignment="Top" Background="#F59E0B" CornerRadius="5" Visibility="{Binding AudioBoostBadgeVisibility}">
-                                                            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#111827" FontSize="8" FontWeight="Bold" Text="+" />
+                                                        <Border x:Name="YouTubeMiniPlayerRepeatStateBadge" Margin="0,0,7,0" Padding="3,0" Background="#1B252B" BorderBrush="{Binding RepeatStateBrush}" BorderThickness="1" CornerRadius="2" Visibility="{Binding RepeatStateVisibility}">
+                                                            <TextBlock Foreground="{Binding RepeatStateBrush}" FontSize="11" Text="{Binding RepeatStateText}" />
                                                         </Border>
-                                                    </Grid>
-                                                </Button>
-                                            </Grid>
-                                            <StackPanel Grid.Column="1" Margin="8,0,10,0" VerticalAlignment="Center">
-                                                <TextBlock Foreground="#F9FAFB" FontSize="14" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Margin="0,3,0,0" Foreground="#AEB6C4" FontSize="12" Text="{Binding TimeText}" />
-                                                <WrapPanel Margin="0,2,0,0">
-                                                    <TextBlock Margin="0,0,7,0" Foreground="{Binding PlaybackStateBrush}" FontSize="11" Text="{Binding PlaybackStateText}" />
-                                                    <TextBlock Margin="0,0,7,0" Foreground="{Binding AudioStateBrush}" FontSize="11" Text="{Binding AudioStateText}" />
-                                                    <TextBlock Margin="0,0,7,0" Foreground="#9CA3AF" FontSize="11" Text="{Binding WindowStateText}" Visibility="{Binding WindowStateVisibility}" />
-                                                    <TextBlock Margin="0,0,7,0" Foreground="{Binding AudioFocusBrush}" FontSize="11" FontWeight="SemiBold" Text="{Binding AudioFocusText}" Visibility="{Binding AudioFocusVisibility}" />
-                                                    <TextBlock Foreground="{Binding DisplayStateBrush}" FontSize="11" FontWeight="SemiBold" Text="{Binding DisplayStateText}" Visibility="{Binding DisplayStateVisibility}" />
-                                                </WrapPanel>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2" Width="356" VerticalAlignment="Center">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="74" />
-                                                        <ColumnDefinition Width="52" />
-                                                        <ColumnDefinition Width="52" />
-                                                        <ColumnDefinition Width="52" />
-                                                        <ColumnDefinition Width="56" />
-                                                        <ColumnDefinition Width="36" />
-                                                        <ColumnDefinition Width="34" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <Button Height="30" Margin="2" Content="{Binding PrimaryPlaybackButtonText}" Click="YouTubeMiniPlayerItemPlayPauseButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                                    <Button Grid.Column="1" Height="30" Margin="2" Content="音量" Tag="YouTubeMiniPlayerVolumePopupTrigger" Click="YouTubeMiniPlayerItemVolumeButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                                    <Button Grid.Column="2" Height="30" Margin="2" Content="-10秒" Click="YouTubeMiniPlayerItemSeekBackButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                                    <Button Grid.Column="3" Height="30" Margin="2" Content="+10秒" Click="YouTubeMiniPlayerItemSeekForwardButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                                    <Button Grid.Column="4" Height="30" Margin="2" Content="速度" Tag="YouTubeMiniPlayerSpeedPopupTrigger" Click="YouTubeMiniPlayerItemSpeedMenuButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="再生速度を変更" />
-                                                    <Button Grid.Column="5" Height="30" Margin="2" Content="…" Click="YouTubeMiniPlayerItemMoreButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="その他の操作" />
-                                                    <Button Grid.Column="6" Height="30" Margin="2" Content="×" Click="YouTubeMiniPlayerItemCloseButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="閉じる" />
-                                                </Grid>
-                                                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                                                    <Button Height="26" Width="80" Margin="2,2,2,0" Content="表示修復" Click="YouTubeMiniPlayerItemReloadButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="{Binding ReloadToolTip}" Visibility="{Binding RepairButtonVisibility}" />
-                                                    <Button Height="26" Width="80" Margin="2,2,2,0" Content="ライブへ" Click="YouTubeMiniPlayerItemLiveEdgeButton_Click" IsEnabled="{Binding CanSeekToLiveEdge}" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="現在のライブ配信位置へ移動" Visibility="{Binding LiveEdgeButtonVisibility}" />
+                                                        <TextBlock Margin="0,0,7,0" Foreground="#9CA3AF" FontSize="11" Text="{Binding WindowStateText}" Visibility="{Binding WindowStateVisibility}" />
+                                                        <TextBlock Margin="0,0,7,0" Foreground="{Binding AudioFocusBrush}" FontSize="11" FontWeight="SemiBold" Text="{Binding AudioFocusText}" Visibility="{Binding AudioFocusVisibility}" />
+                                                        <Border Margin="0,0,7,0" Padding="3,0" Background="#1B252B" BorderBrush="{Binding LiveEdgeStateBrush}" BorderThickness="1" CornerRadius="2" Visibility="{Binding LiveEdgeButtonVisibility}">
+                                                            <TextBlock Foreground="{Binding LiveEdgeStateBrush}" FontSize="11" FontWeight="SemiBold" Text="{Binding LiveEdgeStateText}" />
+                                                        </Border>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Border Padding="3,0" VerticalAlignment="Center" Background="#1B252B" BorderBrush="{Binding DisplayStateBrush}" BorderThickness="1" CornerRadius="2" Visibility="{Binding DisplayStateVisibility}">
+                                                                <TextBlock Foreground="{Binding DisplayStateBrush}" FontSize="11" FontWeight="SemiBold" Text="{Binding DisplayStateText}" />
+                                                            </Border>
+                                                            <Button Height="24" Width="80" Margin="5,0,0,0" Content="表示修復" Click="YouTubeMiniPlayerItemReloadButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" Background="#30221F" BorderBrush="#F59E0B" Foreground="#FBBF24" FontWeight="SemiBold" ToolTip="{Binding ReloadToolTip}" Visibility="{Binding RepairButtonVisibility}" />
+                                                        </StackPanel>
+                                                    </WrapPanel>
                                                 </StackPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Grid>
+                                                <StackPanel Grid.Column="2" Grid.Row="1" x:Name="YouTubeMiniPlayerListItemActions" Width="364" VerticalAlignment="Center">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="70" />
+                                                            <ColumnDefinition Width="70" />
+                                                            <ColumnDefinition Width="52" />
+                                                            <ColumnDefinition Width="52" />
+                                                            <ColumnDefinition Width="52" />
+                                                            <ColumnDefinition Width="34" />
+                                                            <ColumnDefinition Width="34" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Button Height="30" Margin="2" Content="{Binding PrimaryPlaybackButtonText}" Click="YouTubeMiniPlayerItemPlayPauseButton_Click" Style="{StaticResource YouTubeMiniPlayerPlaybackButtonStyle}" />
+                                                        <Button Grid.Column="1" Height="30" Margin="2" Content="{Binding VolumeButtonText}" ToolTip="{Binding VolumeToolTip}" Tag="YouTubeMiniPlayerVolumePopupTrigger" Click="YouTubeMiniPlayerItemVolumeButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                                        <Button Grid.Column="2" Height="30" Margin="2" Content="-10秒" Click="YouTubeMiniPlayerItemSeekBackButton_Click" Style="{StaticResource YouTubeMiniPlayerLoadedPlaybackButtonStyle}" />
+                                                        <Button Grid.Column="3" Height="30" Margin="2" Content="+10秒" Click="YouTubeMiniPlayerItemSeekForwardButton_Click" Style="{StaticResource YouTubeMiniPlayerLoadedPlaybackButtonStyle}" />
+                                                        <Button Grid.Column="4" Height="30" Margin="2" Content="{Binding PlaybackRateText}" Tag="YouTubeMiniPlayerSpeedPopupTrigger" Click="YouTubeMiniPlayerItemSpeedMenuButton_Click">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button" BasedOn="{StaticResource YouTubeMiniPlayerLoadedPlaybackButtonStyle}">
+                                                                    <Setter Property="ToolTip" Value="再生速度を変更" />
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
+                                                        <Button Grid.Column="5" Height="30" Margin="2" Content="…" Click="YouTubeMiniPlayerItemMoreButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="その他の操作" />
+                                                        <Button Grid.Column="6" Height="30" Margin="6,2,2,2" Content="×" Click="YouTubeMiniPlayerItemCloseButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="閉じる" />
+                                                    </Grid>
+                                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                                        <Button Height="26" Width="80" Margin="2,2,2,0" Content="ライブへ" Click="YouTubeMiniPlayerItemLiveEdgeButton_Click" IsEnabled="{Binding CanSeekToLiveEdge}" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="現在のライブ配信位置へ移動" Visibility="{Binding LiveEdgeButtonVisibility}" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </DockPanel>
                         </DockPanel>
                     </Border>
-                </Popup>
-                <Popup x:Name="YouTubeMiniPlayerItemMorePopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="True" Closed="YouTubeMiniPlayerItemMorePopup_Closed" PopupAnimation="Fade">
-                    <Border Width="280" Padding="6" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
-                        <UniformGrid Columns="2">
-                            <Button Height="30" Margin="2" Content="{Binding LoopButtonText}" Click="YouTubeMiniPlayerItemLoopButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Height="30" Margin="2" Content="{Binding AbRepeatButtonText}" Tag="YouTubeMiniPlayerAbRepeatPopupTrigger" Click="YouTubeMiniPlayerItemAbRepeatMenuButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Height="30" Margin="2" Content="{Binding SourceButtonText}" Click="YouTubeMiniPlayerItemSourceTabButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Height="30" Margin="2" Content="{Binding MinimizeButtonText}" Click="YouTubeMiniPlayerItemMinimizeButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Height="30" Margin="2" Content="{Binding TopmostButtonText}" Click="YouTubeMiniPlayerItemTopmostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Height="30" Margin="2" Content="ソロ音声" Click="YouTubeMiniPlayerItemSoloAudioButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="このプレイヤーだけ音声を出す" />
-                            <Button Height="30" Margin="2" Content="ソロ再生" Click="YouTubeMiniPlayerItemSoloPlaybackButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="このプレイヤーだけ再生する" />
-                        </UniformGrid>
-                    </Border>
-                </Popup>
-                <Popup x:Name="YouTubeMiniPlayerSpeedPopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="False" Closed="YouTubeMiniPlayerSpeedPopup_Closed">
-                    <Border Width="300" Padding="6" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
-                        <UniformGrid Columns="4">
-                            <Button Width="68" Height="30" Margin="2" Content="0.25x" Tag="0.25" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Width="68" Height="30" Margin="2" Content="0.5x" Tag="0.5" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Width="68" Height="30" Margin="2" Content="0.75x" Tag="0.75" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Width="68" Height="30" Margin="2" Content="1x" Tag="1" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Width="68" Height="30" Margin="2" Content="1.25x" Tag="1.25" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Width="68" Height="30" Margin="2" Content="1.5x" Tag="1.5" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Width="68" Height="30" Margin="2" Content="1.75x" Tag="1.75" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            <Button Width="68" Height="30" Margin="2" Content="2x" Tag="2" Click="YouTubeMiniPlayerItemSpeedButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                        </UniformGrid>
-                    </Border>
-                </Popup>
-                <Popup x:Name="YouTubeMiniPlayerAbRepeatPopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="False" Closed="YouTubeMiniPlayerAbRepeatPopup_Closed">
-                    <Border Width="380" Padding="10" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
-                        <StackPanel>
-                            <TextBlock x:Name="YouTubeMiniPlayerAbRepeatTitleText" Foreground="#F3F4F6" FontSize="12" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="YouTubeMiniPlayerAbRepeatRangeText" Margin="0,4,0,6" Foreground="#AEB6C4" FontSize="12" Text="A-B未設定" />
-                            <UniformGrid Columns="4">
-                                <Button x:Name="YouTubeMiniPlayerAbRepeatSetStartButton" Height="30" Margin="2" Content="A点設定" Tag="SetStart" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                <Button x:Name="YouTubeMiniPlayerAbRepeatSetEndButton" Height="30" Margin="2" Content="B点設定" Tag="SetEnd" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                <Button x:Name="YouTubeMiniPlayerAbRepeatToggleButton" Height="30" Margin="2" Content="開始" Tag="Toggle" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                <Button x:Name="YouTubeMiniPlayerAbRepeatClearButton" Height="30" Margin="2" Content="消去" Tag="Clear" Click="YouTubeMiniPlayerAbRepeatActionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            </UniformGrid>
-                        </StackPanel>
-                    </Border>
-                </Popup>
+                </Decorator>
                 <Popup x:Name="TabAudioBoostPopup" Placement="Bottom" VerticalOffset="3" StaysOpen="False" AllowsTransparency="False" Closed="TabAudioBoostPopup_Closed">
                     <Border Width="280" Padding="12,10" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
                         <StackPanel>
@@ -1553,37 +2365,6 @@
                                 <Button x:Name="TabAudioBoost9Button" Margin="2" Content="+9 dB" Tag="9" ToolTip="音割れに注意" Click="TabAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
                             </UniformGrid>
                             <TextBlock Margin="2,5,2,0" Foreground="#AEB6C4" FontSize="10" Text="+6 dB推奨。+9 dBは音割れに注意" />
-                        </StackPanel>
-                    </Border>
-                </Popup>
-                <Popup x:Name="YouTubeMiniPlayerVolumePopup" Placement="Bottom" VerticalOffset="3" StaysOpen="True" AllowsTransparency="False" Closed="YouTubeMiniPlayerVolumePopup_Closed">
-                    <Border Width="280" Padding="12,10" Background="#171B22" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
-                        <StackPanel>
-                            <TextBlock x:Name="YouTubeMiniPlayerVolumeTitleText" Foreground="#F3F4F6" FontSize="12" TextTrimming="CharacterEllipsis" />
-                            <Grid Margin="0,7,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="48" />
-                                </Grid.ColumnDefinitions>
-                                <Slider x:Name="YouTubeMiniPlayerVolumeSlider" Height="26" Minimum="0" Maximum="100" TickFrequency="5" ValueChanged="YouTubeMiniPlayerVolumeSlider_ValueChanged" />
-                                <TextBlock x:Name="YouTubeMiniPlayerVolumeValueText" Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#AEB6C4" FontSize="12" TextAlignment="Right" />
-                            </Grid>
-                            <Border Margin="0,8,0,7" BorderBrush="#343B48" BorderThickness="0,1,0,0" />
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Foreground="#F3F4F6" FontSize="12" FontWeight="SemiBold" Text="音量ブースト" />
-                                <TextBlock x:Name="YouTubeMiniPlayerAudioBoostValueText" Grid.Column="1" Foreground="#F59E0B" FontSize="12" FontWeight="SemiBold" Text="OFF" />
-                            </Grid>
-                            <UniformGrid x:Name="YouTubeMiniPlayerAudioBoostPanel" Margin="0,6,0,0" Columns="4">
-                                <Button x:Name="YouTubeMiniPlayerAudioBoostOffButton" Margin="2" Content="OFF" Tag="0" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                <Button x:Name="YouTubeMiniPlayerAudioBoost3Button" Margin="2" Content="+3 dB" Tag="3" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                <Button x:Name="YouTubeMiniPlayerAudioBoost6Button" Margin="2" Content="+6 dB" Tag="6" ToolTip="推奨" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                <Button x:Name="YouTubeMiniPlayerAudioBoost9Button" Margin="2" Content="+9 dB" Tag="9" ToolTip="音割れに注意" Click="YouTubeMiniPlayerAudioBoostButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                            </UniformGrid>
-                            <TextBlock x:Name="YouTubeMiniPlayerAudioBoostHintText" Margin="2,5,2,0" Foreground="#AEB6C4" FontSize="10" Text="+6 dB推奨。+9 dBは音割れに注意" />
                         </StackPanel>
                     </Border>
                 </Popup>
@@ -1651,10 +2432,14 @@
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button x:Name="SiteInformationButton" Grid.Column="0" Content="ⓘ" Click="SiteInformationButton_Click" PreviewMouseLeftButtonDown="SiteInformationButton_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="SiteInformationButton_PreviewMouseLeftButtonUp" PreviewMouseMove="SiteInformationButton_PreviewMouseMove" Style="{StaticResource AddressInformationButtonStyle}" ToolTip="サイト情報（ドラッグでURLを渡せます）" />
-                        <TextBox x:Name="AddressBox" Grid.Column="1" MinWidth="0" Height="28" Padding="2,4,10,4" Background="Transparent" BorderThickness="0" CaretBrush="#FFFFFF" SelectionBrush="#2563EB" SelectionOpacity="1" SelectionTextBrush="#FFFFFF" VerticalContentAlignment="Center" GotKeyboardFocus="AddressBox_GotKeyboardFocus" LostKeyboardFocus="AddressBox_LostKeyboardFocus" PreviewMouseLeftButtonDown="AddressBox_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="AddressBox_PreviewMouseLeftButtonUp" PreviewMouseMove="AddressBox_PreviewMouseMove" TextChanged="AddressBox_TextChanged" KeyDown="AddressBox_KeyDown">
+                        <Border x:Name="AddressConnectionBadge" Grid.Column="0" Padding="6,0" Background="{StaticResource DarkControlBackgroundBrush}" BorderBrush="{StaticResource DarkControlBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="7,0,0,7" Visibility="Collapsed">
+                            <TextBlock x:Name="AddressConnectionBadgeText" VerticalAlignment="Center" FontSize="10" FontWeight="SemiBold" />
+                        </Border>
+                        <Button x:Name="SiteInformationButton" Grid.Column="1" Content="ⓘ" Click="SiteInformationButton_Click" PreviewMouseLeftButtonDown="SiteInformationButton_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="SiteInformationButton_PreviewMouseLeftButtonUp" PreviewMouseMove="SiteInformationButton_PreviewMouseMove" Style="{StaticResource AddressInformationButtonStyle}" ToolTip="サイト情報（ドラッグでURLを渡せます）" />
+                        <TextBox x:Name="AddressBox" Grid.Column="2" MinWidth="0" Height="28" Padding="2,4,10,4" Background="Transparent" BorderThickness="0" CaretBrush="#FFFFFF" SelectionBrush="#2563EB" SelectionOpacity="1" SelectionTextBrush="#FFFFFF" VerticalContentAlignment="Center" GotKeyboardFocus="AddressBox_GotKeyboardFocus" LostKeyboardFocus="AddressBox_LostKeyboardFocus" PreviewMouseLeftButtonDown="AddressBox_PreviewMouseLeftButtonDown" PreviewMouseLeftButtonUp="AddressBox_PreviewMouseLeftButtonUp" PreviewMouseMove="AddressBox_PreviewMouseMove" TextChanged="AddressBox_TextChanged" KeyDown="AddressBox_KeyDown">
                             <TextBox.Resources>
                                 <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2563EB" />
                                 <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF" />
@@ -1674,8 +2459,8 @@
                                 </ContextMenu>
                             </TextBox.ContextMenu>
                         </TextBox>
-                        <Border x:Name="AddressAreaInnerHighlight" Grid.Column="0" Grid.ColumnSpan="2" Height="1" Margin="7,1,7,0" VerticalAlignment="Top" Background="#18FFFFFF" IsHitTestVisible="False" Panel.ZIndex="9" SnapsToDevicePixels="True" />
-                        <Border x:Name="AddressAreaOutline" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,1" HorizontalAlignment="Left" VerticalAlignment="Stretch" Background="Transparent" BorderThickness="1" CornerRadius="7" IsHitTestVisible="False" Panel.ZIndex="10" SnapsToDevicePixels="True" UseLayoutRounding="True">
+                        <Border x:Name="AddressAreaInnerHighlight" Grid.Column="0" Grid.ColumnSpan="3" Height="1" Margin="7,1,7,0" VerticalAlignment="Top" Background="#18FFFFFF" IsHitTestVisible="False" Panel.ZIndex="9" SnapsToDevicePixels="True" />
+                        <Border x:Name="AddressAreaOutline" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,1" HorizontalAlignment="Left" VerticalAlignment="Stretch" Background="Transparent" BorderThickness="1" CornerRadius="7" IsHitTestVisible="False" Panel.ZIndex="10" SnapsToDevicePixels="True" UseLayoutRounding="True">
                             <Border.Style>
                                 <Style TargetType="{x:Type Border}">
                                     <Setter Property="BorderBrush" Value="#687282" />
@@ -2090,6 +2875,7 @@
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="{x:Type ListBoxItem}">
                                         <EventSetter Event="MouseEnter" Handler="CommandPaletteItem_MouseEnter" />
+                                        <EventSetter Event="PreviewMouseRightButtonUp" Handler="CommandPaletteItem_PreviewMouseRightButtonUp" />
                                         <Setter Property="Margin" Value="0,0,0,4" />
                                         <Setter Property="Padding" Value="0" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -2291,9 +3077,11 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="132" />
+                            <ColumnDefinition Width="132" />
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="DownloadSearchBox" Grid.Column="0" Height="26" Margin="0,0,8,0" VerticalContentAlignment="Center" TextChanged="DownloadSearchBox_TextChanged" ToolTip="ファイル名、URL、保存先で検索" />
-                        <ComboBox x:Name="DownloadKindFilterBox" Grid.Column="1" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="DownloadKindFilterBox_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
+                        <ComboBox x:Name="DownloadKindFilterBox" Grid.Column="1" Margin="0,0,8,0" DisplayMemberPath="Label" SelectedValuePath="Value" SelectionChanged="DownloadKindFilterBox_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
+                        <ComboBox x:Name="DownloadStateFilterBox" Grid.Column="2" DisplayMemberPath="Label" SelectedValuePath="Value" ToolTip="状態で絞り込む" SelectionChanged="DownloadStateFilterBox_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
                     </Grid>
 
                     <ScrollViewer MaxHeight="486" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
@@ -2316,13 +3104,29 @@
                                             </Grid.ColumnDefinitions>
 
                                             <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,0" Foreground="#F9FAFB" FontSize="13" FontWeight="SemiBold" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Row="0" Grid.Column="1" Foreground="#CBD5E1" FontSize="12" Text="{Binding StateText}" />
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Foreground="#CBD5E1" FontSize="12" Text="{Binding StatusText}" />
                                              <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Height="7" Margin="0,7,0,4" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}" />
                                             <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Foreground="#9CA3AF" FontSize="11" Text="{Binding DetailText}" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="#9CA3AF" FontSize="11" Text="{Binding TimestampText}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="#FCA5A5" FontSize="11" Text="{Binding SafetyWarning}" TextWrapping="Wrap" />
+                                            <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0">
+                                                <TextBlock Foreground="#FCA5A5" FontSize="11" Text="{Binding SafetyWarning}" TextWrapping="Wrap" />
+                                                <StackPanel x:Name="DownloadFailurePanel">
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="{x:Type StackPanel}">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding State}" Value="{x:Static models:DownloadItemState.Failed}">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock Foreground="#FCA5A5" FontSize="12" Text="{Binding FailureSummary}" ToolTip="{Binding FailureSummary}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Foreground="#CBD5E1" FontSize="11" Margin="0,3,0,0" LineHeight="16" MaxHeight="32" Text="{Binding FailureAdvice}" ToolTip="{Binding FailureAdvice}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </StackPanel>
                                             <WrapPanel Grid.Row="5" Grid.ColumnSpan="2" Margin="0,8,0,0">
-                                                <Button Width="58" Height="24" Margin="0,0,6,0" Content="中止" Click="DownloadCancelButton_Click" IsEnabled="{Binding CanCancel}" Style="{StaticResource ToolbarButtonStyle}" />
+                                                <Button Width="58" Height="24" Margin="0,0,6,0" Content="中止" Click="DownloadCancelButton_Click" IsEnabled="{Binding CanCancel}" Style="{StaticResource DownloadActionButtonStyle}" />
                                                 <Button Width="92" Height="24" Margin="0,0,6,0" Content="保存して継続" Click="DownloadSaveAndContinueButton_Click" IsEnabled="{Binding CanSaveAndContinue}" ToolTip="ここまでを保存し、現在のライブ位置から新しいファイルへ継続します">
                                                     <Button.Style>
                                                         <Style TargetType="{x:Type Button}" BasedOn="{StaticResource ToolbarButtonStyle}">
@@ -2335,20 +3139,27 @@
                                                         </Style>
                                                     </Button.Style>
                                                 </Button>
-                                                <Button Width="72" Height="24" Margin="0,0,6,0" Content="{Binding PauseResumeButtonText}" Click="DownloadPauseResumeButton_Click" IsEnabled="{Binding CanPauseOrResume}" Style="{StaticResource ToolbarButtonStyle}" />
-                                                <Button Width="48" Height="24" Margin="0,0,6,0" Content="開く" Click="DownloadOpenButton_Click" IsEnabled="{Binding CanOpen}" Style="{StaticResource ToolbarButtonStyle}" />
-                                                <Button Width="72" Height="24" Margin="0,0,6,0" Content="フォルダー" Click="DownloadOpenFolderButton_Click" IsEnabled="{Binding CanOpenFolder}" Style="{StaticResource ToolbarButtonStyle}">
+                                                <Button Width="72" Height="24" Margin="0,0,6,0" Content="{Binding PauseResumeButtonText}" Click="DownloadPauseResumeButton_Click" IsEnabled="{Binding CanPauseOrResume}" Style="{StaticResource DownloadActionButtonStyle}" />
+                                                <Button Width="48" Height="24" Margin="0,0,6,0" Content="開く" Click="DownloadOpenButton_Click" IsEnabled="{Binding CanOpen}" Style="{StaticResource DownloadActionButtonStyle}" />
+                                                <Button Width="72" Height="24" Margin="0,0,6,0" Content="フォルダー" Click="DownloadOpenFolderButton_Click" IsEnabled="{Binding CanOpenFolder}" Style="{StaticResource DownloadActionButtonStyle}">
                                                     <Button.ContextMenu>
                                                         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                                             <MenuItem Header="エクスプローラーで開く" Click="DownloadOpenFolderInExplorerMenuItem_Click" />
                                                         </ContextMenu>
                                                     </Button.ContextMenu>
                                                 </Button>
-                                                 <Button Width="70" Height="24" Margin="0,0,6,0" Content="URLコピー" Click="DownloadCopyLinkButton_Click" Style="{StaticResource ToolbarButtonStyle}" />
-                                                 <Button Width="52" Height="24" Margin="0,0,6,0" Content="詳細" Click="DownloadDetailButton_Click" Style="{StaticResource ToolbarButtonStyle}" />
-                                                 <Button Width="54" Height="24" Margin="0,0,6,0" Content="再試行" Click="DownloadRetryButton_Click" IsEnabled="{Binding CanRetry}" Style="{StaticResource ToolbarButtonStyle}" />
-                                                <Button Width="68" Height="24" Margin="0,0,6,0" Content="履歴削除" Click="DownloadRemoveHistoryButton_Click" IsEnabled="{Binding CanRemoveHistory}" Style="{StaticResource ToolbarButtonStyle}" />
-                                                <Button Width="76" Height="24" Content="ファイル削除" Click="DownloadDeleteFileButton_Click" IsEnabled="{Binding CanOpenFolder}" Style="{StaticResource ToolbarButtonStyle}" />
+                                                 <Button Width="54" Height="24" Margin="0,0,6,0" Content="再試行" Click="DownloadRetryButton_Click" IsEnabled="{Binding CanRetry}" Style="{StaticResource DownloadActionButtonStyle}" />
+                                                <Button Width="32" Height="24" Content="…" ToolTip="その他の操作" Click="DownloadMoreButton_Click" PreviewMouseDown="DownloadMoreButton_PreviewMouseDown" Style="{StaticResource ToolbarButtonStyle}">
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" Mouse.PreviewMouseDownOutsideCapturedElement="DownloadMoreMenu_OutsideCapturedPress">
+                                                            <MenuItem Header="URLコピー" Click="DownloadCopyLinkButton_Click" />
+                                                            <MenuItem Header="詳細" Click="DownloadDetailButton_Click" />
+                                                            <Separator />
+                                                            <MenuItem Header="履歴削除" Click="DownloadRemoveHistoryButton_Click" IsEnabled="{Binding CanRemoveHistory}" />
+                                                            <MenuItem Header="ファイル削除" Click="DownloadDeleteFileButton_Click" IsEnabled="{Binding CanOpenFolder}" />
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
+                                                </Button>
                                             </WrapPanel>
                                         </Grid>
                                     </Border>

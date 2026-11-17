@@ -20,6 +20,9 @@ internal interface ISessionWindowCaptureHost
     BrowserTab? ActiveTab { get; }
     Guid SessionWindowId { get; }
     bool IsAlwaysOnTop { get; }
+    bool IsYouTubeMiniPlayerListOpen { get; }
+    bool IsYouTubeMiniPlayerListCollapsed { get; }
+    YouTubeMiniPlayerListPositionState? CaptureYouTubeMiniPlayerListPosition();
     SessionTabState? CreateSessionTabState(BrowserTab tab, bool includeNavigationHistory);
     WindowPlacementSettings? CreateWindowPlacement();
     void RecordTabCaptureFailure(BrowserTab tab, Exception exception);
@@ -64,7 +67,10 @@ internal sealed class SessionRuntimeCaptureAdapter
             Tabs = tabs,
             ClosedTabs = [],
             Placement = host.CreateWindowPlacement(),
-            IsAlwaysOnTop = host.IsAlwaysOnTop
+            IsAlwaysOnTop = host.IsAlwaysOnTop,
+            IsYouTubeMiniPlayerListOpen = host.IsYouTubeMiniPlayerListOpen,
+            IsYouTubeMiniPlayerListCollapsed = host.IsYouTubeMiniPlayerListCollapsed,
+            YouTubeMiniPlayerListPosition = host.CaptureYouTubeMiniPlayerListPosition()
         };
     }
 
@@ -88,7 +94,10 @@ internal sealed class SessionRuntimeCaptureAdapter
             Tabs = tabs,
             ClosedTabs = [],
             Placement = null,
-            IsAlwaysOnTop = host.IsAlwaysOnTop
+            IsAlwaysOnTop = host.IsAlwaysOnTop,
+            IsYouTubeMiniPlayerListOpen = host.IsYouTubeMiniPlayerListOpen,
+            IsYouTubeMiniPlayerListCollapsed = host.IsYouTubeMiniPlayerListCollapsed,
+            YouTubeMiniPlayerListPosition = host.CaptureYouTubeMiniPlayerListPosition()
         };
     }
 

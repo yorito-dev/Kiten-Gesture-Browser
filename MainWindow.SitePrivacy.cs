@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using TabBrowser.Models;
 using TabBrowser.Services;
@@ -10,6 +11,7 @@ public partial class MainWindow
 {
     private readonly Dictionary<Guid, List<SitePermissionPromptWindow>> _sitePermissionPrompts = [];
     private readonly SitePrivacyInteractionCoordinator _sitePrivacyInteractionCoordinator = new();
+    private readonly Dictionary<string, bool> _privateAdBlockingExclusions = new(StringComparer.Ordinal);
     private Point _siteInformationDragStartPoint;
     private bool _isSiteInformationDragCandidate;
     private bool _suppressSiteInformationClick;
@@ -137,6 +139,7 @@ public partial class MainWindow
         SiteInformationConnectionText.Text = information.ConnectionName;
         SiteInformationContainerText.Text = $"コンテナ: {profile.Name}";
         SiteInformationContainerColor.Background = tab.ContainerProfileBrush;
+        UpdateSiteAdBlockingInformation(tab, information);
         SiteInformationManageButton.IsEnabled = information.SupportsSitePermissions;
         SiteInformationPermissionText.Text = information.SupportsSitePermissions
             ? "保存済みの権限を読み込んでいます..."
@@ -183,6 +186,68 @@ public partial class MainWindow
         var popupPolicy = GetPopupPolicy(information.Url, tab.ContainerProfileId);
         lines.Add($"ポップアップ: {(popupPolicy is null ? "既定" : GetPopupPolicyName(popupPolicy))}");
         SiteInformationPermissionText.Text = string.Join(Environment.NewLine, lines);
+    }
+
+    private bool? GetPrivateAdBlockingExclusion(string host) => _isPrivateWindow
+        && _privateAdBlockingExclusions.TryGetValue(host, out var excluded) ? excluded : null;
+
+    private void RefreshAdSpaceCollapseOnLoadedTabs()
+    {
+        foreach (var tab in _tabs.ToArray())
+            if (AdBlockWebViewController.Find(GetTabWebView(tab)?.CoreWebView2) is { } controller)
+                _windowTaskSupervisor.TryRun("ad-space-collapse-refresh", _ => controller.RefreshCosmeticAsync());
+    }
+
+    private void UpdateSiteAdBlockingInformation(BrowserTab tab, SiteAddressInformation information)
+    {
+        var controller = AdBlockWebViewController.Find(GetTabWebView(tab)?.CoreWebView2);
+        var youtube = AdBlockService.IsYouTubeUrl(information.Url);
+        var excluded = GetPrivateAdBlockingExclusion(information.Host)
+            ?? AdBlockingSettingsProfile.IsExcluded(_settings.AdBlocking, information.Host);
+        var available = controller?.IsAvailable == true;
+        SiteInformationAdBlockingText.Text = youtube ? "広告ブロック: YouTubeは常に対象外です"
+            : !_settings.AdBlocking.IsEnabled ? "広告ブロック: 全体でオフ（設定から変更できます）"
+            : !available ? "広告ブロック: このページでは利用できません"
+            : excluded ? "広告ブロック: このサイトは除外されています"
+            : $"広告ブロック: オン / このページで{controller!.BlockedCount}件"
+                + (controller.ExcludesEmbeddedYouTube ? "（YouTube埋め込みは対象外）" : string.Empty);
+        SiteInformationAdBlockingButton.Content = excluded ? "このサイトで有効にする" : "このサイトを除外する";
+        SiteInformationAdBlockingButton.IsEnabled = !youtube && available && _settings.AdBlocking.IsEnabled
+            && AdBlockingSettingsProfile.TryNormalizeHost(information.Host, out _);
+    }
+
+    private async void SiteInformationAdBlockingButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetSiteInformationTarget(out var tab, out var information)
+            || !_sitePrivacyInteractionCoordinator.IsCurrentSiteInformationContext(tab.Id, information.Url)
+            || !SiteInformationAdBlockingButton.IsEnabled
+            || !AdBlockingSettingsProfile.TryNormalizeHost(information.Host, out var host)) return;
+        var excluded = GetPrivateAdBlockingExclusion(host) ?? AdBlockingSettingsProfile.IsExcluded(_settings.AdBlocking, host);
+        try
+        {
+            if (_isPrivateWindow)
+            {
+                // Privateで選んだホストは、このWindowのメモリだけに保持する。
+                _privateAdBlockingExclusions[host] = !excluded;
+                if (AdBlockWebViewController.Find(GetTabWebView(tab)?.CoreWebView2) is { } controller)
+                    await controller.RefreshCosmeticAsync();
+            }
+            else
+            {
+                var before = SettingsService.CloneForEdit(_settings);
+                var after = SettingsService.CloneForEdit(before);
+                if (excluded) after.AdBlocking.ExcludedHosts.Remove(host);
+                else after.AdBlocking.ExcludedHosts[host] = true;
+                await ApplySettingsToOpenWindowsAsync(SettingsService.MergeEditingResult(before, after));
+            }
+            if (_sitePrivacyInteractionCoordinator.IsCurrentSiteInformationContext(tab.Id, information.Url))
+                UpdateSiteAdBlockingInformation(tab, information);
+            SetStatus("広告ブロックの設定を変更しました。必要に応じてページを再読み込みしてください。", autoClear: true);
+        }
+        catch
+        {
+            SetStatus("広告ブロックの設定を保存できませんでした。", autoClear: true);
+        }
     }
 
     private void CopySiteInformationUrlButton_Click(object sender, RoutedEventArgs e)
@@ -245,6 +310,65 @@ public partial class MainWindow
         {
             CloseSiteInformationPopup();
         }
+    }
+
+    private void UpdateAddressConnectionBadge()
+        => UpdateAddressConnectionBadgeForTab(GetActiveBrowserCommandTarget());
+
+    private void UpdateAddressConnectionBadgeForNavigation(
+        BrowserTab tab,
+        string? navigationUrl,
+        bool hasCertificateError)
+    {
+        if (ReferenceEquals(tab, GetActiveBrowserCommandTarget()))
+        {
+            UpdateAddressConnectionBadgeForTab(tab, navigationUrl, hasCertificateError);
+        }
+    }
+
+    private void UpdateAddressConnectionBadgeForTab(
+        BrowserTab? tab,
+        string? navigationUrl = null,
+        bool? navigationCertificateError = null)
+    {
+        var kind = SitePrivacyService.GetAddressConnectionBadgeKind(
+            navigationUrl
+                ?? (tab?.HasCertificateError == true ? tab.ConnectionBadgeNavigationUrl : null)
+                ?? (tab is null ? null : GetCurrentPageUrl(tab) ?? tab.Url),
+            navigationCertificateError ?? (tab?.HasCertificateError == true));
+        if (kind == AddressConnectionBadgeKind.None)
+        {
+            AddressConnectionBadge.Visibility = Visibility.Collapsed;
+            AddressConnectionBadge.ToolTip = null;
+            return;
+        }
+
+        AddressConnectionBadgeText.Text = kind switch
+        {
+            AddressConnectionBadgeKind.Unprotected => "保護なし",
+            AddressConnectionBadgeKind.CertificateError => "証明書エラー",
+            _ => "ファイル"
+        };
+        AddressConnectionBadge.ToolTip = kind switch
+        {
+            AddressConnectionBadgeKind.Unprotected => "この接続は暗号化されていません",
+            AddressConnectionBadgeKind.CertificateError => "このページの証明書を確認できません",
+            _ => "このページは端末内のファイルです"
+        };
+        AddressConnectionBadgeText.Foreground = (Brush)FindResource(kind switch
+        {
+            AddressConnectionBadgeKind.File => "DarkControlSubtleForegroundBrush",
+            _ => "DarkDialogErrorTextBrush"
+        });
+        AddressConnectionBadge.Background = (Brush)FindResource(
+            kind == AddressConnectionBadgeKind.CertificateError
+                ? "DarkDialogErrorBackgroundBrush"
+                : "DarkControlBackgroundBrush");
+        AddressConnectionBadge.BorderBrush = (Brush)FindResource(
+            kind == AddressConnectionBadgeKind.CertificateError
+                ? "DarkDialogErrorBorderBrush"
+                : "DarkControlBorderBrush");
+        AddressConnectionBadge.Visibility = Visibility.Visible;
     }
 
     private bool TryGetSiteInformationTarget(
@@ -412,7 +536,8 @@ public partial class MainWindow
 
     private bool HandleAutomaticPopup(BrowserTab tab, string? popupUrl)
     {
-        if (string.IsNullOrWhiteSpace(popupUrl))
+        if (string.IsNullOrWhiteSpace(popupUrl)
+            || BrowserUrlRulesService.IsPageRequestedFileUrl(popupUrl))
         {
             return true;
         }
@@ -538,6 +663,7 @@ public partial class MainWindow
     {
         var pending = TakePendingBlockedPopup();
         if (pending is not null
+            && !BrowserUrlRulesService.IsPageRequestedFileUrl(pending.PopupUrl)
             && _tabs.FirstOrDefault(tab => tab.Id == pending.TabId) is { } tab)
         {
             OpenBackgroundTabNextTo(tab, pending.PopupUrl);
@@ -548,6 +674,7 @@ public partial class MainWindow
     {
         var pending = TakePendingBlockedPopup();
         if (pending is null
+            || BrowserUrlRulesService.IsPageRequestedFileUrl(pending.PopupUrl)
             || _tabs.FirstOrDefault(tab => tab.Id == pending.TabId) is not { } tab)
         {
             return;

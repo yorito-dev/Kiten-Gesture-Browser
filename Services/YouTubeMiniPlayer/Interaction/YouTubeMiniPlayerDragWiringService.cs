@@ -27,6 +27,7 @@ internal static class YouTubeMiniPlayerDragWiringService
     {
         var isDragging = false;
         var isResizing = false;
+        var resizeEdges = MiniPlayerResizeEdges.None;
         var dragStartScreen = new Point();
         var startLeft = 0.0;
         var startTop = 0.0;
@@ -60,6 +61,9 @@ internal static class YouTubeMiniPlayerDragWiringService
             isDragging = true;
             isResizing = YouTubeMiniPlayerInputService.GetLeftDragAction(Keyboard.Modifiers)
                 == MiniPlayerLeftDragAction.Resize;
+            resizeEdges = isResizing ? MiniPlayerResizeEdges.None
+                : GetSurfaceResizeEdges(runtime, dragSurface, e.GetPosition(dragSurface), source);
+            isResizing |= resizeEdges != MiniPlayerResizeEdges.None;
             runtime.IsSurfaceDragging = !isResizing;
             runtime.IsResizing = isResizing;
             if (isResizing)
@@ -82,6 +86,7 @@ internal static class YouTubeMiniPlayerDragWiringService
             startWidth = Math.Max(YouTubeMiniPlayerLayoutService.MinimumWidth, state.Width);
             startHeight = Math.Max(YouTubeMiniPlayerLayoutService.MinimumHeight, state.Height);
             dragSurface.CaptureMouse();
+            Mouse.UpdateCursor();
             e.Handled = true;
         };
         dragSurface.MouseMove += (_, _) =>
@@ -91,7 +96,7 @@ internal static class YouTubeMiniPlayerDragWiringService
                 return;
             }
 
-            if (runtime.IsFullScreen)
+            if (runtime.IsFullScreen || runtime.IsDisposed || runtime.IsClosingTaskbarWindow)
             {
                 isDragging = false;
                 runtime.IsSurfaceDragging = false;
@@ -100,8 +105,24 @@ internal static class YouTubeMiniPlayerDragWiringService
                 return;
             }
 
+            if (Mouse.LeftButton != MouseButtonState.Pressed)
+            {
+                FinishDrag();
+                return;
+            }
+
             var currentScreen = callbacks.GetCursorScreenPoint();
-            if (isResizing)
+            if (resizeEdges != MiniPlayerResizeEdges.None)
+            {
+                var bounds = YouTubeMiniPlayerResizeService.CalculateResizeBounds(state,
+                    startLeft, startTop, startWidth, startHeight,
+                    currentScreen.X - dragStartScreen.X, currentScreen.Y - dragStartScreen.Y,
+                    resizeEdges.HasFlag(MiniPlayerResizeEdges.Left), resizeEdges.HasFlag(MiniPlayerResizeEdges.Top),
+                    resizeEdges.HasFlag(MiniPlayerResizeEdges.Right), resizeEdges.HasFlag(MiniPlayerResizeEdges.Bottom),
+                    YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime));
+                YouTubeMiniPlayerResizeService.ApplyBounds(state, runtime.Root, bounds, callbacks.Clamp);
+            }
+            else if (isResizing)
             {
                 YouTubeMiniPlayerResizeService.ApplyCtrlDragResize(
                     state,
@@ -128,7 +149,33 @@ internal static class YouTubeMiniPlayerDragWiringService
                 callbacks.KeepToolbarVisible(runtime);
             }
         };
-        dragSurface.MouseLeftButtonUp += (_, _) =>
+        dragSurface.QueryCursor += (_, e) =>
+        {
+            if (runtimes.TryGetValue(state.Id, out var runtime)
+                && !runtime.IsFullScreen && !runtime.IsDisposed
+                && ((isDragging && isResizing && resizeEdges == MiniPlayerResizeEdges.None
+                        || !isDragging && dragSurface.IsMouseOver && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
+                            && !IsInteractiveElement(e.OriginalSource as DependencyObject))
+                    ? Cursors.SizeNWSE
+                    : YouTubeMiniPlayerInputService.GetResizeCursor(isDragging ? resizeEdges
+                        : GetSurfaceResizeEdges(runtime, dragSurface, Mouse.GetPosition(dragSurface), e.OriginalSource as DependencyObject))) is { } cursor)
+            {
+                e.Cursor = cursor;
+                e.Handled = true;
+            }
+        };
+        dragSurface.PreviewKeyDown += RefreshModifierCursor;
+        dragSurface.PreviewKeyUp += RefreshModifierCursor;
+        dragSurface.MouseLeftButtonUp += (_, _) => FinishDrag();
+        dragSurface.LostMouseCapture += (_, _) => FinishDrag();
+
+        void RefreshModifierCursor(object sender, KeyEventArgs e)
+        {
+            if (dragSurface.IsMouseOver && e.Key is Key.LeftCtrl or Key.RightCtrl)
+                Mouse.UpdateCursor();
+        }
+
+        void FinishDrag()
         {
             if (!isDragging)
             {
@@ -137,12 +184,14 @@ internal static class YouTubeMiniPlayerDragWiringService
 
             isDragging = false;
             isResizing = false;
+            resizeEdges = MiniPlayerResizeEdges.None;
             dragSurface.ReleaseMouseCapture();
+            Mouse.UpdateCursor();
             if (runtimes.TryGetValue(state.Id, out var runtime))
             {
                 runtime.IsSurfaceDragging = false;
                 runtime.IsResizing = false;
-                if (runtime.IsFullScreen)
+                if (runtime.IsFullScreen || runtime.IsDisposed || runtime.IsClosingTaskbarWindow)
                 {
                     return;
                 }
@@ -154,7 +203,15 @@ internal static class YouTubeMiniPlayerDragWiringService
             }
 
             callbacks.QueueSave();
-        };
+        }
+    }
+
+    internal static MiniPlayerResizeEdges GetSurfaceResizeEdges(YouTubeMiniPlayerRuntime runtime, UIElement surface, Point point, DependencyObject? source)
+    {
+        if (runtime.IsDisposed || runtime.IsClosingTaskbarWindow || runtime.IsFullScreen || runtime.LocalVideoView is not { } view
+            || !ReferenceEquals(surface, view.DragSurface) || view.IsControlsTarget(source) || IsInteractiveElement(source))
+            return MiniPlayerResizeEdges.None;
+        return YouTubeMiniPlayerInputService.GetVideoResizeEdges(point, new Size(view.DragSurface.ActualWidth, view.DragSurface.ActualHeight));
     }
 
     private static bool IsInteractiveElement(DependencyObject? source)

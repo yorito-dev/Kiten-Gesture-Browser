@@ -40,8 +40,10 @@ internal interface ITabDropHost
     bool TryGetSnapshot(DragEventArgs e, out ITabDropSnapshot snapshot);
     bool TryGetExternalDrop(DragEventArgs e, out ExternalTabDropTarget externalDrop);
     bool HasFileDrop(DragEventArgs e);
+    bool IsPointOutsideWindow(Point point);
     Task<bool> TryHandleSiteInformationDropAsync(DragEventArgs e, bool dropOnTabList);
     bool TrySaveDraggedTabToActiveWorkspace(BrowserTab tab, Point point);
+    bool TrySaveDraggedTabToWorkspace(ITabDropPayload payload);
     bool InsertExternalTab(ITabDropPayload payload, ListBox list, Point point, object originalSource);
     bool InsertTransferredTab(ITabDropSnapshot snapshot, ListBox list, Point point, object originalSource);
     void OpenExternalDrop(ExternalTabDropTarget target, ListBox list, Point point, object originalSource);
@@ -64,6 +66,7 @@ internal sealed class TabDropController : IDisposable
     private readonly ITabDropHost _host;
     private readonly OwnedDispatcherTimer _externalHoverTimer;
     private BrowserTab? _externalHoverTarget;
+    private BrowserTab? _workspaceHoverTarget;
     private bool _workspaceHoverActivated;
     private bool _disposed;
 
@@ -99,13 +102,14 @@ internal sealed class TabDropController : IDisposable
         if (_folderDrop.TryHandleDragOver(e))
         {
             ResetExternalTabDragHover();
+            ResetWorkspaceTabDragHover();
             return;
         }
 
         if (_host.TryGetSiteInformation(e, out var siteInformationDrag))
         {
-            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             ResetWorkspaceTabDragHover();
+            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             _drag.ResetTabDetachCandidate();
             var targetTab = _host.FindTabFromOriginalSource(e.OriginalSource);
             if (targetTab is { IsNativeContentTab: false })
@@ -126,9 +130,18 @@ internal sealed class TabDropController : IDisposable
 
         if (_host.TryGetPayload(e, out var payload))
         {
-            ResetExternalTabDragHover();
             _drag.ResetTabDetachCandidate();
             _drag.QueueTabDragPreviewMove();
+
+            if (UpdateWorkspaceTabDragHover(tabList, tabListPoint, e.OriginalSource, payload.Tab.IsWorkspaceTab))
+            {
+                _reorder.ClearDropPreview();
+                e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+                return;
+            }
+
+            ResetExternalTabDragHover();
 
             if (!_host.CanDropTabOnList(payload.Tab, tabList))
             {
@@ -138,44 +151,29 @@ internal sealed class TabDropController : IDisposable
                 return;
             }
 
-            var suppressWorkspaceReorder = _policy.ShouldSuppressWorkspaceReorderPreview(
-                UpdateWorkspaceTabDragHover(
-                    tabList,
-                    tabListPoint,
-                    e.OriginalSource,
-                    payload.Tab.IsWorkspaceTab),
-                payload.IsFrom(_host));
-            if (suppressWorkspaceReorder)
+            _drag.MarkTabReorderCandidate();
+            var targetChanged = _reorder.UpdateDropPreview(tabList, tabListPoint, e.OriginalSource);
+            if (!_workspaceHoverActivated
+                && targetChanged
+                && payload.IsFrom(_host)
+                && _tabs.Contains(payload.Tab))
             {
-                _reorder.ClearDropPreview();
+                _reorder.PreviewReorderTab(payload.Tab, tabList, tabListPoint, e.OriginalSource);
             }
-            else
+            else if (!_workspaceHoverActivated
+                && targetChanged
+                && !payload.IsFrom(_host))
             {
-                _drag.MarkTabReorderCandidate();
-                var targetChanged = _reorder.UpdateDropPreview(tabList, tabListPoint, e.OriginalSource);
-                if (!_workspaceHoverActivated
-                    && targetChanged
-                    && payload.IsFrom(_host)
-                    && _tabs.Contains(payload.Tab))
-                {
-                    _reorder.PreviewReorderTab(payload.Tab, tabList, tabListPoint, e.OriginalSource);
-                }
-                else if (!_workspaceHoverActivated
-                    && targetChanged
-                    && !payload.IsFrom(_host))
-                {
-                    _reorder.UpdateExternalTabDropPreview(
-                        tabList,
-                        _reorder.GetInsertionIndexForDrop(tabList, tabListPoint, e.OriginalSource),
-                        payload.GroupCount);
-                }
+                _reorder.UpdateExternalTabDropPreview(
+                    tabList,
+                    _reorder.GetInsertionIndexForDrop(tabList, tabListPoint, e.OriginalSource),
+                    payload.GroupCount);
             }
 
             e.Effects = DragDropEffects.Move;
         }
         else if (_host.TryGetSnapshot(e, out var snapshot))
         {
-            ResetExternalTabDragHover();
             _drag.ResetTabDetachCandidate();
             if (UpdateWorkspaceTabDragHover(tabList, tabListPoint, e.OriginalSource, snapshot.IsWorkspaceTab))
             {
@@ -183,6 +181,7 @@ internal sealed class TabDropController : IDisposable
             }
             else
             {
+                ResetExternalTabDragHover();
                 _drag.MarkTabReorderCandidate();
                 if (_reorder.UpdateDropPreview(tabList, tabListPoint, e.OriginalSource))
                 {
@@ -197,8 +196,8 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.TryGetExternalDrop(e, out _))
         {
-            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             ResetWorkspaceTabDragHover();
+            UpdateExternalTabDragHover(tabList, tabListPoint, e.OriginalSource);
             _drag.ResetTabDetachCandidate();
             _reorder.UpdateDropPreview(tabList, tabListPoint, e.OriginalSource);
             e.Effects = DragDropEffects.Copy;
@@ -265,21 +264,31 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.TryGetPayload(e, out var payload))
         {
-            ResetExternalTabDragHover();
             _drag.QueueTabDragPreviewMove();
             var tabListPoint = e.GetPosition(tabList);
 
-            var suppressWorkspaceReorder = _policy.ShouldSuppressWorkspaceReorderPreview(
-                UpdateWorkspaceTabDragHover(
+            if (UpdateWorkspaceTabDragHover(
                     tabList,
                     tabListPoint,
                     e.OriginalSource,
-                    payload.Tab.IsWorkspaceTab),
-                payload.IsFrom(_host));
-            if (suppressWorkspaceReorder)
+                    payload.Tab.IsWorkspaceTab))
             {
                 _reorder.ClearDropPreview();
-                e.Effects = DragDropEffects.Move;
+                _drag.ResetTabDetachCandidate();
+                e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+                return;
+            }
+
+            ResetExternalTabDragHover();
+
+            if (_workspaceHoverActivated
+                && _host.ActiveTab is { IsWorkspaceTab: true }
+                && !new Rect(tabList.RenderSize).Contains(tabListPoint))
+            {
+                _reorder.ClearDropPreview();
+                _drag.ResetTabDetachCandidate();
+                e.Effects = DragDropEffects.Copy;
                 e.Handled = true;
                 return;
             }
@@ -327,7 +336,6 @@ internal sealed class TabDropController : IDisposable
         }
         else if (_host.TryGetSnapshot(e, out var snapshot))
         {
-            ResetExternalTabDragHover();
             var tabListPoint = e.GetPosition(tabList);
             if (UpdateWorkspaceTabDragHover(tabList, tabListPoint, e.OriginalSource, snapshot.IsWorkspaceTab))
             {
@@ -336,6 +344,8 @@ internal sealed class TabDropController : IDisposable
                 e.Handled = true;
                 return;
             }
+
+            ResetExternalTabDragHover();
 
             if (!IsPointOutsideTabReorderDropZone(tabList, tabListPoint))
             {
@@ -378,6 +388,7 @@ internal sealed class TabDropController : IDisposable
         else if (_host.HasFileDrop(e))
         {
             ResetExternalTabDragHover();
+            ResetWorkspaceTabDragHover();
             _folderDrop.ResetHover();
             e.Effects = DragDropEffects.None;
             e.Handled = true;
@@ -385,6 +396,7 @@ internal sealed class TabDropController : IDisposable
         else
         {
             ResetExternalTabDragHover();
+            ResetWorkspaceTabDragHover();
         }
     }
 
@@ -405,6 +417,17 @@ internal sealed class TabDropController : IDisposable
         else if (_host.TryGetPayload(e, out var payload))
         {
             var tabListPoint = e.GetPosition(tabList);
+            if (!payload.Tab.IsWorkspaceTab
+                && TryGetWorkspaceTabHoverTarget(tabList, tabListPoint, e.OriginalSource, out _))
+            {
+                var saved = _host.TrySaveDraggedTabToWorkspace(payload);
+                if (payload.IsFrom(_host)) _drag.RestoreOriginalTabOrder();
+                _drag.ResetTabDetachCandidate();
+                e.Effects = saved ? DragDropEffects.Copy : DragDropEffects.None;
+                e.Handled = true;
+                return;
+            }
+
             if (payload.IsFrom(_host)
                 && _tabs.Contains(payload.Tab)
                 && _host.TrySaveDraggedTabToActiveWorkspace(payload.Tab, e.GetPosition(_elements.RootSurface)))
@@ -497,20 +520,27 @@ internal sealed class TabDropController : IDisposable
         if (_disposed) return;
         ResetExternalTabDragHover();
         _folderDrop.ResetHover();
-        ResetWorkspaceTabDragHover();
+        var crossingInsideWorkspace = _workspaceHoverActivated
+            && _host.ActiveTab is { IsWorkspaceTab: true }
+            && !_host.IsPointOutsideWindow(e.GetPosition(_elements.RootSurface));
+        if (!crossingInsideWorkspace) ResetWorkspaceTabDragHover();
         if (_reorder.ShouldKeepExternalTabDropPreviewAtCursor())
         {
             return;
         }
 
         _reorder.ClearDropPreviewWithFollowUp();
-        _drag.BeginTabDetachCandidate();
+        if (!crossingInsideWorkspace) _drag.BeginTabDetachCandidate();
     }
 
     internal void TabList_DragLeave(object sender, DragEventArgs e)
     {
         if (_disposed) return;
         ResetExternalTabDragHover();
+        if (!_workspaceHoverActivated || _host.ActiveTab is not { IsWorkspaceTab: true })
+        {
+            ResetWorkspaceTabDragHover();
+        }
         if (_host.HasFileDrop(e))
         {
             _folderDrop.ResetHover();
@@ -519,7 +549,6 @@ internal sealed class TabDropController : IDisposable
             return;
         }
 
-        ResetWorkspaceTabDragHover();
         if (_reorder.ShouldKeepExternalTabDropPreviewAtCursor())
         {
             e.Handled = true;
@@ -537,13 +566,13 @@ internal sealed class TabDropController : IDisposable
     {
         if (_disposed) return;
         ResetExternalTabDragHover();
+        ResetWorkspaceTabDragHover();
         var tabList = sender as ListBox ?? TabList;
         if (await _folderDrop.TryHandleDropAsync(e))
         {
             return;
         }
 
-        ResetWorkspaceTabDragHover();
         _reorder.ClearDropPreviewWithFollowUp(animateExternalPreview: false);
         if (!_host.TryGetPayload(e, out var payload))
         {
@@ -583,6 +612,17 @@ internal sealed class TabDropController : IDisposable
 
         if (payload.IsFrom(_host))
         {
+            if (!payload.Tab.IsWorkspaceTab
+                && TryGetWorkspaceTabHoverTarget(tabList, e.GetPosition(tabList), e.OriginalSource, out _))
+            {
+                var saved = _host.TrySaveDraggedTabToWorkspace(payload);
+                _drag.RestoreOriginalTabOrder();
+                _drag.ResetTabDetachCandidate();
+                e.Effects = saved ? DragDropEffects.Copy : DragDropEffects.None;
+                e.Handled = true;
+                return;
+            }
+
             if (!_host.CanDropTabOnList(payload.Tab, tabList))
             {
                 _drag.RestoreOriginalTabOrder();
@@ -602,6 +642,16 @@ internal sealed class TabDropController : IDisposable
         }
         else
         {
+            if (!payload.Tab.IsWorkspaceTab
+                && TryGetWorkspaceTabHoverTarget(tabList, e.GetPosition(tabList), e.OriginalSource, out _))
+            {
+                e.Effects = _host.TrySaveDraggedTabToWorkspace(payload)
+                    ? DragDropEffects.Copy
+                    : DragDropEffects.None;
+                e.Handled = true;
+                return;
+            }
+
             if (!_host.InsertExternalTab(payload, tabList, e.GetPosition(tabList), e.OriginalSource))
             {
                 e.Effects = DragDropEffects.None;
@@ -637,11 +687,14 @@ internal sealed class TabDropController : IDisposable
 
     internal void ActivateHoveredExternalTab()
     {
-        var target = _externalHoverTarget;
+        var workspaceTarget = _workspaceHoverTarget;
+        var target = workspaceTarget ?? _externalHoverTarget;
         ResetExternalTabDragHover();
+        _workspaceHoverTarget = null;
         if (_disposed || _host.IsClosing || target is null || !_tabs.Contains(target)
             || ReferenceEquals(target, _host.ActiveTab)) return;
         _host.SelectTab(target);
+        _workspaceHoverActivated = workspaceTarget is not null;
         _host.QueueSelectedTabActivation();
     }
 
@@ -661,11 +714,26 @@ internal sealed class TabDropController : IDisposable
             || !TryGetWorkspaceTabHoverTarget(tabList, tabListPoint, originalSource, out var workspaceTab)
             || !_tabs.Contains(workspaceTab))
         {
-            ResetWorkspaceTabDragHover();
+            if (isDraggingWorkspaceTab
+                || !_workspaceHoverActivated
+                || _host.ActiveTab is not { IsWorkspaceTab: true })
+            {
+                ResetWorkspaceTabDragHover();
+            }
             return false;
         }
 
+        if (ReferenceEquals(workspaceTab, _host.ActiveTab))
+        {
+            if (_workspaceHoverTarget is not null) ResetWorkspaceTabDragHover();
+            return true;
+        }
+
+        if (ReferenceEquals(_workspaceHoverTarget, workspaceTab)) return true;
         ResetWorkspaceTabDragHover();
+        ResetExternalTabDragHover();
+        _workspaceHoverTarget = workspaceTab;
+        _externalHoverTimer.Start();
         return true;
     }
 
@@ -706,6 +774,8 @@ internal sealed class TabDropController : IDisposable
 
     internal void ResetWorkspaceTabDragHover()
     {
+        if (_workspaceHoverTarget is not null) _externalHoverTimer.Stop();
+        _workspaceHoverTarget = null;
         _workspaceHoverActivated = false;
     }
 

@@ -102,7 +102,13 @@ public sealed class YouTubePlaybackDiagnosticTracker
         YouTubePlaybackDiagnosticMessage message,
         DateTimeOffset observedAt)
     {
+        if (string.IsNullOrWhiteSpace(targetId)) return new(false, "ignored");
         UpdateActivity(targetId, message, observedAt);
+        if (message.EventName == "state" && message.TotalVideoFrames.HasValue)
+        {
+            if (message.Reason == "timeupdate") return ObservePeriodicSample(targetId, message, observedAt);
+            _lastPeriodicSamples[targetId] = CreatePeriodicSample(message, observedAt);
+        }
         if (string.Equals(message.EventName, "sample", StringComparison.Ordinal))
         {
             return ObservePeriodicSample(targetId, message, observedAt);
@@ -421,6 +427,16 @@ public sealed class YouTubePlaybackDiagnosticTracker
 
 public static class YouTubePlaybackDiagnosticService
 {
+    // 観測できた状況だけを分類する。buffered-waitをGPU故障などの原因確定には使わない。
+    public static string ClassifyWait(YouTubePlaybackDiagnosticMessage message)
+    {
+        if (message.MediaErrorCode is > 0) return "media-error";
+        if (message.IsPaused == true || message.IsEnded == true) return "inactive";
+        if (message.BufferedAheadSeconds is >= 1) return "buffered-wait";
+        if (message.BufferedAheadSeconds is <= 0.1) return "buffer-empty";
+        return "unknown";
+    }
+
     public const string MessageType = "youtubePlaybackDiagnostic";
 
     private static readonly HashSet<string> SupportedEvents = new(StringComparer.Ordinal)
@@ -463,7 +479,7 @@ public static class YouTubePlaybackDiagnosticService
                 }
 
                 const bridgeKey = "__tabBrowserYouTubePlaybackDiagnostic";
-                const bridgeVersion = 5;
+                const bridgeVersion = 7;
                 const periodicSamplesEnabled = {{(enablePeriodicSamples ? "true" : "false")}};
                 const stateUpdatesEnabled = {{(enableStateUpdates ? "true" : "false")}};
                 const existing = window[bridgeKey];
@@ -515,6 +531,7 @@ public static class YouTubePlaybackDiagnosticService
                             }
                         }
                     } catch {
+                        return null;
                     }
 
                     return 0;
@@ -563,11 +580,19 @@ public static class YouTubePlaybackDiagnosticService
                     }
 
                     lastStateSentAt = now;
+                    const frameQuality = readFrameQuality(video);
                     nativePostMessage({
                         type: "{{MessageType}}",
                         token,
                         event: "state",
                         reason,
+                        readyState: Number.isInteger(video.readyState) ? video.readyState : null,
+                        networkState: Number.isInteger(video.networkState) ? video.networkState : null,
+                        bufferedAhead: readBufferedAhead(video),
+                        errorCode: Number.isInteger(video.error?.code) ? video.error.code : null,
+                        totalVideoFrames: frameQuality.totalVideoFrames,
+                        droppedVideoFrames: frameQuality.droppedVideoFrames,
+                        corruptedVideoFrames: frameQuality.corruptedVideoFrames,
                         currentTime: readFinite(video.currentTime),
                         duration: readFinite(video.duration),
                         paused: Boolean(video.paused),
@@ -588,7 +613,8 @@ public static class YouTubePlaybackDiagnosticService
                     "volumechange",
                     "seeked",
                     "durationchange",
-                    "ended"
+                    "ended",
+                    "resize"
                 ];
                 const handleStateEvent = event => postPlaybackState(event.target, event.type, true);
                 const handleTimeUpdate = event => postPlaybackState(event.target, "timeupdate");

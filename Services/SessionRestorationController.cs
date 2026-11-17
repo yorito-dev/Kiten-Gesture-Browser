@@ -364,6 +364,8 @@ internal sealed class SessionRestorationController(
         }
 
         host.ApplyAlwaysOnTop(primaryWindow.IsAlwaysOnTop);
+        startupWindowRestoreController.RequestMiniPlayerListRestore(primaryWindow.IsYouTubeMiniPlayerListOpen,
+            primaryWindow.YouTubeMiniPlayerListPosition, primaryWindow.IsYouTubeMiniPlayerListCollapsed);
         RestoreSession(host.CreateSessionData(primaryWindow), restoreClosedTabs: false);
 
         foreach (var item in windows

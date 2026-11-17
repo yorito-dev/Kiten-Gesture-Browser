@@ -7,8 +7,6 @@ namespace TabBrowser.Services;
 
 internal static class YouTubeMiniPlayerWebViewService
 {
-    private const int ProcessRecoveryDelayMilliseconds = 500;
-
     public static WebView2 CreateWebView(
         YouTubeMiniPlayerState state,
         Action<YouTubeMiniPlayerState, WebView2> onCoreInitialized,
@@ -19,7 +17,6 @@ internal static class YouTubeMiniPlayerWebViewService
         Action<YouTubeMiniPlayerState, WebView2, CoreWebView2ProcessFailedEventArgs> onProcessFailed)
     {
         var webView = new WebView2();
-        var processRecoveryAttempted = false;
         webView.CoreWebView2InitializationCompleted += (_, _) =>
         {
             onCoreInitialized(state, webView);
@@ -31,52 +28,15 @@ internal static class YouTubeMiniPlayerWebViewService
                 core.ProcessFailed += (_, args) =>
                 {
                     onProcessFailed(state, webView, args);
-                    if (processRecoveryAttempted || !ShouldReloadAfterProcessFailure(args.ProcessFailedKind))
-                    {
-                        return;
-                    }
-
-                    processRecoveryAttempted = true;
-                    _ = ReloadAfterProcessFailureAsync(webView, core);
                 };
             }
         };
         webView.NavigationStarting += (_, args) => onNavigationStarting(state, webView, args);
         webView.NavigationCompleted += async (_, args) =>
         {
-            if (args.IsSuccess)
-            {
-                processRecoveryAttempted = false;
-            }
-
             await onNavigationCompletedAsync(state, webView, args);
         };
         return webView;
-    }
-
-    private static bool ShouldReloadAfterProcessFailure(CoreWebView2ProcessFailedKind kind)
-    {
-        return WebViewProcessFailurePolicy.GetAction(kind)
-            == WebViewProcessFailureAction.ReloadAffectedRuntime;
-    }
-
-    private static async Task ReloadAfterProcessFailureAsync(WebView2 webView, CoreWebView2 core)
-    {
-        try
-        {
-            await Task.Delay(ProcessRecoveryDelayMilliseconds);
-            await webView.Dispatcher.InvokeAsync(() =>
-            {
-                if (!webView.Dispatcher.HasShutdownStarted
-                    && ReferenceEquals(webView.CoreWebView2, core))
-                {
-                    core.Reload();
-                }
-            });
-        }
-        catch
-        {
-        }
     }
 
     public static void NavigateWithYouTubeReferer(CoreWebView2 core, Uri uri)
@@ -421,6 +381,99 @@ internal static class YouTubeMiniPlayerWebViewService
                 } else {
                     start();
                 }
+            })();
+            """;
+    }
+
+    public static string BuildLivePlaybackBridgeScript(string token, bool enableContinuation = true)
+        => BuildLiveBufferRecoveryBridgeScript() + ";\n" + BuildLiveContinuationBridgeScript(token, enableContinuation);
+
+    private static string BuildLiveBufferRecoveryBridgeScript()
+    {
+        var advertisement = YouTubeControlScriptService.AdvertisementPlayingExpression;
+        var seekToLiveEdge = YouTubeControlScriptService.BuildSeekToLiveEdgeScript();
+        return $$"""
+            (() => {
+                if (location.protocol !== "https:"
+                    || !["www.youtube.com", "youtube.com", "m.youtube.com"].includes(location.hostname)
+                    || window.top !== window) return;
+                const key = "__tabBrowserMiniPlayerLiveBufferRecovery";
+                if (window[key]?.version === 1 && !window[key].disposed) return;
+                window[key]?.dispose?.();
+                let pending = null, remembered = null, applying = false, disposed = false;
+                const reset = () => { pending = null; remembered = null; };
+                const contextFor = video => {
+                    try {
+                        const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                        if (!(video instanceof HTMLVideoElement) || player?.querySelector("video") !== video) return null;
+                        const data = player.getVideoData?.();
+                        const id = String(data?.video_id || player.getPlayerResponse?.()?.videoDetails?.videoId || "");
+                        if (!id) return null;
+                        const badge = player.querySelector(".ytp-live-badge") || document.querySelector(".ytp-live-badge");
+                        return { video, player, id, atHead: Boolean(badge?.classList?.contains("ytp-live-badge-is-livehead")) };
+                    } catch { return null; }
+                };
+                const same = (a, b) => a && b && a.video === b.video && a.player === b.player && a.id === b.id;
+                const canAct = current => current && !disposed && document.visibilityState === "visible"
+                    && !current.video.paused && !current.video.ended && !current.video.seeking && !current.video.loop
+                    && !window.__tabBrowserYouTubeMiniPlayerAbRepeat?.enabled && !({{advertisement}});
+                const remember = current => {
+                    remembered = canAct(current) ? current : null;
+                };
+                const onWait = event => {
+                    if (applying || disposed) return;
+                    const current = contextFor(event.target);
+                    if (!current) return;
+                    if (!canAct(current)) { reset(); return; }
+                    if (pending && !same(pending, current)) reset();
+                    // 読み込み開始でLIVE表示が外れても、直前の同じ動画の状態を使う。手動シークでは消去する。
+                    if (!pending && (current.atHead || (same(remembered, current) && remembered.atHead))) pending = current;
+                };
+                const onReady = event => {
+                    if (applying || disposed) return;
+                    const current = contextFor(event.target);
+                    if (!current) return;
+                    if (!canAct(current)) { reset(); return; }
+                    if (pending && !same(pending, current)) reset();
+                    if (pending && ["canplay", "playing"].includes(event.type)
+                        && current.video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+                        pending = null;
+                        applying = true;
+                        try {
+                            // 広告・配信終了・seekable端を既存の明示操作と同じ処理で再確認する。再生開始は要求しない。
+                            const result = {{seekToLiveEdge}};
+                            if (result?.reason === "live-edge-unavailable" && canAct(current)
+                                && same(current, contextFor(current.video))) pending = current;
+                        } catch { /* 読み取り不能時は通常再生を妨げず、この要求を破棄する。 */ }
+                        finally { applying = false; }
+                    }
+                    remember(contextFor(current.video));
+                };
+                const onCancel = event => {
+                    if (contextFor(event.target)) reset();
+                };
+                const onVisibility = () => { if (document.visibilityState !== "visible") reset(); };
+                const waitEvents = ["waiting", "stalled"];
+                const readyEvents = ["loadedmetadata", "play", "seeked", "canplay", "playing"];
+                const cancelEvents = ["pause", "seeking", "ended", "emptied", "error"];
+                for (const name of waitEvents) document.addEventListener(name, onWait, true);
+                for (const name of readyEvents) document.addEventListener(name, onReady, true);
+                for (const name of cancelEvents) document.addEventListener(name, onCancel, true);
+                document.addEventListener("yt-navigate-start", reset, true);
+                document.addEventListener("visibilitychange", onVisibility, true);
+                const dispose = () => {
+                    disposed = true;
+                    reset();
+                    for (const name of waitEvents) document.removeEventListener(name, onWait, true);
+                    for (const name of readyEvents) document.removeEventListener(name, onReady, true);
+                    for (const name of cancelEvents) document.removeEventListener(name, onCancel, true);
+                    document.removeEventListener("yt-navigate-start", reset, true);
+                    document.removeEventListener("visibilitychange", onVisibility, true);
+                    window.removeEventListener("pagehide", dispose, true);
+                };
+                window.addEventListener("pagehide", dispose, true);
+                window[key] = { version: 1, get disposed() { return disposed; }, dispose };
+                remember(contextFor(document.querySelector("video")));
             })();
             """;
     }

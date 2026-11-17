@@ -7,6 +7,7 @@ namespace TabBrowser;
 public partial class MainWindow : IStartupWindowRestoreHost, IStartupTabActivationHost
 {
     private static readonly DiagnosticLogWriter s_diagnosticLogWriter = new(GetSessionDiagnosticDirectory, GetSessionDiagnosticLogPath);
+    private static readonly WebMessageExceptionDiagnosticGate s_webMessageExceptionDiagnosticGate = new(() => DateTimeOffset.UtcNow);
     private readonly StartupWindowRestoreController _startupWindowRestoreController;
     private readonly PerformanceDiagnosticLogController _performanceDiagnosticLogController = new(s_diagnosticLogWriter.AppendLines);
     private OwnedDispatcherTimer? _performanceDiagnosticFlushTimer;

@@ -77,7 +77,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
     }
 
     public static YouTubeMiniPlayerInactivityResumeResult ResumeFromInactivity(
-        YouTubeMiniPlayerRuntime runtime)
+        YouTubeMiniPlayerRuntime runtime, bool deferReload = false)
     {
         runtime.InactiveSuspendGeneration++;
         if (TryGetCoreWebView2(runtime) is not { } core)
@@ -100,8 +100,11 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
             runtime.IsSuspendedForInactivity = false;
             if (runtime.IsLoadStoppedForInactivity)
             {
-                runtime.IsLoadStoppedForInactivity = false;
-                core.Reload();
+                if (!deferReload)
+                {
+                    runtime.IsLoadStoppedForInactivity = false;
+                    core.Reload();
+                }
                 reloading = true;
             }
         }
@@ -282,6 +285,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         runtime.IsWebDragging = false;
         runtime.IsSurfaceDragging = false;
         runtime.IsResizing = false;
+        runtime.WebDragResizeEdges = MiniPlayerResizeEdges.None;
         runtime.WebDragFollowTimer?.Stop();
     }
 
@@ -295,6 +299,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
             runtime.Root.MinWidth = runtime.TaskbarWindow.MinWidth = YouTubeMiniPlayerLayoutService.MinimumWidth;
             runtime.Root.MinHeight = runtime.TaskbarWindow.MinHeight = YouTubeMiniPlayerLayoutService.MinimumHeight;
         }
+        YouTubeMiniPlayerChromeFactory.RefreshListWindowHighlight(runtime);
 
         if (runtime.Root is Border rootBorder)
         {
@@ -372,6 +377,8 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
 
     public static void ResetWebView(YouTubeMiniPlayerRuntime runtime)
     {
+        YouTubeMiniPlayerRuntimeLoadService.Cancel(runtime);
+        runtime.LiveChatRequests.Reset();
         YouTubeMiniPlayerRuntimeContentFactory.ClearLiveContinuation(runtime);
         runtime.InactiveSuspendGeneration++;
         runtime.IsNavigationLoading = false;
@@ -401,8 +408,11 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
             return;
         }
 
+        runtime.TransparencyRegistration?.Dispose();
+        runtime.TransparencyRegistration = null;
         runtime.IsDisposed = true;
         runtime.Popup.IsOpen = false;
+        runtime.Popup.Child = null;
         runtime.TitleBandPopup.IsOpen = false;
         runtime.TitleBandPopup.Child = null;
         runtime.ToolbarPopup.IsOpen = false;

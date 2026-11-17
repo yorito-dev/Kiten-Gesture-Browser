@@ -2,6 +2,8 @@ using TabBrowser.Models;
 
 namespace TabBrowser.Services;
 
+internal enum YouTubeMiniPlayerListOperation { Play, Pause, Mute, Unmute, Minimize, Restore, LiveEdge, Close }
+
 internal interface IYouTubeMiniPlayerCommandOwner
 {
     IReadOnlyList<YouTubeMiniPlayerState> States { get; }
@@ -46,6 +48,8 @@ internal sealed class YouTubeMiniPlayerCommandController(
 {
     private readonly IYouTubeMiniPlayerCommandHost _host = host;
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+    public bool IsLiveSeekInProgress { get; private set; }
+    public bool IsListOperationInProgress { get; private set; }
 
     private bool TryResolveMiniPlayerCommandTarget(
         CommandActionContext context,
@@ -357,6 +361,103 @@ internal sealed class YouTubeMiniPlayerCommandController(
         await _host.RefreshListAsync();
     }
 
+    public async Task ExecuteListOperationAsync(
+        IReadOnlyList<(IYouTubeMiniPlayerCommandOwner Owner, YouTubeMiniPlayerState State)> targets,
+        YouTubeMiniPlayerListOperation operation)
+    {
+        if (IsListOperationInProgress || IsLiveSeekInProgress) return;
+        // 選択と実体を待機前に固定し、対象が消えても全件へ広げない。
+        var snapshot = targets.Distinct().Select(target =>
+            (target.Owner, target.State, Runtime: target.Owner.TryGetRuntime(target.State.Id, out var runtime) ? runtime : null)).ToArray();
+        if (snapshot.Length == 0)
+        {
+            _host.SetStatus("操作するミニプレイヤーが選択されていません");
+            return;
+        }
+        IsListOperationInProgress = true;
+        if (operation == YouTubeMiniPlayerListOperation.LiveEdge) IsLiveSeekInProgress = true;
+        var changedOwners = new HashSet<IYouTubeMiniPlayerCommandOwner>();
+        var completed = 0;
+        var skipped = 0;
+        try
+        {
+            await _host.StopHoverPreviewAsync();
+            await _host.RefreshListAsync();
+            foreach (var target in snapshot)
+            {
+                var (owner, state, runtime) = target;
+                bool IsCurrent() => owner.States.Any(candidate => ReferenceEquals(candidate, state))
+                    && (runtime is null || (!runtime.IsDisposed && owner.TryGetRuntime(state.Id, out var current) && ReferenceEquals(runtime, current)));
+                if (!IsCurrent()) { skipped++; continue; }
+                try
+                {
+                    var needsLoaded = operation is YouTubeMiniPlayerListOperation.Play or YouTubeMiniPlayerListOperation.Pause or YouTubeMiniPlayerListOperation.LiveEdge;
+                    if (needsLoaded && (runtime is null || !owner.IsRuntimeLoaded(runtime))) { skipped++; continue; }
+                    switch (operation)
+                    {
+                        case YouTubeMiniPlayerListOperation.Play:
+                        case YouTubeMiniPlayerListOperation.Pause:
+                            var paused = operation == YouTubeMiniPlayerListOperation.Pause;
+                            if (!await owner.SetPausedAsync(state, paused) || !IsCurrent()) { skipped++; continue; }
+                            state.IsPaused = paused;
+                            changedOwners.Add(owner);
+                            break;
+                        case YouTubeMiniPlayerListOperation.Mute:
+                        case YouTubeMiniPlayerListOperation.Unmute:
+                            await owner.SetMutedAsync(state, operation == YouTubeMiniPlayerListOperation.Mute);
+                            if (!IsCurrent()) { skipped++; continue; }
+                            changedOwners.Add(owner);
+                            break;
+                        case YouTubeMiniPlayerListOperation.Minimize:
+                        case YouTubeMiniPlayerListOperation.Restore:
+                            if (runtime is null) { skipped++; continue; }
+                            owner.CreateSetMinimizedAction()(state, operation == YouTubeMiniPlayerListOperation.Minimize);
+                            break;
+                        case YouTubeMiniPlayerListOperation.LiveEdge:
+                            if (state.SourceKind != MiniPlayerSourceKind.YouTube || !state.IsLiveBroadcast) { skipped++; continue; }
+                            var wasPaused = state.IsPaused == true;
+                            if (!await owner.SeekToLiveEdgeAsync(state) || !IsCurrent()) { skipped++; continue; }
+                            if (wasPaused)
+                            {
+                                if (!await owner.SetPausedAsync(state, true) || !IsCurrent()) { skipped++; continue; }
+                                state.IsPaused = true;
+                            }
+                            break;
+                        case YouTubeMiniPlayerListOperation.Close:
+                            owner.Close(state.Id);
+                            break;
+                        default: throw new ArgumentOutOfRangeException(nameof(operation));
+                    }
+                    completed++;
+                }
+                catch (Exception)
+                {
+                    // 1件の失敗や終了で、残る確定済み対象の操作を中断しない。
+                    skipped++;
+                }
+            }
+            var text = operation switch
+            {
+                YouTubeMiniPlayerListOperation.Play => "再生",
+                YouTubeMiniPlayerListOperation.Pause => "一時停止",
+                YouTubeMiniPlayerListOperation.Mute => "ミュート",
+                YouTubeMiniPlayerListOperation.Unmute => "ミュート解除",
+                YouTubeMiniPlayerListOperation.Minimize => "最小化",
+                YouTubeMiniPlayerListOperation.Restore => "最小化解除",
+                YouTubeMiniPlayerListOperation.LiveEdge => "ライブ配信を最新位置へ移動",
+                _ => "閉じる"
+            };
+            _host.SetStatus($"{text}：{completed}件／スキップ・失敗：{skipped}件");
+        }
+        finally
+        {
+            IsListOperationInProgress = false;
+            if (operation == YouTubeMiniPlayerListOperation.LiveEdge) IsLiveSeekInProgress = false;
+            try { foreach (var owner in changedOwners) owner.QueueSave(); }
+            finally { await _host.RefreshListAsync(); }
+        }
+    }
+
     public bool ShouldPlayAllLoadedYouTubeMiniPlayers()
     {
         var loadedTargets = GetLoadedYouTubeMiniPlayerTargets();
@@ -408,6 +509,70 @@ internal sealed class YouTubeMiniPlayerCommandController(
                 ? $"読み込み済みミニプレイヤーをすべて再生しました（{successCount}件）"
                 : "再生できる読み込み済みミニプレイヤーがありません");
         await _host.RefreshListAsync();
+    }
+
+    public async Task SeekAllLiveMiniPlayersToLiveEdgeAsync()
+    {
+        if (IsLiveSeekInProgress) return;
+        IsLiveSeekInProgress = true;
+        try
+        {
+            await _host.StopHoverPreviewAsync();
+            await _host.RefreshListAsync();
+            var targets = _host.GetOwners()
+                .SelectMany(owner => owner.States
+                    .Where(static state => state.SourceKind == MiniPlayerSourceKind.YouTube && state.IsLiveBroadcast)
+                    .Select(state => (Owner: owner, State: state)))
+                .ToList();
+            var moved = 0;
+            var skipped = 0;
+            foreach (var (owner, state) in targets)
+            {
+                if (!owner.States.Contains(state) || state.SourceKind != MiniPlayerSourceKind.YouTube
+                    || !state.IsLiveBroadcast
+                    || !owner.TryGetRuntime(state.Id, out var runtime) || !owner.IsRuntimeLoaded(runtime))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var wasPaused = state.IsPaused == true;
+                try
+                {
+                    var changed = await owner.SeekToLiveEdgeAsync(state);
+                    // 実行中に閉じられた対象や差し替わったRuntimeへ、追加の操作を送らない。
+                    if (!changed || !owner.States.Contains(state)
+                        || !owner.TryGetRuntime(state.Id, out var current) || !ReferenceEquals(runtime, current))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    // YouTube側のライブ表示クリックが再生を始めても、元の一時停止を保つ。
+                    if (wasPaused)
+                    {
+                        if (!await owner.SetPausedAsync(state, isPaused: true))
+                        {
+                            skipped++;
+                            continue;
+                        }
+                        state.IsPaused = true;
+                    }
+                    moved++;
+                }
+                catch (Exception)
+                {
+                    // 1件の終了・操作失敗で、残るライブの移動を中断しない。
+                    skipped++;
+                }
+            }
+            _host.SetStatus($"ライブ配信を最新位置へ移動：{moved}件／スキップ・失敗：{skipped}件");
+        }
+        finally
+        {
+            IsLiveSeekInProgress = false;
+            await _host.RefreshListAsync();
+        }
     }
 
     public async Task PauseAllYouTubeMiniPlayersAsync()

@@ -4,8 +4,63 @@ using TabBrowser.Models;
 
 namespace TabBrowser.Services;
 
+public enum AddressConnectionBadgeKind
+{
+    None,
+    Unprotected,
+    CertificateError,
+    File
+}
+
 public static class SitePrivacyService
 {
+    internal static AddressConnectionBadgeKind GetAddressConnectionBadgeKind(
+        string? url,
+        bool hasCertificateError)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return AddressConnectionBadgeKind.None;
+        }
+
+        if (uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return hasCertificateError
+                ? AddressConnectionBadgeKind.CertificateError
+                : AddressConnectionBadgeKind.None;
+        }
+
+        if (uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+        {
+            return AddressConnectionBadgeKind.Unprotected;
+        }
+
+        return uri.IsFile
+            ? AddressConnectionBadgeKind.File
+            : AddressConnectionBadgeKind.None;
+    }
+
+    internal static bool IsCertificateNavigationError(CoreWebView2WebErrorStatus status)
+    {
+        return status is CoreWebView2WebErrorStatus.CertificateCommonNameIsIncorrect
+            or CoreWebView2WebErrorStatus.CertificateExpired
+            or CoreWebView2WebErrorStatus.ClientCertificateContainsErrors
+            or CoreWebView2WebErrorStatus.CertificateRevoked
+            or CoreWebView2WebErrorStatus.CertificateIsInvalid;
+    }
+
+    internal static bool IsCurrentPageCertificateRequest(string? navigationUrl, string? requestUrl)
+    {
+        return Uri.TryCreate(navigationUrl, UriKind.Absolute, out var navigationUri)
+            && Uri.TryCreate(requestUrl, UriKind.Absolute, out var requestUri)
+            && navigationUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && requestUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                navigationUri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped),
+                requestUri.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped),
+                StringComparison.Ordinal);
+    }
+
     public static bool TryCreateAddressInformation(
         string? url,
         out SiteAddressInformation information)

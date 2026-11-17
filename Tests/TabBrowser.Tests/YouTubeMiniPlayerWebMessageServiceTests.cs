@@ -134,6 +134,22 @@ public sealed class YouTubeMiniPlayerWebMessageServiceTests
         Assert.Equal("test-token", ReadProperty(message, "Token"));
     }
 
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(3, 3)]
+    [InlineData(12, 12)]
+    [InlineData(5, 0)]
+    [InlineData(10, 0)]
+    [InlineData(15, 0)]
+    [InlineData(-1, 0)]
+    [InlineData(1.5, 0)]
+    public void ResizeEdgesAcceptOnlyOneEdgeOrAdjacentCorner(double value, int expected)
+    {
+        var (parsed, message) = Parse($$"""{"type":"youtubeMiniPlayerDrag","phase":"start","resizeEdges":{{value.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}""");
+        Assert.True(parsed);
+        Assert.Equal(expected, Convert.ToInt32(ReadProperty(message, "ResizeEdges")));
+    }
+
     private static (bool Parsed, object Message) Parse(string json)
     {
         var serviceType = typeof(YouTubeControlScriptService).Assembly.GetType(

@@ -3,6 +3,8 @@
     const __tabBrowserNativePostMessage = getNativePostMessage();
     const objectAssign = Object.assign.bind(Object);
     const MapConstructor = Map;
+    const WeakReference = WeakRef;
+    const gestureNow = typeof performance !== "undefined" ? performance.now.bind(performance) : Date.now.bind(Date);
     const defaultSettings = {
         gestureStartThreshold: 14,
         gestureDirectionThreshold: 22,
@@ -92,6 +94,8 @@
 
             settings = normalizeSettings(nextSettings);
             commands = nextCommands instanceof MapConstructor ? nextCommands : buildCommandMap(nextCommands);
+            cancelSuperDrag();
+            clearYouTubeContextMenuState();
         },
         writable: false,
         configurable: false
@@ -129,6 +133,12 @@
     let gestureStartLinkUrl = "";
     let gestureStartLinkText = "";
     let lastHandledMouseMoveEvent = null;
+    let lastYouTubeMenuTarget = null;
+    let youTubeMenuPressTarget = null;
+    let youTubeMenuReadyTarget = null;
+    let youTubeOpenMenuOwner = null;
+    let lastAllowedYouTubeContextMenuEvent = null;
+    let gestureStartedAt = 0;
 
     function getNativePostMessage() {
         const webViewBridge = window.chrome && window.chrome.webview;
@@ -266,16 +276,79 @@
         return false;
     }
 
+    function getYouTubeVideoContextTarget(x, y, includeContextMenu = false) {
+        if (window.top !== window || document.hidden || location.protocol !== "https:"
+            || !["youtube.com", "www.youtube.com", "m.youtube.com"].includes(location.hostname.toLowerCase())) {
+            return null;
+        }
+
+        const target = document.elementFromPoint(x, y);
+        if (!target?.closest || !(includeContextMenu && target.closest(".ytp-contextmenu"))
+            && target.closest("a,button,input,textarea,select,[contenteditable],.ytp-chrome-top,.ytp-chrome-bottom,.ytp-popup,.ytp-contextmenu")) {
+            return null;
+        }
+
+        const player = target.closest(".html5-video-player");
+        const video = player?.querySelector("video");
+        return player?.isConnected && video?.isConnected ? { player, video } : null;
+    }
+
+    function matchesYouTubeMenuTarget(saved, x, y) {
+        if (!saved || saved.url !== location.href) return false;
+        const current = getYouTubeVideoContextTarget(x, y, true);
+        return current && saved.player.deref() === current.player && saved.video.deref() === current.video
+            || getOpenYouTubeMenuTarget(x, y) === saved;
+    }
+
+    function getOpenYouTubeMenuTarget(x, y) {
+        const owner = youTubeOpenMenuOwner;
+        const player = owner?.player.deref();
+        const video = owner?.video.deref();
+        if (!owner || owner.url !== location.href || document.hidden || getSelectedText().trim()
+            || !player?.isConnected || !video?.isConnected || player.querySelector("video") !== video) return null;
+
+        const hitMenu = document.elementFromPoint(x, y)?.closest?.(".ytp-contextmenu");
+        const target = getYouTubeVideoContextTarget(x, y, true);
+        if (!(target?.player === player && target.video === video)
+            && !(hitMenu && !hitMenu.closest(".html5-video-player"))) return null;
+
+        // 通常表示の公式メニューはbody直下へ移されるため、開いた動画との対応を弱参照で保持する。
+        for (const menu of hitMenu ? [hitMenu] : document.querySelectorAll(".ytp-contextmenu")) {
+            const menuPlayer = menu.closest(".html5-video-player");
+            if (menuPlayer && menuPlayer !== player) continue;
+            const bounds = menu.getBoundingClientRect();
+            const style = getComputedStyle(menu);
+            if (bounds.width > 0 && bounds.height > 0 && style.visibility === "visible" && style.opacity !== "0") return owner;
+        }
+        return null;
+    }
+
+    function clearYouTubeContextMenuState() {
+        lastYouTubeMenuTarget = null;
+        youTubeMenuPressTarget = null;
+        youTubeMenuReadyTarget = null;
+        youTubeOpenMenuOwner = null;
+    }
+
     function showPageContextMenu(event) {
+        youTubeOpenMenuOwner = null;
         const anchor = getAnchor(event);
         const linkUrl = anchor ? normalizeHref(anchor) : "";
+        const selectedText = getSelectedText();
+        const isEditable = isEditableContextTarget(event);
+        const videoTarget = !anchor && !selectedText.trim() && !isEditable
+            ? getYouTubeVideoContextTarget(event.clientX, event.clientY) : null;
+        lastYouTubeMenuTarget = videoTarget ? {
+            player: new WeakReference(videoTarget.player), video: new WeakReference(videoTarget.video), url: location.href
+        } : null;
         postMessage({
             type: "pageContextMenu",
             pageUrl: location.href || document.URL || "",
             linkUrl,
             linkText: anchor ? getLinkPreviewTitle(anchor) : "",
-            selectedText: getSelectedText(),
-            isEditable: isEditableContextTarget(event),
+            selectedText,
+            isEditable,
+            isYouTubeVideo: videoTarget !== null,
             x: event.clientX,
             y: event.clientY
         });
@@ -588,6 +661,8 @@
 
     function resetGestureState(consumeContextMenu) {
         const wasTracking = tracking;
+        youTubeMenuPressTarget = null;
+        youTubeMenuReadyTarget = null;
         if (cancellationVisualTimer !== null) {
             clearTimeout(cancellationVisualTimer);
             cancellationVisualTimer = null;
@@ -608,6 +683,7 @@
         gestureStartLinkText = "";
         if (consumeContextMenu) {
             consumedContextMenu = true;
+            clearYouTubeContextMenuState();
         }
 
         removeOverlay();
@@ -619,6 +695,7 @@
     }
 
     window.__tabBrowserGestureHostCancel = function () {
+        clearYouTubeContextMenuState();
         resetGestureState(tracking);
     };
 
@@ -1038,7 +1115,10 @@
         }
 
         clearLinkHoverPreview();
+        youTubeMenuPressTarget = getOpenYouTubeMenuTarget(x, y);
+        youTubeMenuReadyTarget = null;
         tracking = true;
+        gestureStartedAt = gestureNow();
         active = false;
         cancelled = false;
         route = "";
@@ -1062,6 +1142,7 @@
     }
 
     function handleMouseDown(event) {
+        if (event.isTrusted && event.button !== 2) clearYouTubeContextMenuState();
         if (!event.isTrusted || event.button !== 2 || tracking) {
             return;
         }
@@ -1081,6 +1162,7 @@
 
         if (!active && distance(startPoint, point) >= settings.gestureStartThreshold) {
             active = true;
+            clearYouTubeContextMenuState();
             if (showOverlay) {
                 ensureOverlay();
             }
@@ -1225,9 +1307,13 @@
         const completedLinkUrl = gestureStartLinkUrl;
         const completedLinkText = gestureStartLinkText;
 
+        const contextMenuTarget = gestureNow() - gestureStartedAt < gestureGuideDelayMilliseconds
+            ? youTubeMenuPressTarget : null;
+
         resetGestureState(false);
 
         if (!wasActive) {
+            youTubeMenuReadyTarget = contextMenuTarget;
             return false;
         }
 
@@ -1266,11 +1352,24 @@
     document.addEventListener("mouseup", handleMouseUp, true);
 
     Object.defineProperty(window, "__tabBrowserGestureHostStartAt", {
-        value: function (token, x, y) {
+        value: function (token, x, y, fromYouTubeContextMenu = false) {
             if (token !== __tabBrowserWebMessageToken
                 || !Number.isFinite(x)
                 || !Number.isFinite(y)) {
                 return false;
+            }
+
+            if (fromYouTubeContextMenu === true) {
+                const started = startGestureAt(x, y);
+                // WPFメニュー表示中だったことはhostが確認する。実DOMのmousedownが先に届いても同じ押下を引き継ぐ。
+                if ((started || tracking && !active && !cancelled
+                    && distance(startPoint, { x, y }) <= gestureGuideMovementTolerance)
+                    && matchesYouTubeMenuTarget(lastYouTubeMenuTarget, x, y)) {
+                    youTubeMenuPressTarget = lastYouTubeMenuTarget;
+                    return true;
+                }
+
+                return started;
             }
 
             return startGestureAt(x, y);
@@ -1302,14 +1401,27 @@
         if (!event.isTrusted) {
             return;
         }
+        if (event === lastAllowedYouTubeContextMenuEvent) return;
 
         if (consumedContextMenu || cancelled || active || (!settings.preserveContextMenuOnShortRightClick && tracking)) {
+            clearYouTubeContextMenuState();
             consumedContextMenu = false;
             event.preventDefault();
             event.stopPropagation();
             return;
         }
 
+        if (event.button === 2 && matchesYouTubeMenuTarget(youTubeMenuReadyTarget, event.clientX, event.clientY)) {
+            // 公式メニューが残っている場合はnativeメニュー経由でKitenが重なることも防ぐ。
+            if (getOpenYouTubeMenuTarget(event.clientX, event.clientY)) event.preventDefault();
+            const menuOwner = youTubeMenuReadyTarget;
+            clearYouTubeContextMenuState();
+            youTubeOpenMenuOwner = menuOwner;
+            lastAllowedYouTubeContextMenuEvent = event;
+            return;
+        }
+
+        youTubeMenuReadyTarget = null;
         event.preventDefault();
         event.stopPropagation();
         showPageContextMenu(event);
@@ -1318,7 +1430,160 @@
     window.addEventListener("contextmenu", handleContextMenu, true);
     document.addEventListener("contextmenu", handleContextMenu, true);
 
+    // HTMLのネイティブドラッグを維持し、同じ文書の通常領域へ落とした場合だけ消費する。
+    // screen座標はページ拡大率に依存しない画面上のDIPで、CSS座標との混在を避ける。
+    let superDrag = null;
+    let superDragHint = null;
+    let superDragSequence = 0;
+    const superDragDocumentId = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const superDragProtectedTarget = "input,textarea,select,button,[contenteditable]:not([contenteditable='false']),[role='textbox'],[role='slider'],[aria-dropeffect],canvas,video,[ondrop],[ondragover],[draggable='true']";
+    const superDragConfig = () => settings.superDrag;
+    const superDragRead = (object, name) => object && name && (object[name] ?? object[name[0].toUpperCase() + name.slice(1)]);
+
+    function superDragEnabled() {
+        const config = superDragConfig();
+        if ((window.top && window.top !== window) || !superDragRead(config, "isEnabled") || !/^https?:$/.test(location.protocol)) return false;
+        const host = location.hostname.toLowerCase().replace(/\.$/, "");
+        return !(superDragRead(config, "excludedHosts") || []).some(excluded => host === excluded || host.endsWith("." + excluded));
+    }
+
+    function cancelSuperDrag(notify = true) {
+        if (superDrag && notify !== false) postMessage({ type: "superDrag", phase: "cancel" });
+        superDrag = null;
+        superDragHint?.remove();
+        superDragHint = null;
+    }
+
+    function superDragDirection(event) {
+        const point = { x: event.screenX, y: event.screenY };
+        const direction = (x, y, minimum) => {
+            if (Math.hypot(x, y) < minimum) return "";
+            if (Math.abs(x) >= Math.abs(y) * 1.25) return x > 0 ? "right" : "left";
+            if (Math.abs(y) >= Math.abs(x) * 1.25) return y > 0 ? "down" : "up";
+            return "";
+        };
+        const horizontal = value => value === "left" || value === "right";
+        const route = superDrag.route;
+        if (superDrag.invalid) return "invalid";
+        if (!route.length) {
+            const first = direction(point.x - superDrag.x, point.y - superDrag.y, 30);
+            if (!first) return "";
+            route.push(first); superDrag.pivot = point;
+        } else {
+            const last = route[route.length - 1];
+            // 同じ方向へ十分進んだ区間だけ基準を更新し、曲がり始めの手ぶれで基準を失わない。
+            if (direction(point.x - superDrag.pivot.x, point.y - superDrag.pivot.y, 30) === last) superDrag.pivot = point;
+            const next = direction(point.x - superDrag.pivot.x, point.y - superDrag.pivot.y, 40);
+            if (next && next !== last) {
+                if (route.length === 1 && horizontal(last) !== horizontal(next)) {
+                    route.push(next); superDrag.pivot = point;
+                } else {
+                    route.push(next); superDrag.invalid = true;
+                    return "invalid";
+                }
+            }
+        }
+        if (route.length === 1 && Math.hypot(point.x - superDrag.x, point.y - superDrag.y) < 30) return "";
+        return route.length === 1 ? route[0] : route[0] + route[1][0].toUpperCase() + route[1].slice(1);
+    }
+
+    function superDragDropAction(event) {
+        const target = superDragTarget(event, true);
+        if (!superDrag || !superDragEnabled() || event.defaultPrevented || !target
+            || target.closest(superDragProtectedTarget + ",a[href]")
+            || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey
+            || (event.dataTransfer && Array.from(event.dataTransfer.types).includes("Files"))) return null;
+        const direction = superDragDirection(event);
+        const action = superDragRead(superDragRead(superDragConfig(), superDrag.kind), direction);
+        if (!direction) return null;
+        return { direction, action: action || "None", consume: (action && action !== "None") || superDrag.route.length > 1 };
+    }
+
+    function superDragTarget(event, dropping) {
+        // Shadow DOMでhostへ付け替えられたtargetだけを見て、内側の編集欄を奪わない。
+        const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+        const protectedSelector = superDragProtectedTarget + (dropping ? ",a[href]" : "");
+        if (path.some(node => node instanceof Element && node.closest(protectedSelector))) return null;
+        const target = path.find(node => node instanceof Element) || event.target;
+        return target instanceof Element ? target : target?.parentElement;
+    }
+
+    window.addEventListener("dragstart", event => {
+        cancelSuperDrag();
+        if (!event.isTrusted || event.defaultPrevented || tracking || active || !superDragEnabled()
+            || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
+        const target = superDragTarget(event, false);
+        if (!target || target.closest(superDragProtectedTarget)) return;
+        const link = target.closest("a[href]");
+        const image = target.closest("img");
+        const selection = window.getSelection();
+        let kind, value;
+        if (link) { kind = "link"; value = link.href; }
+        else if (image) { kind = "image"; value = image.currentSrc || image.src; }
+        else if (selection && !selection.isCollapsed && selection.containsNode(target, true)) {
+            kind = "text"; value = selection.toString();
+        }
+        if (!value || value.length > 8192 || (kind !== "text" && !/^https?:\/\//i.test(value))) return;
+        const needsLinkText = link && ["up", "right", "down", "left", "upRight", "upLeft", "rightUp", "rightDown",
+            "downRight", "downLeft", "leftUp", "leftDown"].some(direction =>
+            superDragRead(superDragRead(superDragConfig(), "link"), direction) === "CopyMarkdown");
+        const linkText = needsLinkText ? trimLinkPreviewText(link.textContent
+            || link.getAttribute?.("aria-label") || link.getAttribute?.("title")) : "";
+        superDrag = { kind, value, linkText, x: event.screenX, y: event.screenY, route: [], pivot: null, invalid: false,
+            requestId: superDragDocumentId + ":" + (++superDragSequence) };
+        postMessage({ type: "superDrag", phase: "start", requestId: superDrag.requestId, pageUrl: location.href });
+    });
+
+    window.addEventListener("dragover", event => {
+        if (!event.isTrusted) return;
+        const candidate = superDragDropAction(event);
+        if (!candidate) { superDragHint?.remove(); superDragHint = null; return; }
+        if (candidate.consume) event.preventDefault();
+        if (event.dataTransfer && candidate.consume) event.dataTransfer.dropEffect = "copy";
+        if (!superDragHint) {
+            superDragHint = document.createElement("div");
+            superDragHint.style.cssText = "position:fixed;z-index:2147483647;pointer-events:none;background:#172333;color:#f3f4f6;border:1px solid #71b8f0;border-radius:4px;padding:6px 10px;font:13px sans-serif;max-width:260px";
+            document.documentElement.appendChild(superDragHint);
+        }
+        superDragHint.style.left = Math.max(0, Math.min(event.clientX + 14, window.innerWidth - 280)) + "px";
+        superDragHint.style.top = Math.max(0, Math.min(event.clientY + 18, window.innerHeight - 44)) + "px";
+        superDragHint.textContent = superDrag.route.map(direction => ({ up: "↑", right: "→", down: "↓", left: "←" })[direction]).join("")
+            + " " + (candidate.direction === "invalid" ? "対象外の経路：実行しません"
+                : candidate.action === "None" ? "未登録：実行しません"
+                : settings.superDragLabels?.[superDrag.kind]?.[candidate.action] || candidate.action);
+    });
+
+    window.addEventListener("drop", event => {
+        if (!event.isTrusted) return;
+        const candidate = superDragDropAction(event);
+        const completed = superDrag;
+        if (candidate?.consume) event.preventDefault();
+        const executed = candidate && candidate.direction !== "invalid" && candidate.action !== "None";
+        if (executed) {
+            postMessage({ type: "superDrag", phase: "drop", requestId: completed.requestId,
+                pageUrl: location.href, kind: completed.kind, value: completed.value, direction: candidate.direction,
+                ...(candidate.action === "CopyMarkdown" && completed.linkText ? { linkText: completed.linkText } : {}) });
+        }
+        // 成功したdropの後始末で、ホストが開いた検索先メニューまで取消さない。
+        cancelSuperDrag(!executed);
+    });
+    window.addEventListener("dragend", cancelSuperDrag);
+    window.addEventListener("dragleave", event => {
+        if (!event.relatedTarget) { superDragHint?.remove(); superDragHint = null; }
+    });
+    window.addEventListener("keydown", event => {
+        if (event.key === "Escape") {
+            cancelSuperDrag();
+            if (event.isTrusted) clearYouTubeContextMenuState();
+        }
+    }, true);
+    window.addEventListener("pagehide", () => { cancelSuperDrag(); clearYouTubeContextMenuState(); });
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) { cancelSuperDrag(); clearYouTubeContextMenuState(); }
+    });
+
     window.addEventListener("blur", function () {
+        cancelSuperDrag();
         consumedContextMenu = false;
         clearLinkHoverPreview();
         resetGestureState(false);

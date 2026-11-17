@@ -6,6 +6,36 @@ namespace TabBrowser.Tests;
 public sealed class BrowserUrlRulesServiceTests
 {
     [Theory]
+    [InlineData("https://untrusted.invalid/__/auth/handler?authType=signInViaPopup", false, false)]
+    [InlineData("https://untrusted.invalid/__/auth/handler?authType=signInViaPopup", true, true)]
+    [InlineData("https://untrusted.invalid/__/auth/handler?%61uthType=%73ignInViaPopup", false, false)]
+    [InlineData("https://untrusted.invalid/__/auth/handler?%61uthType=%73ignInViaPopup", true, true)]
+    [InlineData("https://console.sakana.ai/__/auth/handler?authType=signInViaPopup&providerId=google.com", true, true)]
+    [InlineData("https://console.sakana.ai/__/auth/handler?authType=signInViaRedirect", true, false)]
+    [InlineData("https://accounts.google.com/o/oauth2/v2/auth", false, true)]
+    [InlineData("https://appleid.apple.com/auth/authorize", false, true)]
+    [InlineData("https://login.live.com/oauth20_authorize.srf", false, true)]
+    [InlineData("https://login.microsoftonline.com/common/oauth2/v2.0/authorize", false, true)]
+    [InlineData("https://x.com/i/flow/login", false, true)]
+    [InlineData("https://twitter.com/i/oauth2/authorize", false, true)]
+    [InlineData("https://accounts.google.com.untrusted.invalid/", true, false)]
+    public void AuthenticationPopupRequiresUserInitiationOnlyForHostIndependentFirebase(string url, bool userInitiated, bool expected)
+    {
+        Assert.Equal(expected, BrowserUrlRulesService.IsAuthenticationPopupUrl(url, userInitiated));
+    }
+
+    [Theory]
+    [InlineData("https://example.invalid/__/auth/handler?token=private", "example.invalid")]
+    [InlineData("https://accounts.google.com/o/oauth2/v2/auth", "accounts.google.com")]
+    [InlineData("about:blank", "ログイン")]
+    [InlineData(null, "ログイン")]
+    [InlineData("invalid", "ログイン")]
+    public void AuthenticationPopupInitialTitleShowsOnlyKnownHost(string? url, string expected)
+    {
+        Assert.Equal(expected, BrowserUrlRulesService.GetAuthenticationPopupInitialTitle(url));
+    }
+
+    [Theory]
     [InlineData(
         "https://www.amazon.co.jp/BUFFALO-HD-PCFS2-0U3-BBA/dp/B07D7978NV/ref=sr_1_8?keywords=usb+hdd&sr=1-8",
         "https://www.amazon.co.jp/dp/B07D7978NV")]

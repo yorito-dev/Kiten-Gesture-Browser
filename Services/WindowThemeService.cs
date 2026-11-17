@@ -11,6 +11,14 @@ public static class WindowThemeService
     private const int DwmwaCaptionColor = 35;
     private const int DwmwaTextColor = 36;
 
+    internal static int HideBorder(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero) return unchecked((int)0x80070006);
+        var noBorderColor = unchecked((int)0xfffffffe);
+        return DwmSetWindowAttribute(handle, DwmwaBorderColor, ref noBorderColor, sizeof(int));
+    }
+
     public static void ApplyDarkTitleBar(Window window)
     {
         if (window.WindowStyle == WindowStyle.None)

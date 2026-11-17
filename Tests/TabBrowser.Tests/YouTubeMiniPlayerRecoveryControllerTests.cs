@@ -10,6 +10,46 @@ namespace TabBrowser.Tests;
 
 public sealed class YouTubeMiniPlayerRecoveryControllerTests
 {
+    [Fact]
+    public async Task ResumeReloadUsesTheQueueAndPreservesStateWithoutStartingPlayback()
+    {
+        using var f = new Fixture();
+        f.State.IsPaused = false;
+        f.State.IsMuted = true;
+        f.State.PlaybackRate = 1.5;
+        var expected = YouTubeMiniPlayerStateService.CreatePlaybackStateSnapshot(f.State) with { IsPaused = true };
+        f.Host.Capture = _ => throw new InvalidOperationException("休止前の保存状態を使う");
+        f.Host.Probe = () => Task.FromResult<string?>(Probe(paused: true));
+        Assert.True(await f.Controller.RunResumeReloadAsync(f.State));
+        Assert.Equal(expected, YouTubeMiniPlayerStateService.CreatePlaybackStateSnapshot(f.State));
+        Assert.Equal(1, f.Host.ReloadCount);
+    }
+
+    [Fact]
+    public async Task GroupRecoveryWaitsBehindAnotherPlayersActiveRecovery()
+    {
+        using var f = new Fixture();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var capture = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Host.Capture = _ => { started.SetResult(); return capture.Task; };
+        var active = f.Controller.RunManualRepairAsync(f.State);
+        await started.Task;
+        var second = f.Host.Add();
+        var group = f.Controller.RecoverFloatingMediaProcessGroupAsync(ContainerProfile.DefaultId, 17);
+        try
+        {
+            Assert.Equal("復旧待ち", f.Controller.GetStatusText(second.State.Id));
+            Assert.Equal(0, f.Host.LoadCount);
+            Assert.DoesNotContain("reset", f.Host.Trace);
+            capture.SetResult(true);
+            Assert.True(await active);
+            await group;
+            Assert.Equal([second.State.Id], f.Host.LoadedIds);
+            Assert.Null(f.Controller.GetStatusText(second.State.Id));
+        }
+        finally { capture.TrySetResult(true); }
+    }
+
     [Theory]
     [InlineData("closing")]
     [InlineData("disposed")]
@@ -153,7 +193,7 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
     }
 
     [Theory]
-    [InlineData(CoreWebView2ProcessFailedKind.BrowserProcessExited, true)]
+    [InlineData(CoreWebView2ProcessFailedKind.BrowserProcessExited, false)]
     [InlineData(CoreWebView2ProcessFailedKind.RenderProcessExited, true)]
     [InlineData(CoreWebView2ProcessFailedKind.GpuProcessExited, true)]
     public void ProcessFailureUsesExistingPolicy(CoreWebView2ProcessFailedKind kind, bool queues)
@@ -304,7 +344,13 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
         if (condition == "no-core") f.Host.HasCore = false;
         await f.Run();
         Assert.Equal(0, f.Host.ProbeCount);
-        Assert.Contains("capture", f.Host.Trace);
+        if (condition == "no-core") Assert.Contains("capture", f.Host.Trace);
+        else
+        {
+            Assert.DoesNotContain("capture", f.Host.Trace);
+            Assert.Equal(0, f.Host.LoadCount);
+            Assert.Equal(0, f.Host.SourceCount);
+        }
     }
 
     [Theory]
@@ -585,7 +631,7 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
     }
 
     [Fact]
-    public async Task ProcessGroupSnapshotsMatchingRuntimesAndStaggersEvenAfterLastTarget()
+    public async Task ProcessGroupUsesSharedRecoveryAndSkipsTargetsDisposedWhileQueued()
     {
         using var f = new Fixture();
         var second = f.Host.Add();
@@ -600,19 +646,18 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
                 f.Host.Add();
                 second.IsDisposed = true;
             }
+            var runtime = f.Host.Items[state.Id];
+            runtime.WebView = WebViewIdentity();
+            runtime.CompleteRecoveryNavigation(runtime.WebView, true);
             return Task.CompletedTask;
         };
         await f.Controller.RecoverFloatingMediaProcessGroupAsync(ContainerProfile.DefaultId.ToUpperInvariant(), 17);
-        Assert.Equal([f.State.Id, second.State.Id], f.Host.LoadedIds);
-        Assert.Equal(2, f.Delays.Count);
-        Assert.All(f.Delays, delay =>
-        {
-            Assert.Equal(TimeSpan.FromMilliseconds(350), delay.Delay);
-            Assert.Equal(f.Host.LifetimeToken, delay.Token);
-        });
+        Assert.Equal([f.State.Id], f.Host.LoadedIds);
+        Assert.Empty(f.Delays);
         Assert.Equal(2, f.Host.GroupResults.Count);
-        Assert.All(f.Host.GroupResults, result => Assert.Equal((ContainerProfile.DefaultId.ToUpperInvariant(), 17u, "mini-player-recreated"), result));
-        Assert.Equal(0, f.Host.SaveCount);
+        Assert.Single(f.Host.GroupResults, result => result.Result == "mini-player-recreated");
+        Assert.Single(f.Host.GroupResults, result => result.Result == "mini-player-recreate-failed");
+        Assert.Equal(1, f.Host.SaveCount);
     }
 
     [Fact]
@@ -622,30 +667,42 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
         var invalid = f.Host.Add();
         invalid.State.Url = "";
         var last = f.Host.Add();
-        f.Host.Load = (state, _) => state.Id == f.State.Id
-            ? Task.FromException(new InvalidOperationException("load failed")) : Task.CompletedTask;
+        f.Host.Load = (state, _) =>
+        {
+            if (state.Id == f.State.Id) return Task.FromException(new InvalidOperationException("load failed"));
+            var runtime = f.Host.Items[state.Id];
+            runtime.WebView = WebViewIdentity();
+            runtime.CompleteRecoveryNavigation(runtime.WebView, true);
+            return Task.CompletedTask;
+        };
         await f.Controller.RecoverFloatingMediaProcessGroupAsync(ContainerProfile.DefaultId, 23);
         Assert.Equal([f.State.Id, last.State.Id], f.Host.LoadedIds);
-        Assert.Equal(2, f.Delays.Count);
-        Assert.Single(f.Host.Diagnostics);
+        Assert.Empty(f.Delays);
         Assert.Equal(YouTubeMiniPlayerDisplayHealthState.ReloadRecommended, f.Runtime.DisplayHealth.GetSnapshot().State);
-        Assert.Equal("mini-player-recreate-failed", f.Host.GroupResults[0].Result);
-        Assert.Equal("mini-player-recreated", f.Host.GroupResults[1].Result);
+        Assert.Single(f.Host.GroupResults, result => result.Result == "mini-player-recreated");
+        Assert.Single(f.Host.GroupResults, result => result.Result == "mini-player-recreate-failed");
     }
 
     [Theory]
     [InlineData("closing-before", 0)]
     [InlineData("cancel-before", 0)]
     [InlineData("closing-after-load", 1)]
-    [InlineData("cancel-delay", 1)]
+    [InlineData("cancel-after-load", 1)]
     public async Task ProcessGroupKeepsExistingTerminationCheckpoints(string condition, int loads)
     {
         using var f = new Fixture();
         f.Host.Add();
         if (condition == "closing-before") f.Host.IsClosingWindow = true;
         if (condition == "cancel-before") f.Host.Cancellation.Cancel();
-        if (condition == "closing-after-load") f.Host.Load = (_, _) => { f.Host.IsClosingWindow = true; return Task.CompletedTask; };
-        if (condition == "cancel-delay") f.Delay = (_, token) => { f.Host.Cancellation.Cancel(); return Task.FromCanceled(token); };
+        if (condition is "closing-after-load" or "cancel-after-load") f.Host.Load = (state, _) =>
+        {
+            var runtime = f.Host.Items[state.Id];
+            runtime.WebView = WebViewIdentity();
+            runtime.CompleteRecoveryNavigation(runtime.WebView, true);
+            if (condition == "closing-after-load") f.Host.IsClosingWindow = true;
+            else f.Host.Cancellation.Cancel();
+            return Task.CompletedTask;
+        };
         await f.Controller.RecoverFloatingMediaProcessGroupAsync(ContainerProfile.DefaultId, 1);
         Assert.Equal(loads, f.Host.LoadCount);
         Assert.Equal(loads, f.Host.GroupResults.Count);
@@ -805,7 +862,7 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
             Trace.Add("probe");
             return Probe();
         }
-        public Task<bool> CaptureStateAsync(YouTubeMiniPlayerState state) { Trace.Add("capture"); return Capture(state); }
+        public Task<bool> CaptureStateAsync(YouTubeMiniPlayerState state, CancellationToken cancellationToken) { Trace.Add("capture"); return Capture(state); }
         public void ResetWebView(YouTubeMiniPlayerRuntime runtime)
         {
             Trace.Add("reset");
@@ -813,7 +870,7 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
             runtime.DisplayHealth.Reset();
             runtime.WebView = null;
         }
-        public Task LoadRuntimeAsync(YouTubeMiniPlayerState state, Uri uri)
+        public Task LoadRuntimeAsync(YouTubeMiniPlayerState state, Uri uri, CancellationToken cancellationToken)
         {
             LoadCount++;
             LoadedIds.Add(state.Id);

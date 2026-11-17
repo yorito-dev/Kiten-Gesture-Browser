@@ -24,13 +24,14 @@ internal static class YouTubeMiniPlayerResizeThumbService
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
         YouTubeMiniPlayerResizeThumbCallbacks callbacks)
     {
-        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Left, VerticalAlignment.Stretch, 8, double.NaN, Cursors.SizeWE,
+        var thickness = Math.Max(YouTubeMiniPlayerInputService.VideoResizeEdgeInset, YouTubeMiniPlayerLayoutService.ResizeBorderThickness);
+        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Left, VerticalAlignment.Stretch, thickness, double.NaN, Cursors.SizeWE,
             resizeLeft: true, resizeTop: false, resizeRight: false, resizeBottom: false);
-        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Right, VerticalAlignment.Stretch, 8, double.NaN, Cursors.SizeWE,
+        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Right, VerticalAlignment.Stretch, thickness, double.NaN, Cursors.SizeWE,
             resizeLeft: false, resizeTop: false, resizeRight: true, resizeBottom: false);
-        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Stretch, VerticalAlignment.Top, double.NaN, 8, Cursors.SizeNS,
+        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Stretch, VerticalAlignment.Top, double.NaN, thickness, Cursors.SizeNS,
             resizeLeft: false, resizeTop: true, resizeRight: false, resizeBottom: false);
-        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Stretch, VerticalAlignment.Bottom, double.NaN, 8, Cursors.SizeNS,
+        AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Stretch, VerticalAlignment.Bottom, double.NaN, thickness, Cursors.SizeNS,
             resizeLeft: false, resizeTop: false, resizeRight: false, resizeBottom: true);
         AddThumb(layout, state, root, runtimes, callbacks, HorizontalAlignment.Left, VerticalAlignment.Top, 16, 16, Cursors.SizeNWSE,
             resizeLeft: true, resizeTop: true, resizeRight: false, resizeBottom: false);
@@ -64,6 +65,18 @@ internal static class YouTubeMiniPlayerResizeThumbService
             width,
             height,
             cursor);
+        var thickness = Math.Max(YouTubeMiniPlayerInputService.VideoResizeEdgeInset, YouTubeMiniPlayerLayoutService.ResizeBorderThickness);
+        // 枠・余白0でも端の入力判定は1 DIP残す。透明な判定だけで映像の寸法は変えない。
+        resizeThumb.Margin = new Thickness(0);
+        if (double.IsFinite(width) && double.IsFinite(height))
+        {
+            // 角は両辺に沿う16 DIPのつかみしろを残し、動画側の入力領域を切り抜く。
+            var horizontal = new Rect(0, verticalAlignment == VerticalAlignment.Top ? 0 : height - thickness, width, thickness);
+            var vertical = new Rect(horizontalAlignment == HorizontalAlignment.Left ? 0 : width - thickness, 0, thickness, height);
+            var clip = new CombinedGeometry(GeometryCombineMode.Union, new RectangleGeometry(horizontal), new RectangleGeometry(vertical));
+            clip.Freeze();
+            resizeThumb.Clip = clip;
+        }
         var startLeft = 0.0;
         var startTop = 0.0;
         var startWidth = 0.0;

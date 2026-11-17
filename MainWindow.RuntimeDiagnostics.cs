@@ -262,7 +262,7 @@ public partial class MainWindow
             _extensionPopup?.IsOpen == true,
             _bookmarkPreviewController.IsOpen,
             ClosedTabHistoryPopup.IsOpen,
-            YouTubeMiniPlayerListPopup.IsOpen,
+            _youTubeMiniPlayerListWindow.IsOpen,
             YouTubeMiniPlayerSpeedPopup.IsOpen,
             YouTubeMiniPlayerVolumePopup.IsOpen,
             _pageGestureVisualController.IsOverlayVisible,

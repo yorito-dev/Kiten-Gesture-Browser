@@ -87,6 +87,7 @@ internal static class YouTubeMiniPlayerRuntimeLoadCallbackFactory
                     close,
                     reportPlaybackDiagnostic,
                     setStatus)),
-            updateStateCaptureTimer);
+            updateStateCaptureTimer,
+            isClosing);
     }
 }

@@ -1,82 +1,22 @@
-using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using TabBrowser.Services;
 
 namespace TabBrowser;
 
-public partial class MainWindow
+public partial class MainWindow : IApplicationKeyboardShortcutWindow
 {
-    private const int LowLevelKeyboardHook = 13;
-    private const int WmKeyUp = 0x0101;
-    private const int WmSystemKeyUp = 0x0105;
-
-    private readonly LowLevelKeyboardProc _commandPaletteKeyboardHookProc;
-    private IntPtr _commandPaletteKeyboardHookHandle;
-    private bool _isCommandPaletteShortcutKeyDown;
     private bool _commandPaletteShortcutRequiresTopmost;
 
-    private void InstallCommandPaletteKeyboardHook()
-    {
-        if (_commandPaletteKeyboardHookHandle != IntPtr.Zero)
-        {
-            return;
-        }
+    bool IApplicationKeyboardShortcutWindow.IsReadyForKeyboardShortcut => !_isClosingWindow && IsLoaded;
 
-        var moduleName = Process.GetCurrentProcess().MainModule?.ModuleName;
-        var moduleHandle = string.IsNullOrWhiteSpace(moduleName)
-            ? IntPtr.Zero
-            : GetModuleHandle(moduleName);
-        _commandPaletteKeyboardHookHandle = SetWindowsHookExKeyboard(
-            LowLevelKeyboardHook,
-            _commandPaletteKeyboardHookProc,
-            moduleHandle,
-            0);
-    }
+    bool IApplicationKeyboardShortcutWindow.IsCommandPaletteInputOwnerActive()
+        => IsCommandPaletteInputOwnerActive();
 
-    private void UninstallCommandPaletteKeyboardHook()
-    {
-        if (_commandPaletteKeyboardHookHandle == IntPtr.Zero)
-        {
-            return;
-        }
+    void IApplicationKeyboardShortcutWindow.QueueCommandPaletteShortcut()
+        => Dispatcher.BeginInvoke(ShowCommandPaletteFromShortcut, DispatcherPriority.Send);
 
-        UnhookWindowsHookEx(_commandPaletteKeyboardHookHandle);
-        _commandPaletteKeyboardHookHandle = IntPtr.Zero;
-        _isCommandPaletteShortcutKeyDown = false;
-    }
-
-    private IntPtr CommandPaletteKeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
-    {
-        if (nCode >= 0)
-        {
-            var message = wParam.ToInt32();
-            var hookData = Marshal.PtrToStructure<LowLevelKeyboardHookData>(lParam);
-            if (message is WmKeyUp or WmSystemKeyUp)
-            {
-                if (hookData.VirtualKeyCode == 0x4B)
-                {
-                    _isCommandPaletteShortcutKeyDown = false;
-                }
-            }
-            else if (message is WmKeyDown or WmSystemKeyDown
-                     && !_isCommandPaletteShortcutKeyDown
-                     && CommandPaletteKeyboardService.IsOpenShortcutVirtualKey(
-                         hookData.VirtualKeyCode,
-                         IsVirtualKeyDown(VirtualKeyControl),
-                         IsVirtualKeyDown(VirtualKeyShift),
-                         IsVirtualKeyDown(VirtualKeyMenu))
-                     && IsCommandPaletteInputOwnerActive())
-            {
-                _isCommandPaletteShortcutKeyDown = true;
-                Dispatcher.BeginInvoke(
-                    ShowCommandPaletteFromShortcut,
-                    DispatcherPriority.Send);
-            }
-        }
-
-        return CallNextHookEx(_commandPaletteKeyboardHookHandle, nCode, wParam, lParam);
-    }
+    void IApplicationKeyboardShortcutWindow.ReportKeyboardShortcutFailure(string failure)
+        => SetStatus(failure, autoClear: true);
 
     private void ShowCommandPaletteFromShortcut()
     {
@@ -127,29 +67,4 @@ public partial class MainWindow
             DispatcherPriority.Loaded);
     }
 
-    [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
-    private static extern IntPtr SetWindowsHookExKeyboard(
-        int idHook,
-        LowLevelKeyboardProc hookProc,
-        IntPtr moduleHandle,
-        uint threadId);
-
-    private delegate IntPtr LowLevelKeyboardProc(
-        int nCode,
-        IntPtr wParam,
-        IntPtr lParam);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct LowLevelKeyboardHookData
-    {
-        public int VirtualKeyCode;
-
-        public int ScanCode;
-
-        public int Flags;
-
-        public int Time;
-
-        public IntPtr ExtraInfo;
-    }
 }

@@ -140,6 +140,7 @@ internal static class YouTubeMiniPlayerOverlayPopupPositionService
         Action<YouTubeMiniPlayerRuntime> updateTitleBandPlacement,
         Action<YouTubeMiniPlayerRuntime> updateToolbarPlacement)
     {
+        YouTubeMiniPlayerChromeFactory.RefreshListWindowHighlight(runtime);
         if (runtime.TitleBandPopup.IsOpen)
         {
             updateTitleBandPlacement(runtime);

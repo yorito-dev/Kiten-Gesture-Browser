@@ -72,7 +72,7 @@ internal static class YouTubeMiniPlayerStateRestoreService
         await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(
             state,
             runtimes,
-            YouTubeMiniPlayerWebViewService.BuildLiveContinuationBridgeScript(runtime.WebMessageToken, enableLiveContinuation),
+            YouTubeMiniPlayerWebViewService.BuildLivePlaybackBridgeScript(runtime.WebMessageToken, enableLiveContinuation),
             showStatus: false,
             _ => { });
         await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(
@@ -95,7 +95,8 @@ internal static class YouTubeMiniPlayerStateRestoreService
         var result = await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(
             state,
             runtimes,
-            YouTubeControlScriptService.BuildMiniPlayerWatchPageScript(
+            YouTubeControlScriptService.BuildMiniPlayerPageZoomScript(runtime.WebView?.ZoomFactor ?? 1)
+            + YouTubeControlScriptService.BuildMiniPlayerWatchPageScript(
                 runtime.WebMessageToken,
                 gestureMappings,
                 gestureStartThreshold,

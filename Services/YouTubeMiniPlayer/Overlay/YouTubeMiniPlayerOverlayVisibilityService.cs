@@ -48,7 +48,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
             return;
         }
 
-        if (runtime.IsResizing)
+        if (runtime.IsResizing || runtime.IsInputTransparent)
         {
             runtime.ToolbarHideTimer?.Stop();
             runtime.ToolbarPopup.IsOpen = false;
@@ -99,7 +99,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
             return;
         }
 
-        if (runtime.State.IsMinimized)
+        if (runtime.State.IsMinimized || runtime.IsInputTransparent)
         {
             runtime.ToolbarHideTimer?.Stop();
             runtime.ToolbarPopup.IsOpen = false;
@@ -157,7 +157,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
             return;
         }
 
-        if (runtime.IsResizing)
+        if (runtime.IsResizing || runtime.IsInputTransparent)
         {
             runtime.TitleBandHideTimer?.Stop();
             runtime.TitleBandPopup.IsOpen = false;

@@ -2,6 +2,21 @@ namespace TabBrowser.Services;
 
 public static class BrowserUrlRulesService
 {
+    public static bool IsRemoteFileUrl(Uri uri)
+    {
+        return uri.IsFile
+            && (!string.IsNullOrEmpty(uri.Host)
+                || uri.IsUnc
+                || uri.LocalPath.StartsWith(@"\\", StringComparison.Ordinal)
+                || uri.LocalPath.StartsWith("//", StringComparison.Ordinal));
+    }
+
+    public static bool IsPageRequestedFileUrl(string? url)
+    {
+        return url?.TrimStart().StartsWith("file:", StringComparison.OrdinalIgnoreCase) == true
+            || (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile);
+    }
+
     public static string NormalizeNavigationHistoryUrl(string url)
     {
         var normalizedUrl = YouTubeUrlService.NormalizeNavigationHistoryUrl(url);
@@ -50,7 +65,7 @@ public static class BrowserUrlRulesService
         return builder.Uri.AbsoluteUri;
     }
 
-    public static bool IsAuthenticationPopupUrl(string? url)
+    public static bool IsAuthenticationPopupUrl(string? url, bool isUserInitiated = true)
     {
         if (string.IsNullOrWhiteSpace(url)
             || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
@@ -67,7 +82,7 @@ public static class BrowserUrlRulesService
             return true;
         }
 
-        if (IsFirebasePopupAuthHandler(uri))
+        if (isUserInitiated && IsFirebasePopupAuthHandler(uri))
         {
             return true;
         }
@@ -87,6 +102,13 @@ public static class BrowserUrlRulesService
     {
         return uri.AbsolutePath.Equals("/__/auth/handler", StringComparison.OrdinalIgnoreCase)
             && QueryContainsValue(uri.Query, "authType", "signInViaPopup");
+    }
+
+    public static string GetAuthenticationPopupInitialTitle(string? url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)
+            ? uri.Host
+            : "ログイン";
     }
 
     private static bool QueryContainsValue(string query, string name, string value)

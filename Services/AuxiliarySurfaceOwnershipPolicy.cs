@@ -43,6 +43,7 @@ internal static class AuxiliarySurfaceOwnershipPolicy
     [
         Modeless<SettingsWindow>(),
         Modeless<MouseGestureSettingsWindow>(),
+        Modeless<SuperDragSettingsWindow>(),
         Modeless<BrowsingHistoryWindow>(),
         Modeless<ClipboardHistoryWindow>(),
         Modeless<SitePrivacyWindow>(),
@@ -78,6 +79,11 @@ internal static class AuxiliarySurfaceOwnershipPolicy
             AuxiliarySurfaceOwner.FeatureController,
             AuxiliarySurfaceTermination.InputInteractionEnd,
             "表示ControllerがOverlayを保持し、interaction終了時は表示を解除して再利用し、Window終了時に実Windowを閉じる。"),
+        WindowField(
+            "MainWindow.YouTubeMiniPlayer.cs:_youTubeMiniPlayerListWindow",
+            AuxiliarySurfaceOwner.MainWindow,
+            AuxiliarySurfaceTermination.StopFloatingMedia,
+            "MainWindowが独立した一覧Windowを保持し、通常の閉じる操作では非表示、floating-media終了経路でDisposeする。"),
         WindowField(
             "MainWindow.YouTubeMiniPlayer.cs:_youTubeMiniPlayerArrangementPreviewWindow",
             AuxiliarySurfaceOwner.FloatingMediaHost,
@@ -126,8 +132,8 @@ internal static class AuxiliarySurfaceOwnershipPolicy
         XamlPopup("ClosedTabHistoryPopup"),
         XamlPopup("SiteInformationPopup"),
         XamlPopup("PageZoomPopup"),
-        XamlPopup("YouTubeMiniPlayerListPopup"),
         XamlPopup("YouTubeMiniPlayerArrangePopup"),
+        XamlPopup("YouTubeMiniPlayerClosedHistoryPopup"),
         XamlPopup("YouTubeMiniPlayerGlobalActionsPopup"),
         XamlPopup("YouTubeMiniPlayerLinearPlacementPopup"),
         XamlPopup("YouTubeMiniPlayerItemMorePopup"),

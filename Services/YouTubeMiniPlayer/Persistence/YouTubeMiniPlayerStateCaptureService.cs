@@ -1,4 +1,5 @@
 using TabBrowser.Models;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace TabBrowser.Services;
 
@@ -42,8 +43,10 @@ internal static class YouTubeMiniPlayerStateCaptureService
 
     public static async Task<bool> CaptureAsync(
         YouTubeMiniPlayerState state,
-        IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes)
+        IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!runtimes.TryGetValue(state.Id, out var runtime)
             || runtime.LiveContinuationNavigation is not null)
         {
@@ -61,13 +64,25 @@ internal static class YouTubeMiniPlayerStateCaptureService
         }
 
         var before = YouTubeMiniPlayerStateService.CreatePlaybackStateSnapshot(state);
+        var sourceUrl = state.Url;
+        var sourceWebView = runtime.WebView;
         var result = await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(
             state,
             runtimes,
             YouTubeControlScriptService.BuildPlaybackStateReadScript(),
             showStatus: false,
             _ => { });
-        if (runtime.LiveContinuationNavigation is not null)
+        return ApplyCaptureResult(state, runtime, runtimes, sourceUrl, sourceWebView, before, result, cancellationToken);
+    }
+
+    internal static bool ApplyCaptureResult(YouTubeMiniPlayerState state, YouTubeMiniPlayerRuntime runtime,
+        IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes, string sourceUrl, WebView2? sourceWebView,
+        YouTubeMiniPlayerPlaybackStateSnapshot before, string? result, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (runtime.LiveContinuationNavigation is not null || runtime.IsDisposed || state.Url != sourceUrl
+            || !ReferenceEquals(runtime.WebView, sourceWebView)
+            || !runtimes.TryGetValue(state.Id, out var current) || !ReferenceEquals(current, runtime))
         {
             return false;
         }

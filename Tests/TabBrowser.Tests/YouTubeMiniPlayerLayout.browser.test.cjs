@@ -41,8 +41,17 @@ before(async () => {
         ? source.indexOf('public static string BuildMiniPlayerWatchPageScript(\n')
         : source.indexOf('public static string BuildMiniPlayerWatchPageScript(\r\n'));
     script = method.match(/return """\r?\n([\s\S]*?)\r?\n\s*"""\.Replace\(/)[1];
+    const inputSource = await readFile(resolve(__dirname, '../../Services/YouTubeMiniPlayer/Interaction/YouTubeMiniPlayerInputService.cs'), 'utf8');
+    const resizeInset = Number(inputSource.match(/const double VideoResizeInset = (\d+);/)[1]);
+    const resizeEdgeInset = Number(inputSource.match(/const double VideoResizeEdgeInset = (\d+);/)[1]);
+    const layoutSource = await readFile(resolve(__dirname, '../../Services/YouTubeMiniPlayer/Position/YouTubeMiniPlayerLayoutService.cs'), 'utf8');
+    // C#が生成時に展開する角の長さを、同じ製品定数からfixtureへ渡す。
+    const resizeCorner = Number(inputSource.match(/const double VideoResizeCornerLength = (\d+) -/)[1])
+        - Number(layoutSource.match(/const double FrameBorderThickness = (\d+);/)[1])
+        - Number(layoutSource.match(/const double ResizeBorderThickness = (\d+);/)[1]);
     const values = { MESSAGE_TOKEN: 'test-token', GESTURE_SETTINGS: { mappings: [] },
-        CONTENT_ZOOM: 1, CONTENT_PAN_X: 0, CONTENT_PAN_Y: 0, AUDIO_BOOST_DECIBELS: 0, AUDIO_BOOST_GAIN: 1 };
+        CONTENT_ZOOM: 1, CONTENT_PAN_X: 0, CONTENT_PAN_Y: 0, AUDIO_BOOST_DECIBELS: 0, AUDIO_BOOST_GAIN: 1,
+        RESIZE_INSET: resizeInset, RESIZE_EDGE_INSET: resizeEdgeInset, RESIZE_CORNER: resizeCorner };
     for (const [name, value] of Object.entries(values)) {
         script = script.replaceAll(`__TAB_BROWSER_YOUTUBE_MINI_PLAYER_${name}__`, JSON.stringify(value));
     }
@@ -115,6 +124,400 @@ async function bounds() {
     })()`);
 }
 const fitted = { x: 0, y: 0, width: 960, height: 540 };
+
+async function scheduledLive() {
+    await reset();
+    await evaluate(`(() => {
+        const bridge = window.__tabBrowserYouTubeMiniPlayerLayoutBridge;
+        for (const timer of bridge.delayedVerificationTimers) clearTimeout(timer);
+        bridge.delayedVerificationTimers = [];
+        window.liveMedia = { width: 0, height: 0, ready: 0 };
+        window.liveSizeRequests = [];
+        window.liveControlWrites = [];
+        const video = document.querySelector('video');
+        Object.defineProperties(video, {
+            videoWidth: { configurable: true, get: () => window.liveMedia.width },
+            videoHeight: { configurable: true, get: () => window.liveMedia.height },
+            readyState: { configurable: true, get: () => window.liveMedia.ready },
+            currentTime: { configurable: true, get: () => 42, set: () => window.liveControlWrites.push('seek') }
+        });
+        video.playbackRate = 1.5; video.volume = 0.4;
+        video.play = () => { window.liveControlWrites.push('play'); return Promise.resolve(); };
+        video.pause = () => window.liveControlWrites.push('pause');
+        const player = document.getElementById('movie_player');
+        player.getPlaybackQuality = () => 'hd2160';
+        player.setPlaybackQuality = () => window.liveControlWrites.push('quality');
+        player.setPlaybackQualityRange = () => window.liveControlWrites.push('quality-range');
+        player.setSize = (width, height) => { window.layoutCalls++; window.liveSizeRequests.push({ width, height }); };
+    })()`);
+}
+
+async function startScheduledLive(events = ['resize']) {
+    await evaluate(`window.liveMedia = { width: 1920, height: 1080, ready: 4 };
+        for (const type of ${JSON.stringify(events)}) document.querySelector('video').dispatchEvent(new Event(type));`);
+    await frames(4);
+}
+
+for (const events of [['resize'], ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'resize']]) {
+    test('配信開始のレイアウト: 同じ動画要素の元サイズ確定で次の描画へ追従 ' + events.join('/'), async () => {
+        await scheduledLive();
+        const before = await evaluate('window.layoutCalls');
+        await startScheduledLive(events);
+        assert.equal(await evaluate('window.layoutCalls') - before, 1);
+        assert.deepEqual(await evaluate('window.liveSizeRequests'), [{ width: 960, height: 540 }]);
+        assert.deepEqual(await bounds(), fitted);
+        assert.deepEqual(await evaluate(`(() => { const v = document.querySelector('video'); return {
+            width: v.videoWidth, height: v.videoHeight, position: v.currentTime, rate: v.playbackRate,
+            volume: v.volume, quality: document.getElementById('movie_player').getPlaybackQuality(), writes: window.liveControlWrites }; })()`),
+            { width: 1920, height: 1080, position: 42, rate: 1.5, volume: 0.4, quality: 'hd2160', writes: [] });
+    });
+}
+
+test('配信開始のレイアウト: playing時点で未確定でも後のresizeで補正する', async () => {
+    await scheduledLive();
+    await evaluate(`document.querySelector('video').dispatchEvent(new Event('playing'))`);
+    await frames(4);
+    const before = await evaluate('window.layoutCalls');
+    await startScheduledLive();
+    assert.equal(await evaluate('window.layoutCalls') - before, 1);
+    assert.deepEqual(await bounds(), fitted);
+});
+
+test('配信開始のレイアウト: 確定済みの再生イベントでは補正を繰り返さない', async () => {
+    await scheduledLive(); await startScheduledLive();
+    assert.equal((await evaluate('window.liveSizeRequests')).length, 1);
+    const before = await evaluate('window.layoutCalls');
+    await evaluate(`for (let i = 0; i < 20; i++) for (const type of ['loadedmetadata', 'canplay', 'playing', 'resize'])
+        document.querySelector('video').dispatchEvent(new Event(type));`);
+    await frames(8);
+    assert.equal(await evaluate('window.layoutCalls'), before);
+});
+
+test('配信開始のレイアウト: 手動リサイズ中は休止し終了後に1回だけ追従する', async () => {
+    await scheduledLive();
+    await evaluate(`window.__tabBrowserSetYouTubeMiniPlayerInteractiveResize('test-token', 1, true)`);
+    const before = await evaluate('window.layoutCalls');
+    await startScheduledLive();
+    assert.equal(await evaluate('window.layoutCalls'), before);
+    await evaluate(`window.__tabBrowserSetYouTubeMiniPlayerInteractiveResize('test-token', 1, false)`);
+    await frames(4);
+    assert.equal(await evaluate('window.layoutCalls') - before, 1);
+});
+
+test('配信開始のレイアウト: 補正予約後に破棄したbridgeから適用しない', async () => {
+    await scheduledLive();
+    const before = await evaluate('window.layoutCalls');
+    await evaluate(`window.liveMedia = { width: 1920, height: 1080, ready: 4 };
+        document.querySelector('video').dispatchEvent(new Event('resize'));
+        window.__tabBrowserYouTubeMiniPlayerLayoutBridge.dispose();`);
+    await frames(4);
+    assert.equal(await evaluate('window.layoutCalls'), before);
+});
+
+test('配信開始のレイアウト: プレイヤー外の動画の元サイズ通知を使わない', async () => {
+    await scheduledLive();
+    const before = await evaluate('window.layoutCalls');
+    await evaluate(`const unrelated = document.createElement('video'); document.body.append(unrelated);
+        Object.defineProperty(unrelated, 'videoWidth', { value: 1920 });
+        unrelated.dispatchEvent(new Event('resize'));`);
+    await frames(4);
+    assert.equal(await evaluate('window.layoutCalls'), before);
+});
+
+async function resizeInputAt(x, y, { ctrl = false, release = true, dx = 24, dy = 20 } = {}) {
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    const cursor = await evaluate(`getComputedStyle(document.querySelector('video')).cursor`);
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1, modifiers: ctrl ? 2 : 0 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + dx, y: y + dy, button: 'left', buttons: 1 });
+    if (release) await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + dx, y: y + dy, button: 'left', clickCount: 1 });
+    return { cursor, messages: await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`) };
+}
+
+for (const [x, edges, cursor] of [[480, 8, 'ns-resize'], [8, 9, 'nesw-resize'], [952, 12, 'nwse-resize']]) {
+    test(`下側10 DIPの空き領域から外へ直接引ける: ${edges}`, async () => {
+        await reset();
+        const result = await resizeInputAt(x, 532, { dx: edges === 9 ? -24 : 24 });
+        assert.equal(result.cursor, cursor);
+        assert.deepEqual(result.messages.map(m => m.phase), ['start', 'move', 'end']);
+        assert.ok(result.messages.every(m => m.resize && m.resizeEdges === edges));
+    });
+}
+
+test('下側10 DIPは押下時に捕捉し、移動閾値に達する前に外へ出ても解放まで追従する', async () => {
+    await reset();
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 480, y: 538 });
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 480, y: 538, button: 'left', clickCount: 1 });
+    assert.deepEqual((await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`)).map(m => m.phase), ['start']);
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 480, y: 542, button: 'left', buttons: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 480, y: 550, button: 'left', clickCount: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 480, y: 525 });
+    const messages = await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`);
+    assert.deepEqual(messages.map(m => m.phase), ['start', 'move', 'end']);
+    assert.ok(messages.every(m => m.resizeEdges === 8));
+});
+
+test('下側10 DIPの空背景は掴めても実際の操作部・リンク・開いたメニューを奪わない', async () => {
+    for (const control of ['background', 'button', 'seek', 'link', 'menu']) {
+        await reset();
+        await evaluate(`(() => {
+            const kind = ${JSON.stringify(control)};
+            const element = document.createElement(kind === 'button' ? 'button' : kind === 'link' ? 'a' : 'div');
+            if (kind === 'link') element.href = '#';
+            element.className = kind === 'background' ? 'ytp-chrome-bottom ytp-chrome-controls' : kind === 'seek' ? 'ytp-progress-bar-container' : kind === 'menu' ? 'ytp-popup ytp-settings-menu' : '';
+            element.style.cssText = 'position:fixed;bottom:0;left:0;width:100%;height:70px;z-index:10000';
+            element.addEventListener('click', () => window.controlClicks = (window.controlClicks || 0) + 1);
+            document.body.append(element);
+        })()`);
+        const result = await resizeInputAt(480, 532);
+        if (control === 'background') {
+            assert.ok(result.messages.some(m => m.resizeEdges === 8));
+        } else {
+            assert.deepEqual(result.messages, [], control);
+            assert.ok(!result.cursor.includes('resize'), control);
+            await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 480, y: 532, button: 'left', clickCount: 1 });
+            await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 480, y: 532, button: 'left', clickCount: 1 });
+            assert.ok(await evaluate('window.controlClicks > 0'), control);
+        }
+    }
+});
+
+test('下側10 DIPの内外境界をページズームとDPIに合わせ、予約領域全体をリサイズにしない', async () => {
+    for (const dpi of [1, 1.5, 2]) for (const zoom of [0.67, 1, 1.25, 2]) {
+        // CDP入力座標の単精度丸めを避け、割り切れない倍率は境界の内外を半DIP離して検査する。
+        for (const distance of zoom === 1 ? [9.5, 10, 10.5] : [9.5, 10.5]) {
+            await reset();
+            await call('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: dpi, mobile: false });
+            await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-page-zoom', '${zoom}')`);
+            const result = await resizeInputAt(480, 540 - distance / zoom);
+            if (distance < 10) assert.ok(result.messages.some(m => m.resizeEdges === 8), `${dpi}/${zoom}/${distance}`);
+            else assert.deepEqual(result.messages, [], `${dpi}/${zoom}/${distance}`);
+        }
+    }
+});
+
+test('下側10 DIPも全画面では無効、取消後は再開せず、通常復帰後に使用できる', async () => {
+    await reset();
+    await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-fullscreen', 'true')`);
+    assert.deepEqual((await resizeInputAt(480, 532)).messages, []);
+    await evaluate(`document.documentElement.removeAttribute('data-tabbrowser-mini-player-fullscreen')`);
+    await resizeInputAt(480, 532, { release: false });
+    await evaluate(`document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, buttons: 1 }))`);
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 500, y: 534, button: 'left', buttons: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 500, y: 534, button: 'left', clickCount: 1 });
+    const messages = await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`);
+    assert.deepEqual(messages.map(m => m.phase), ['start', 'move', 'end']);
+    assert.equal(messages.at(-1).cancelled, true);
+});
+
+// 枠0では動画のnative入力面まで届くため、WPFつまみの代替となる端1 DIPを検査する。
+for (const [x, y, edges, cursor, dx] of [
+    [480, 539.5, 8, 'ns-resize', 24], [0.5, 539.5, 9, 'nesw-resize', -24],
+    [959.5, 539.5, 12, 'nwse-resize', 24], [0.5, 520, 1, 'ew-resize', -24],
+    [959.5, 520, 4, 'ew-resize', 24]]) {
+    test(`枠0の下辺・下角・下部側辺を端1 DIPから外へドラッグできる: ${edges}`, async () => {
+        await reset();
+        const result = await resizeInputAt(x, y, { dx });
+        assert.equal(result.cursor, cursor);
+        assert.deepEqual(result.messages.map(m => m.phase), ['start', 'move', 'end']);
+        assert.ok(result.messages.every(m => m.resize && m.resizeEdges === edges));
+    });
+}
+
+test('下段の空の操作部背景では端1 DIPのリサイズを受け付ける', async () => {
+    await reset();
+    await evaluate(`document.getElementById('movie_player').insertAdjacentHTML('beforeend',
+        '<div class="ytp-chrome-bottom" style="position:absolute;bottom:0;width:100%;height:70px;z-index:10000">'
+        + '<div class="ytp-chrome-controls" style="width:100%;height:100%"></div></div>')`);
+    const result = await resizeInputAt(480, 539.5);
+    assert.deepEqual(result.messages.map(m => m.phase), ['start', 'move', 'end']);
+    assert.ok(result.messages.every(m => m.resizeEdges === 8));
+});
+
+test('端1 DIPでも実際のボタン・シーク・リンク・設定メニューは奪わない', async () => {
+    for (const control of ['button', 'seek', 'link', 'menu']) {
+        await reset();
+        await evaluate(`(() => {
+            const control = ${JSON.stringify(control)};
+            const element = document.createElement(control === 'button' ? 'button' : control === 'link' ? 'a' : 'div');
+            if (control === 'link') element.href = '#';
+            element.className = control === 'seek' ? 'ytp-progress-bar-container' : control === 'menu' ? 'ytp-popup ytp-settings-menu' : '';
+            element.style.cssText = 'position:fixed;bottom:0;left:0;width:100%;height:50px;z-index:10000;background:black';
+            document.body.append(element);
+        })()`);
+        const result = await resizeInputAt(480, 539.5);
+        assert.deepEqual(result.messages, [], control);
+        assert.ok(!result.cursor.includes('resize'), control);
+    }
+});
+
+test('側辺の最外縁1 DIPもページズームとDPIに従い、下段予約領域全体へ広げない', async () => {
+    for (const dpi of [1, 1.5, 2]) for (const zoom of [0.67, 1, 1.25, 2]) {
+        await reset();
+        await call('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: dpi, mobile: false });
+        await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-page-zoom', '${zoom}')`);
+        assert.ok((await resizeInputAt(0.5 / zoom, 510)).messages.some(m => m.resizeEdges === 1));
+        await reset();
+        await call('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: dpi, mobile: false });
+        await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-page-zoom', '${zoom}')`);
+        assert.deepEqual((await resizeInputAt(1.25 / zoom, 510)).messages, []);
+    }
+});
+
+test('端1 DIPで捕捉を取り消した後は、押下中でも古い移動で再開しない', async () => {
+    await reset();
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 480, y: 539.5 });
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 480, y: 539.5, button: 'left', clickCount: 1 });
+    assert.deepEqual((await evaluate('window.__miniPlayerMessages.filter(m => m.type === "youtubeMiniPlayerDrag")')).map(m => m.phase), ['start']);
+    await evaluate(`document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, buttons: 1 }))`);
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 500, y: 535, button: 'left', buttons: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 500, y: 535, button: 'left', clickCount: 1 });
+    const messages = await evaluate('window.__miniPlayerMessages.filter(m => m.type === "youtubeMiniPlayerDrag")');
+    assert.deepEqual(messages.map(m => m.phase), ['start', 'end']);
+    assert.equal(messages[1].cancelled, true);
+});
+
+test('全画面中は端1 DIPも開始せず、通常表示へ戻った後だけ使える', async () => {
+    await reset();
+    await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-fullscreen', 'true')`);
+    assert.deepEqual((await resizeInputAt(480, 539.5)).messages, []);
+    await evaluate(`document.documentElement.removeAttribute('data-tabbrowser-mini-player-fullscreen')`);
+    assert.ok((await resizeInputAt(480, 539.5)).messages.some(m => m.resizeEdges === 8));
+});
+
+for (const [x, y, edges, cursor] of [[2, 180, 1, 'ew-resize'], [958, 180, 4, 'ew-resize'], [400, 2, 2, 'ns-resize'], [2, 8, 3, 'nwse-resize'], [958, 8, 6, 'nesw-resize'], [14, 8, 3, 'nwse-resize'], [946, 8, 6, 'nesw-resize']]) {
+    test(`動画端の内側リサイズ: ${edges}`, async () => {
+        await reset();
+        const result = await resizeInputAt(x, y);
+        assert.equal(result.cursor, cursor);
+        assert.deepEqual(result.messages.map(m => m.phase), ['start', 'move', 'end']);
+        assert.ok(result.messages.every(m => m.resize && m.resizeEdges === edges));
+        assert.equal(await evaluate(`document.documentElement.hasAttribute('data-tabbrowser-mini-player-resize-cursor')`), false);
+    });
+}
+
+for (const [x, y, edges, cursor] of [[8, 180, 1, 'ew-resize'], [952, 180, 4, 'ew-resize'], [400, 8, 2, 'ns-resize'], [8, 8, 3, 'nwse-resize'], [952, 8, 6, 'nesw-resize']]) {
+    test(`内側10 DIPへ広げた範囲からリサイズできる: ${edges}`, async () => {
+        await reset();
+        const result = await resizeInputAt(x, y);
+        assert.equal(result.cursor, cursor);
+        assert.deepEqual(result.messages.map(m => m.phase), ['start', 'move', 'end']);
+        assert.ok(result.messages.every(m => m.resize && m.resizeEdges === edges));
+    });
+}
+
+test('中央の移動とCtrlリサイズを維持し、端の外側から始めた移動を途中でリサイズへ変えない', async () => {
+    await reset();
+    const cursor = () => evaluate(`getComputedStyle(document.querySelector('video')).cursor`);
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 180, modifiers: 2 });
+    assert.equal(await cursor(), 'nwse-resize');
+    assert.deepEqual(await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`), []);
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 });
+    assert.notEqual(await cursor(), 'nwse-resize');
+    await call('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 2 });
+    assert.equal(await cursor(), 'nwse-resize');
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 529, modifiers: 2 });
+    assert.notEqual(await cursor(), 'nwse-resize');
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 532, modifiers: 2 });
+    assert.equal(await cursor(), 'nwse-resize');
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 180, modifiers: 2 });
+    await evaluate(`document.dispatchEvent(new PointerEvent('pointerleave'))`);
+    assert.notEqual(await cursor(), 'nwse-resize');
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 });
+    await reset();
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 180, modifiers: 2 });
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 400, y: 180, button: 'left', clickCount: 1, modifiers: 2 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 430, y: 200, button: 'left', buttons: 1, modifiers: 2 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 430, y: 200, button: 'left', clickCount: 1, modifiers: 2 });
+    assert.equal(await cursor(), 'nwse-resize');
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 0 });
+    assert.notEqual(await cursor(), 'nwse-resize');
+    await reset();
+    let result = await resizeInputAt(12, 180);
+    assert.ok(result.messages.length > 0 && result.messages.every(m => !m.resize && !m.resizeEdges));
+    await reset();
+    result = await resizeInputAt(400, 180, { ctrl: true });
+    assert.ok(result.messages.length > 0 && result.messages.every(m => m.resize && !m.resizeEdges));
+    assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('video')).cursor`), 'nwse-resize');
+    await reset();
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 400, y: 180, button: 'left', clickCount: 1, modifiers: 2 });
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('video')).cursor`), 'nwse-resize');
+    // 開始後にCtrlを離しても、既存のリサイズ動作とカーソルを維持する。
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 430, y: 200, button: 'left', buttons: 1 });
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('video')).cursor`), 'nwse-resize');
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 430, y: 200, button: 'left', clickCount: 1 });
+    assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('video')).cursor`), 'nwse-resize');
+    for (const endEvent of ['pointercancel', 'lostpointercapture', 'blur']) {
+        await reset();
+        await resizeInputAt(400, 180, { ctrl: true, release: false });
+        await evaluate(endEvent === 'blur' ? `window.dispatchEvent(new Event('blur'))`
+            : `document.dispatchEvent(new PointerEvent('${endEvent}', { pointerId: 1 }))`);
+        assert.notEqual(await evaluate(`getComputedStyle(document.querySelector('video')).cursor`), 'nwse-resize', endEvent);
+        await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 424, y: 200, button: 'left', clickCount: 1 });
+    }
+});
+
+test('純正操作部・下段の予約領域・開いた設定メニューを内側リサイズが奪わない', async () => {
+    for (const control of ['button', 'seek', 'lower', 'menu']) {
+        await reset();
+        await evaluate(`(() => {
+            const control = ${JSON.stringify(control)};
+            if (control === 'lower') return;
+            const element = document.createElement(control === 'button' ? 'button' : 'div');
+            element.className = control === 'seek' ? 'ytp-progress-bar' : control === 'menu' ? 'ytp-popup ytp-settings-menu' : '';
+            element.style.cssText = 'position:fixed;left:0;top:120px;width:100px;height:160px;z-index:10000;background:black';
+            if (control === 'seek') element.setAttribute('role', 'slider');
+            document.body.append(element);
+        })()`);
+        const result = await resizeInputAt(8, control === 'lower' ? 529 : 180);
+        assert.deepEqual(result.messages, [], control);
+        assert.ok(!result.cursor.includes('resize'), control);
+    }
+});
+
+test('全画面中は内側リサイズを開始せず、復帰後に再び使える', async () => {
+    await reset();
+    await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-fullscreen', 'true')`);
+    assert.deepEqual((await resizeInputAt(2, 180)).messages, []);
+    await evaluate(`document.documentElement.removeAttribute('data-tabbrowser-mini-player-fullscreen')`);
+    assert.ok((await resizeInputAt(2, 180)).messages.some(m => m.resizeEdges === 1));
+});
+
+test('ページズームに合わせた10 DIPの判定幅を使い、DPIだけでCSS側の幅を変えない', async () => {
+    for (const dpi of [1, 1.5, 2]) {
+        for (const zoom of [0.5, 1, 2]) {
+            await reset();
+            await call('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: dpi, mobile: false });
+            await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-page-zoom', '${zoom}')`);
+            assert.ok((await resizeInputAt(9 / zoom, 180)).messages.some(m => m.resizeEdges === 1));
+            await reset();
+            await call('Emulation.setDeviceMetricsOverride', { width: 960, height: 540, deviceScaleFactor: dpi, mobile: false });
+            await evaluate(`document.documentElement.setAttribute('data-tabbrowser-mini-player-page-zoom', '${zoom}')`);
+            assert.ok((await resizeInputAt(11 / zoom, 180)).messages.every(m => !m.resize));
+        }
+    }
+});
+
+test('動画端のクリック・ダブルクリックはドラッグ閾値を超えなければリサイズへ変えない', async () => {
+    await reset();
+    for (const clickCount of [1, 2]) {
+        await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 2, y: 180, button: 'left', clickCount });
+        await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 2, y: 180, button: 'left', clickCount });
+    }
+    const messages = await evaluate('window.__miniPlayerMessages');
+    assert.equal(messages.filter(m => m.type === 'youtubeMiniPlayerDrag').length, 0);
+    assert.equal(messages.filter(m => m.type === 'youtubeMiniPlayerToggleFullScreen').length, 1);
+});
+
+test('内側リサイズも捕捉喪失で終了し、古い移動やボタン解放後の移動で再開しない', async () => {
+    await reset();
+    await resizeInputAt(2, 180, { release: false });
+    await evaluate(`document.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 1 }))`);
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 300, y: 180, button: 'left', buttons: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 300, y: 180, button: 'left', clickCount: 1 });
+    const messages = await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`);
+    assert.deepEqual(messages.map(m => m.phase), ['start', 'move', 'end']);
+    assert.equal(messages.at(-1).cancelled, true);
+});
 
 test('正常な拡大表示の再確認では寸法やstyleを書き直さず、各描画の倍率とパンを維持する', async () => {
     for (const zoom of [1, 1.5, 2, 4]) {

@@ -72,6 +72,13 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
     void ICommandPaletteViewHost.QueueExecution(CommandPaletteExecutionMode mode, CommandPaletteItem item)
         => QueueCommandPaletteExecution(mode, item);
 
+    void ICommandPaletteViewHost.OpenApplicationFolder(ApplicationLaunchItem application)
+    {
+        CloseCommandPalette();
+        _windowTaskSupervisor.TryRun("command-palette-open-application-folder",
+            cancellationToken => OpenApplicationFolderAsync(application, cancellationToken));
+    }
+
     void ICommandPaletteViewHost.ClosePalette() => CloseCommandPalette();
 
     void ICommandPaletteViewHost.ApplyShortcutWindowOrder() => ApplyCommandPaletteShortcutWindowOrder();
@@ -670,6 +677,18 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
         StartCommandPaletteThumbnailCapture((sender as FrameworkElement)?.DataContext as CommandPaletteItem);
     }
 
+    private void CommandPaletteItem_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBoxItem { DataContext: CommandPaletteItem item } row
+            || !CommandPaletteViewController.TryGetApplication(item, out _)) return;
+        if (_suppressWorkspaceRightClickUntilRelease || ShouldSuppressRightWheelContextMenu())
+        {
+            e.Handled = true;
+            return;
+        }
+        if (_commandPaletteViewController.OpenApplicationContextMenu(row)) e.Handled = true;
+    }
+
     private void CommandPaletteItem_ToolTipOpening(object sender, ToolTipEventArgs e)
     {
         StartCommandPaletteThumbnailCapture((sender as FrameworkElement)?.DataContext as CommandPaletteItem);
@@ -1021,7 +1040,10 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
             return;
         }
 
-        SetStatus(result.Message, autoClear: true);
+        if (actionId.StartsWith("miniPlayer.", StringComparison.Ordinal))
+            SetYouTubeMiniPlayerStatus(result.Message, autoClear: true);
+        else
+            SetStatus(result.Message, autoClear: true);
     }
 
     private async Task ExecuteGestureCommandAsync(string? command, string? selectedText)
@@ -1200,12 +1222,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
 
     private async Task OpenYouTubeMiniPlayerListFromCommandPaletteAsync()
     {
-        if (!YouTubeMiniPlayerListPopup.IsOpen)
-        {
-            YouTubeMiniPlayerListPopup.IsOpen = true;
-            return;
-        }
-
+        _youTubeMiniPlayerListWindow.ShowOrActivate();
         await RefreshYouTubeMiniPlayerListAsync(capturePlaybackState: true);
     }
 
@@ -1281,6 +1298,26 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
         }
 
         return Task.CompletedTask;
+    }
+
+    private async Task OpenApplicationFolderAsync(ApplicationLaunchItem application, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ApplicationCatalogService.OpenLocationAsync(
+                token => _applicationCatalogService.ResolveLocationAsync(application, token),
+                () => _isClosingWindow,
+                static startInfo => { using var process = System.Diagnostics.Process.Start(startInfo); },
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException and not AccessViolationException)
+        {
+            if (!cancellationToken.IsCancellationRequested)
+                SetStatus("アプリの場所を開けません: " + ex.Message, autoClear: true);
+        }
     }
 
     private Task RefreshApplicationsFromCommandPaletteAsync()

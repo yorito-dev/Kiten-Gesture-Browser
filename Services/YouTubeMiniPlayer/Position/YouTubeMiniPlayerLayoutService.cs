@@ -9,13 +9,13 @@ public static class YouTubeMiniPlayerLayoutService
     public const double VideoAspectRatio = 16.0 / 9.0;
     public const double ShortsVideoAspectRatio = 9.0 / 16.0;
     public const double DefaultWidth = 480;
-    public const double DefaultHeight = 277.875;
+    public const double DefaultHeight = 270;
     public const double ShortsDefaultWidth = 330;
     public const double MinimumWidth = 260;
     public const double MinimumHeight = 154.125;
     public const double Margin = 14;
-    public const double FrameBorderThickness = 1;
-    public const double ResizeBorderThickness = 8;
+    public const double FrameBorderThickness = 0;
+    public const double ResizeBorderThickness = 0;
     public const double MinimumVisibleLength = 48;
     public const double InitialTopOffset = 48;
     public const double MinimumYouTubeViewportCssPixels = 200;

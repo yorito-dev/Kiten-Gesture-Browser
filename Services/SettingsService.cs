@@ -418,6 +418,7 @@ public sealed class SettingsService
                 || settings.PageZoomPreferences?.Any(static entry => entry is null) == true)
                 throw new JsonException("サイト権限またはサイト別倍率の配列にnull要素があります。");
             settings.SearchAliases = SearchAliasSettingsProfile.Normalize(settings.SearchAliases);
+            settings.SuperDrag = SuperDragSettingsProfile.Normalize(settings.SuperDrag);
             settings.FolderTabViewMode = FolderTabViewMode.Normalize(settings.FolderTabViewMode);
             settings.FolderTabSortMode = FolderTabSortMode.Normalize(settings.FolderTabSortMode);
             settings.FolderTabSortDirection = FolderTabSortDirection.Normalize(settings.FolderTabSortDirection);
@@ -428,7 +429,9 @@ public sealed class SettingsService
             settings.ClipboardHistory = ClipboardHistorySettingsProfile.Normalize(settings.ClipboardHistory);
             settings.BrowsingHistory = BrowsingHistorySettingsProfile.Normalize(settings.BrowsingHistory);
             settings.SitePrivacy = SitePrivacySettingsProfile.Normalize(settings.SitePrivacy);
+            settings.AdBlocking = AdBlockingSettingsProfile.Normalize(settings.AdBlocking);
             settings.QuickLook = QuickLookSettingsProfile.Normalize(settings.QuickLook);
+
             var miniPlayerQualityThresholds = YouTubeMiniPlayerQualitySettingsProfile.Normalize(
                 settings.YouTubeMiniPlayerQualityLowWidthThreshold,
                 settings.YouTubeMiniPlayerQualityHighWidthThreshold);
@@ -578,7 +581,7 @@ public sealed class SettingsService
         foreach (var key in keys)
         {
             // 除外した表示設定は、完全なobjectが残る場合だけ原形で救済する。
-            if (key is "chatGptReadability" or "fiveChLiveReadability"
+            if (key is "chatGptReadability" or "fiveChLiveReadability" or "youTubeFavoriteLive"
                 && System.Text.RegularExpressions.Regex.IsMatch(
                     text, "\"" + key + "\"\\s*:\\s*\\{"))
             {

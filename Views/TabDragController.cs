@@ -308,6 +308,8 @@ internal sealed class TabDragController : IDisposable
         if (!tab.HasThumbnail && _host.HasLoadedRuntime(tab) && !tab.IsLoading) _host.QueueThumbnailCapture(tab);
         ShowTabDragPreviewMode(showWindowPreview: false);
         TabDragPopup.IsOpen = true;
+        // Popupは別HWNDなので、WPFのIsHitTestVisibleだけでなくOSの入力も透過する。
+        YouTubeMiniPlayerPopupService.MakeInputTransparent(TabDragPopup, TabDragPreview);
         MoveTabDragPreview();
     }
 

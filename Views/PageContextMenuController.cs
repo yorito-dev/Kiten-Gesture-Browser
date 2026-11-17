@@ -8,7 +8,7 @@ namespace TabBrowser.Views;
 
 internal sealed record PageContextMenuTarget(
     string? PageUri, string? LinkUri, string? MiniPlayerLinkUri,
-    string? LinkText, string? SelectedText, bool IsEditable);
+    string? LinkText, string? SelectedText, bool IsEditable, bool IsYouTubeVideo = false);
 
 internal interface IPageContextMenuHost
 {
@@ -47,6 +47,11 @@ internal sealed class PageContextMenuController
     private IPageContextMenuSurface? _activePageContextMenu;
     private BrowserTab? _activePageContextMenuTab;
     private long? _activePageContextMenuInteractionId;
+    private bool _activePageContextMenuIsYouTubeVideo;
+
+    public bool CanOpenYouTubeContextMenu => _activePageContextMenu is { IsOpen: true }
+        && _activePageContextMenuIsYouTubeVideo
+        && _activePageContextMenuInteractionId is { } interactionId && _inputHub.IsCurrent(interactionId);
 
     public PageContextMenuController(IPageContextMenuHost host, InputInteractionHub inputHub, Guid windowId)
         : this(host, inputHub, windowId, static () => DateTimeOffset.Now,
@@ -181,6 +186,9 @@ internal sealed class PageContextMenuController
         _activePageContextMenu = surface;
         _activePageContextMenuTab = sourceTab;
         _activePageContextMenuInteractionId = menuInteractionId;
+        _activePageContextMenuIsYouTubeVideo = target.IsYouTubeVideo && !hasLink && !hasSelection && !isEditable
+            && normalizedPageUri is not null
+            && YouTubeMiniPlayerOpenRequestService.TryCreateFromTab(normalizedPageUri, null, out _);
         surface.Closed += (_, _) =>
         {
             menu.Items.Clear();
@@ -190,6 +198,7 @@ internal sealed class PageContextMenuController
                 _activePageContextMenu = null;
                 _activePageContextMenuTab = null;
                 _activePageContextMenuInteractionId = null;
+                _activePageContextMenuIsYouTubeVideo = false;
             }
         };
         surface.IsOpen = true;
@@ -217,6 +226,11 @@ internal sealed class PageContextMenuController
         {
             menu.IsOpen = false;
         }
+    }
+
+    public void InvalidateYouTubeContextMenuForTab(BrowserTab tab)
+    {
+        if (ReferenceEquals(_activePageContextMenuTab, tab)) _activePageContextMenuIsYouTubeVideo = false;
     }
 
     public bool CloseForReplacedInteraction(long interactionId)

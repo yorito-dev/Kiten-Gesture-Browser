@@ -78,6 +78,10 @@ public sealed class BrowserTab : INotifyPropertyChanged
 
     internal int PendingSavedNavigationHistoryIndex { get; set; } = -1;
 
+    internal bool HasCertificateError { get; set; }
+
+    internal string? ConnectionBadgeNavigationUrl { get; set; }
+
     public string? Url
     {
         get => _url;

@@ -33,6 +33,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     private static readonly TimeSpan WorkspaceWheelSwitchDelay = TimeSpan.FromMilliseconds(60);
     private static readonly TimeSpan WorkspaceBackfillDelay = TimeSpan.FromMilliseconds(180);
     private static readonly TimeSpan WorkspacePreloadDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan WorkspaceErrorDisplayDuration = TimeSpan.FromSeconds(5);
     private static readonly (int X, int Y)[] AvoidanceDirections =
     [
         (1, 0),
@@ -68,6 +69,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     private readonly Guid? _initialFolderId;
     private readonly Guid? _initialSelectedItemId;
     private bool _initialized;
+    private TaskCompletionSource? _initializationCompletion;
     private bool _isLoading;
     private bool _isWorkspaceSaving;
     private bool _isApplyingArrangement;
@@ -95,6 +97,10 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     private Task? _workspacePreloadTask;
     private bool _isProcessingWorkspaceWheelSwitch;
     private bool _isDisposed;
+    private readonly Func<TimeSpan, CancellationToken, Task> _workspaceErrorDismissDelay;
+    internal Task WorkspaceErrorDismissCompletion { get; private set; } = Task.CompletedTask;
+    private CancellationTokenSource? _workspaceErrorDismissCancellation;
+    private long _workspaceErrorVersion;
     private bool _isViewActive = true;
     private int _workspaceWheelSwitchVersion;
     private int _workspaceSwitchRequestVersion;
@@ -110,7 +116,23 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         WorkspaceThumbnailPort thumbnails,
         Guid? initialFolderId = null,
         Guid? initialSelectedItemId = null)
+        : this(workspaceService, initialWorkspaceId, tabs, miniPlayers, windows, thumbnails,
+            initialFolderId, initialSelectedItemId, null)
     {
+    }
+
+    internal WorkspaceOSViewModel(
+        WorkspaceService workspaceService,
+        Guid? initialWorkspaceId,
+        WorkspaceTabPort tabs,
+        WorkspaceMiniPlayerPort miniPlayers,
+        WorkspaceWindowPort windows,
+        WorkspaceThumbnailPort thumbnails,
+        Guid? initialFolderId,
+        Guid? initialSelectedItemId,
+        Func<TimeSpan, CancellationToken, Task>? workspaceErrorDismissDelay)
+    {
+        _workspaceErrorDismissDelay = workspaceErrorDismissDelay ?? Task.Delay;
         _workspaceService = workspaceService;
         _initialWorkspaceId = initialWorkspaceId;
         _tabs = tabs;
@@ -825,9 +847,15 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     {
         if (_initialized)
         {
+            if (_initializationCompletion is { } pending)
+            {
+                await pending.Task;
+            }
             return;
         }
 
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _initializationCompletion = completion;
         _initialized = true;
         IsLoading = true;
         ClearWorkspaceError();
@@ -861,6 +889,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         finally
         {
             IsLoading = false;
+            completion.TrySetResult();
         }
     }
 
@@ -1051,6 +1080,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             _isDisposed = true;
         }
 
+        CancelWorkspaceErrorDismiss();
         _workspacePreloadCancellation?.Cancel();
         _workspacePreloadCancellation?.Dispose();
         _workspacePreloadCancellation = null;
@@ -1075,8 +1105,8 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             pending = _shellIconTasks.ToArray();
         }
 
-        // アイコン取得後のDB保存まで所有し、呼出し元がDBを片付ける前に接続の解放を待つ。
-        await Task.WhenAll(pending);
+        // アイコン取得後のDB保存と通知待機の取消完了まで所有する。UIスレッドは同期的に待たない。
+        await Task.WhenAll(pending.Append(WorkspaceErrorDismissCompletion));
     }
 
     private Task TrackShellIconWork(Func<Task> start)
@@ -2882,9 +2912,36 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         StatusText = $"検索結果へ移動しました: {item.Title}";
     }
 
+    public bool TrySaveDroppedTabsAtDefaultPosition(IReadOnlyList<CapturedTabSnapshot> tabs)
+    {
+        if (_isDisposed || tabs.Count == 0 || IsWorkspaceSaving || CurrentWorkspace is null)
+        {
+            return false;
+        }
+
+        var request = new WorkspaceTabDropRequest(tabs, GetNextCanvasPoint());
+        if (!SaveDroppedTabsCommand.CanExecute(request))
+        {
+            return false;
+        }
+
+        SaveDroppedTabsCommand.Execute(request);
+        return true;
+    }
+
     private async Task SaveDroppedTabsAsync(object? parameter)
     {
-        if (IsWorkspaceSaving || parameter is not WorkspaceTabDropRequest request || request.Tabs.Count == 0)
+        if (_isDisposed || IsWorkspaceSaving || parameter is not WorkspaceTabDropRequest request || request.Tabs.Count == 0)
+        {
+            return;
+        }
+
+        if (CurrentWorkspace is null)
+        {
+            await InitializeAsync();
+        }
+
+        if (_isDisposed || IsWorkspaceSaving)
         {
             return;
         }
@@ -4470,15 +4527,62 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
     private void SetWorkspaceError(string text)
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        CancelWorkspaceErrorDismiss();
+        var version = _workspaceErrorVersion;
         StatusText = text;
         WorkspaceErrorText = text;
         HasWorkspaceError = true;
+        if (_isDisposed || version != _workspaceErrorVersion)
+        {
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _workspaceErrorDismissCancellation = cancellation;
+        WorkspaceErrorDismissCompletion = DismissWorkspaceErrorAsync(version, cancellation);
     }
 
     private void ClearWorkspaceError()
     {
+        CancelWorkspaceErrorDismiss();
         WorkspaceErrorText = string.Empty;
         HasWorkspaceError = false;
+    }
+
+    private void CancelWorkspaceErrorDismiss()
+    {
+        _workspaceErrorVersion++;
+        var cancellation = _workspaceErrorDismissCancellation;
+        _workspaceErrorDismissCancellation = null;
+        cancellation?.Cancel();
+    }
+
+    private async Task DismissWorkspaceErrorAsync(long version, CancellationTokenSource cancellation)
+    {
+        try
+        {
+            // UIの同期コンテキストへ復帰して表示だけを消す。ステータスの詳細と処理結果は保持する。
+            await _workspaceErrorDismissDelay(WorkspaceErrorDisplayDuration, cancellation.Token);
+            if (!_isDisposed && !cancellation.IsCancellationRequested
+                && version == _workspaceErrorVersion
+                && ReferenceEquals(_workspaceErrorDismissCancellation, cancellation))
+            {
+                ClearWorkspaceError();
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _workspaceErrorDismissCancellation, null, cancellation);
+            cancellation.Dispose();
+        }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

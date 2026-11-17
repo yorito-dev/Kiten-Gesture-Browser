@@ -22,9 +22,16 @@ internal static class YouTubeMiniPlayerWebDragService
         YouTubeMiniPlayerRuntime runtime,
         YouTubeMiniPlayerDragPhase phase,
         bool isResize,
-        YouTubeMiniPlayerWebDragCallbacks callbacks)
+        YouTubeMiniPlayerWebDragCallbacks callbacks,
+        MiniPlayerResizeEdges resizeEdges = MiniPlayerResizeEdges.None,
+        bool cancelled = false)
     {
-        if (runtime.IsFullScreen)
+        if (runtime.IsDisposed || runtime.IsClosingTaskbarWindow)
+        {
+            Stop(runtime);
+            return;
+        }
+        if (runtime.IsFullScreen || runtime.IsInputTransparent)
         {
             Stop(runtime);
             return;
@@ -40,21 +47,23 @@ internal static class YouTubeMiniPlayerWebDragService
 
         if (phase == YouTubeMiniPlayerDragPhase.Start)
         {
+            runtime.WebDragCancelled = false;
             callbacks.BringToFront(runtime.State.Id, false);
-            if (!isResize)
+            if (!isResize && resizeEdges == MiniPlayerResizeEdges.None)
             {
                 callbacks.SetToolbarVisibility(runtime.State, true);
             }
 
-            StartWebDrag(runtime, isResize, callbacks);
+            StartWebDrag(runtime, isResize, callbacks, resizeEdges);
             return;
         }
 
         if (phase == YouTubeMiniPlayerDragPhase.Move)
         {
+            if (runtime.WebDragCancelled) return;
             if (!runtime.IsWebDragging)
             {
-                StartWebDrag(runtime, isResize, callbacks);
+                StartWebDrag(runtime, isResize, callbacks, resizeEdges);
             }
 
             UpdateWebDrag(runtime, stopWhenReleased: true, callbacks);
@@ -63,12 +72,13 @@ internal static class YouTubeMiniPlayerWebDragService
 
         if (phase == YouTubeMiniPlayerDragPhase.End)
         {
-            if (runtime.IsWebDragging && callbacks.IsLeftMouseButtonDown())
+            if (!cancelled && runtime.IsWebDragging && callbacks.IsLeftMouseButtonDown())
             {
                 return;
             }
 
             StopWebDrag(runtime, save: true, callbacks);
+            if (cancelled) runtime.WebDragCancelled = true;
         }
     }
 
@@ -76,8 +86,14 @@ internal static class YouTubeMiniPlayerWebDragService
         YouTubeMiniPlayerRuntime runtime,
         Point cursorPoint,
         bool isResize,
-        Func<YouTubeMiniPlayerRuntime, DispatcherTimer> createFollowTimer)
+        Func<YouTubeMiniPlayerRuntime, DispatcherTimer> createFollowTimer,
+        MiniPlayerResizeEdges resizeEdges = MiniPlayerResizeEdges.None)
     {
+        if (runtime.IsDisposed || runtime.IsClosingTaskbarWindow)
+        {
+            Stop(runtime);
+            return;
+        }
         if (runtime.IsFullScreen)
         {
             Stop(runtime);
@@ -94,7 +110,8 @@ internal static class YouTubeMiniPlayerWebDragService
             runtime.State.Height);
         runtime.WebDragStartScreenPoint = cursorPoint;
         runtime.IsWebDragging = true;
-        runtime.IsResizing = isResize;
+        runtime.WebDragResizeEdges = resizeEdges;
+        runtime.IsResizing = isResize || resizeEdges != MiniPlayerResizeEdges.None;
         runtime.WebDragFollowTimer ??= createFollowTimer(runtime);
         runtime.WebDragFollowTimer.Stop();
         runtime.WebDragFollowTimer.Start();
@@ -115,20 +132,22 @@ internal static class YouTubeMiniPlayerWebDragService
     {
         runtime.IsWebDragging = false;
         runtime.IsResizing = false;
+        runtime.WebDragResizeEdges = MiniPlayerResizeEdges.None;
         runtime.WebDragFollowTimer?.Stop();
     }
 
     private static void StartWebDrag(
         YouTubeMiniPlayerRuntime runtime,
         bool isResize,
-        YouTubeMiniPlayerWebDragCallbacks callbacks)
+        YouTubeMiniPlayerWebDragCallbacks callbacks,
+        MiniPlayerResizeEdges resizeEdges)
     {
         Start(
             runtime,
             callbacks.GetCursorScreenPoint(),
             isResize,
-            current => CreateFollowTimer(current, callbacks));
-        if (isResize)
+            current => CreateFollowTimer(current, callbacks), resizeEdges);
+        if (runtime.IsResizing)
         {
             runtime.TitleBandHideTimer?.Stop();
             runtime.ToolbarHideTimer?.Stop();
@@ -160,6 +179,11 @@ internal static class YouTubeMiniPlayerWebDragService
         bool stopWhenReleased,
         YouTubeMiniPlayerWebDragCallbacks callbacks)
     {
+        if (runtime.IsDisposed || runtime.IsClosingTaskbarWindow)
+        {
+            Stop(runtime);
+            return;
+        }
         if (runtime.IsFullScreen)
         {
             Stop(runtime);
@@ -178,7 +202,18 @@ internal static class YouTubeMiniPlayerWebDragService
         }
 
         var currentScreenPoint = callbacks.GetCursorScreenPoint();
-        if (runtime.IsResizing)
+        if (runtime.WebDragResizeEdges != MiniPlayerResizeEdges.None)
+        {
+            var edges = runtime.WebDragResizeEdges;
+            var bounds = YouTubeMiniPlayerResizeService.CalculateResizeBounds(runtime.State,
+                runtime.WebDragStartLeft, runtime.WebDragStartTop, runtime.WebDragStartWidth, runtime.WebDragStartHeight,
+                currentScreenPoint.X - runtime.WebDragStartScreenPoint.X, currentScreenPoint.Y - runtime.WebDragStartScreenPoint.Y,
+                edges.HasFlag(MiniPlayerResizeEdges.Left), edges.HasFlag(MiniPlayerResizeEdges.Top),
+                edges.HasFlag(MiniPlayerResizeEdges.Right), edges.HasFlag(MiniPlayerResizeEdges.Bottom),
+                YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime));
+            YouTubeMiniPlayerResizeService.ApplyBounds(runtime.State, runtime.Root, bounds, callbacks.Clamp);
+        }
+        else if (runtime.IsResizing)
         {
             YouTubeMiniPlayerResizeService.ApplyCtrlDragResize(
                 runtime.State,

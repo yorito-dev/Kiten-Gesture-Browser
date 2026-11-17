@@ -7,7 +7,7 @@
 
 Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブブラウザです。本体ソースはMIT Licenseで提供します。
 
-**[無料の公開アルファをダウンロード（v0.1.0-preview.6）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.6)**
+**[無料の公開アルファをダウンロード（v0.2.0-preview.1）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.1)**
 
 **[初めて使う方へ：ダウンロード・起動・基本操作・バックアップ](docs/getting-started.md)**
 
@@ -17,6 +17,7 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 
 - マウスジェスチャー：戻る・進むなどのブラウザ操作を、マウスの動きで行えます。
 - YouTubeミニプレイヤー：通常動画・Shorts・ライブ配信を小さな別ウィンドウで再生できます。動画を見ながらほかのタブで調べものをしたり、複数の動画を並べたりできます。位置や大きさを調整し、必要に応じて最前面に表示できます。
+- ミニプレイヤー一覧：ブラウザー本体とは独立して表示し、チェックした動画への一括操作、配置の予告と適用、閉じた動画の選択復元ができます。見出しだけの表示や位置も次回起動時に復元します。行のアクティブ表示と情報バーからの移動、音量・速度・再読み込みも一覧から操作できます。
 - タブ・Window・分割表示の保存と復元、ブックマーク、メモ
 - Workspace：Webリンクやファイル・フォルダーへの参照、メモをカードとして整理する作業場所です。
 - FolderTab：実際のフォルダーをタブで開き、ファイル一覧やフォルダーの移動を扱います。
@@ -40,7 +41,7 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 
 ## ダウンロードと導入
 
-[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.6)のAssetsにある[Kiten-Gesture-Browser-0.1.0-preview.6-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.6/Kiten-Gesture-Browser-0.1.0-preview.6-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.1.0-preview.6/Kiten-Gesture-Browser-0.1.0-preview.6-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
+[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.1)のAssetsにある[Kiten-Gesture-Browser-0.2.0-preview.1-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.2.0-preview.1/Kiten-Gesture-Browser-0.2.0-preview.1-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.2.0-preview.1/Kiten-Gesture-Browser-0.2.0-preview.1-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
 
 1. 入手元とZIPのSHA-256を確認します。
 2. 新しい空フォルダーへZIPをすべて展開します。
@@ -66,7 +67,7 @@ AIに聞けばすぐに答えが返ってくる時代になりました。それ
 
 本体のダウンロードと利用は無料です。開発支援は任意で、支援の有無による機能差はありません。
 
-本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.1.0-preview.6)で無料提供しています。
+本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.1)で無料提供しています。
 
 ## 利用条件・プライバシー・報告
 

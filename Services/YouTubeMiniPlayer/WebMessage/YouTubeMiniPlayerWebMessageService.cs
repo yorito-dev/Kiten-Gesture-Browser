@@ -67,7 +67,9 @@ internal readonly record struct YouTubeMiniPlayerWebMessage(
     YouTubeMiniPlayerSideButton SideButton = YouTubeMiniPlayerSideButton.Unknown,
     bool IsResize = false,
     string? SourceVideoId = null,
-    string? ChannelId = null);
+    string? ChannelId = null,
+    MiniPlayerResizeEdges ResizeEdges = MiniPlayerResizeEdges.None,
+    bool Cancelled = false);
 
 internal static class YouTubeMiniPlayerWebMessageService
 {
@@ -104,7 +106,9 @@ internal static class YouTubeMiniPlayerWebMessageService
                     Hovered: false,
                     TitleHovered: false,
                     Token: null,
-                    IsResize: GetJsonBool(root, "resize"));
+                    IsResize: GetJsonBool(root, "resize"),
+                    ResizeEdges: ParseResizeEdges(GetJsonDouble(root, "resizeEdges")),
+                    Cancelled: GetJsonBool(root, "cancelled"));
                 return true;
             }
 
@@ -283,6 +287,9 @@ internal static class YouTubeMiniPlayerWebMessageService
             _ => YouTubeMiniPlayerSideButton.Unknown
         };
     }
+
+    private static MiniPlayerResizeEdges ParseResizeEdges(double value) => value is 1 or 2 or 3 or 4 or 6 or 8 or 9 or 12
+        ? (MiniPlayerResizeEdges)(int)value : MiniPlayerResizeEdges.None;
 
     private static string? GetJsonString(JsonElement root, string name)
     {

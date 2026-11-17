@@ -44,17 +44,7 @@ internal static class YouTubeMiniPlayerArrangementPlanningService
             .ToList();
         var focusIds = new HashSet<Guid>();
         List<YouTubeMiniPlayerArrangementCandidate> targets;
-        if (mode == YouTubeMiniPlayerArrangeMode.Focus)
-        {
-            targets = eligibleCandidates;
-            var eligibleIds = targets.Select(static candidate => candidate.Id).ToHashSet();
-            focusIds = selectedIds.Where(eligibleIds.Contains).ToHashSet();
-            if (focusIds.Count == 0 && targets.Count > 0)
-            {
-                focusIds.Add(targets[0].Id);
-            }
-        }
-        else if (selectedIds.Count > 0)
+        if (selectedIds.Count > 0)
         {
             var candidatesById = eligibleCandidates.ToDictionary(static candidate => candidate.Id);
             targets = selectedIds
@@ -65,6 +55,11 @@ internal static class YouTubeMiniPlayerArrangementPlanningService
         else
         {
             targets = eligibleCandidates;
+        }
+        if (mode == YouTubeMiniPlayerArrangeMode.Focus)
+        {
+            focusIds = selectedIds.Where(id => targets.Any(candidate => candidate.Id == id)).ToHashSet();
+            if (focusIds.Count == 0 && targets.Count > 0) focusIds.Add(targets[0].Id);
         }
 
         if (targets.Count == 0)

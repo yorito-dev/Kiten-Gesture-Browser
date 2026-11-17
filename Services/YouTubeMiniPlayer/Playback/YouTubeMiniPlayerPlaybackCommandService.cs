@@ -486,9 +486,10 @@ internal static class YouTubeMiniPlayerPlaybackCommandService
         return ExecuteListCommandAsync(
             state,
             runtimes,
-            YouTubeControlScriptService.BuildSeekToLiveEdgeScript(),
+            YouTubeControlScriptService.BuildSeekToLiveEdgeAndWaitScript(),
             showStatus: true,
-            setStatus);
+            setStatus,
+            treatAsUserGesture: true);
     }
 
     public static Task<bool> ToggleLoopAsync(
@@ -798,9 +799,10 @@ internal static class YouTubeMiniPlayerPlaybackCommandService
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
         string script,
         bool showStatus,
-        Action<string> setStatus)
+        Action<string> setStatus,
+        bool treatAsUserGesture = false)
     {
-        var result = await ExecuteAsync(state, runtimes, script, showStatus, setStatus);
+        var result = await ExecuteAsync(state, runtimes, script, showStatus, setStatus, treatAsUserGesture);
         if (!YouTubeMiniPlayerScriptExecutionService.IsSuccessfulResult(result))
         {
             return false;

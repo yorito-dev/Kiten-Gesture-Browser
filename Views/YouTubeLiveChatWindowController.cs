@@ -159,6 +159,7 @@ internal sealed class YouTubeLiveChatWindowController(IYouTubeLiveChatHost host)
             if (!isLive)
             {
                 state.IsAtLiveEdge = false;
+                state.IsLiveEdgeStateKnown = false;
             }
 
             state.LiveViewerCountText = isLive

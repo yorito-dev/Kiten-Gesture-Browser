@@ -17,8 +17,55 @@ public enum MiniPlayerLeftDragAction
     Resize
 }
 
+[Flags]
+public enum MiniPlayerResizeEdges
+{
+    None = 0,
+    Left = 1,
+    Top = 2,
+    Right = 4,
+    Bottom = 8
+}
+
 public static class YouTubeMiniPlayerInputService
 {
+    public const double VideoResizeInset = 10;
+    public const double VideoResizeEdgeInset = 1;
+    public const double VideoResizeCornerLength = 16 - YouTubeMiniPlayerLayoutService.FrameBorderThickness - YouTubeMiniPlayerLayoutService.ResizeBorderThickness;
+
+    public static MiniPlayerResizeEdges GetVideoResizeEdges(Point point, Size size)
+    {
+        if (!double.IsFinite(point.X) || !double.IsFinite(point.Y)
+            || size.Width <= 0 || size.Height <= 0 || !double.IsFinite(size.Width) || !double.IsFinite(size.Height)
+            || point.X < 0 || point.Y < 0 || point.X > size.Width || point.Y > size.Height)
+            return MiniPlayerResizeEdges.None;
+        var left = point.X < VideoResizeInset;
+        var top = point.Y < VideoResizeInset;
+        var right = size.Width - point.X < VideoResizeInset;
+        var bottom = size.Height - point.Y < VideoResizeInset;
+        if (left || right)
+        {
+            top |= point.Y < VideoResizeCornerLength;
+            bottom |= size.Height - point.Y < VideoResizeCornerLength;
+        }
+        if (top || bottom)
+        {
+            left |= point.X < VideoResizeCornerLength;
+            right |= size.Width - point.X < VideoResizeCornerLength;
+        }
+        return (left ? MiniPlayerResizeEdges.Left : 0) | (top ? MiniPlayerResizeEdges.Top : 0)
+            | (right ? MiniPlayerResizeEdges.Right : 0) | (bottom ? MiniPlayerResizeEdges.Bottom : 0);
+    }
+
+    public static Cursor? GetResizeCursor(MiniPlayerResizeEdges edges) => edges switch
+    {
+        MiniPlayerResizeEdges.Left or MiniPlayerResizeEdges.Right => Cursors.SizeWE,
+        MiniPlayerResizeEdges.Top or MiniPlayerResizeEdges.Bottom => Cursors.SizeNS,
+        (MiniPlayerResizeEdges.Left | MiniPlayerResizeEdges.Top) or (MiniPlayerResizeEdges.Right | MiniPlayerResizeEdges.Bottom) => Cursors.SizeNWSE,
+        (MiniPlayerResizeEdges.Right | MiniPlayerResizeEdges.Top) or (MiniPlayerResizeEdges.Left | MiniPlayerResizeEdges.Bottom) => Cursors.SizeNESW,
+        _ => null
+    };
+
     public const double FixedGestureThreshold = 24;
     public const double FixedGestureDominanceRatio = 1.5;
     public const double TitleBandHotZoneHeight = 72;

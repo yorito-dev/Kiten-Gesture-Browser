@@ -17,6 +17,16 @@ public static class YouTubeMiniPlayerPopupService
     private const uint SetWindowPositionNoZOrder = 0x0004;
     private const uint SetWindowPositionNoActivate = 0x0010;
 
+    internal static int GetInputTransparentStyle(int styles) => styles | 0x00000020 | 0x08000000;
+
+    internal static void MakeInputTransparent(Popup popup, Visual visual)
+    {
+        if (!popup.IsOpen || PresentationSource.FromVisual(visual) is not HwndSource source) return;
+        // 他のプレビューWindowと同じ、入力透過・非アクティブの拡張styleを使う。
+        var styles = GetWindowLong(source.Handle, -20);
+        _ = SetWindowLong(source.Handle, -20, GetInputTransparentStyle(styles));
+    }
+
     public static void SetRelativePosition(
         Popup popup,
         UIElement placementTarget,
@@ -266,4 +276,10 @@ public static class YouTubeMiniPlayerPopupService
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static extern int GetWindowLong(IntPtr windowHandle, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
+    private static extern int SetWindowLong(IntPtr windowHandle, int index, int newValue);
 }

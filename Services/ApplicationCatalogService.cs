@@ -8,6 +8,8 @@ using TabBrowser.Models;
 
 namespace TabBrowser.Services;
 
+internal sealed record ApplicationFolderLocation(string Path, bool IsDirectory);
+
 public sealed class ApplicationCatalogService
 {
     public const int MaximumCatalogItems = 2048;
@@ -176,6 +178,187 @@ public sealed class ApplicationCatalogService
         if (Process.Start(CreateLaunchStartInfo(application)) is null)
         {
             throw new InvalidOperationException("アプリを起動できませんでした。");
+        }
+    }
+
+    internal Task<ApplicationFolderLocation> ResolveLocationAsync(
+        ApplicationLaunchItem application,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(application);
+        return StartLocationResolution(() => ResolveLocation(application), cancellationToken);
+    }
+
+    internal static Task<ApplicationFolderLocation> StartLocationResolution(
+        Func<ApplicationFolderLocation> resolve,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resolve);
+        cancellationToken.ThrowIfCancellationRequested();
+        var completion = new TaskCompletionSource<ApplicationFolderLocation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var registration = cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var result = resolve();
+                cancellationToken.ThrowIfCancellationRequested();
+                completion.TrySetResult(result);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                completion.TrySetCanceled(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+            finally
+            {
+                registration.Dispose();
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "TabBrowser Application Location"
+        };
+        try { thread.SetApartmentState(ApartmentState.STA); thread.Start(); }
+        catch { registration.Dispose(); throw; }
+        return completion.Task;
+    }
+
+    internal static ProcessStartInfo CreateLocationStartInfo(ApplicationFolderLocation location)
+    {
+        ArgumentNullException.ThrowIfNull(location);
+        if (!Path.IsPathFullyQualified(location.Path))
+            throw new ArgumentException("アプリの場所が絶対パスではありません。", nameof(location));
+
+        var startInfo = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+        if (!location.IsDirectory) startInfo.ArgumentList.Add("/select,");
+        startInfo.ArgumentList.Add(Path.GetFullPath(location.Path));
+        return startInfo;
+    }
+
+    internal static async Task OpenLocationAsync(
+        Func<CancellationToken, Task<ApplicationFolderLocation>> resolve,
+        Func<bool> isClosing,
+        Action<ProcessStartInfo> open,
+        CancellationToken cancellationToken)
+    {
+        var location = await resolve(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (isClosing()) return;
+        open(CreateLocationStartInfo(location));
+    }
+
+    private static ApplicationFolderLocation ResolveLocation(ApplicationLaunchItem application)
+    {
+        if (string.IsNullOrWhiteSpace(application.LaunchTarget))
+            throw new InvalidOperationException("アプリの場所を取得できません。");
+        string? path;
+        if (application.Kind == ApplicationLaunchKind.ShellPath
+            && Path.IsPathFullyQualified(application.LaunchTarget))
+        {
+            path = application.LaunchTarget;
+        }
+        else if (application.Kind == ApplicationLaunchKind.AppsFolder
+            && IsSafeAppsFolderTarget(application.LaunchTarget)
+            && !Path.IsPathFullyQualified(application.LaunchTarget))
+        {
+            path = GetAppsFolderLocation(application.LaunchTarget);
+        }
+        else
+        {
+            throw new InvalidOperationException("アプリの場所を取得できません。");
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+            throw new InvalidOperationException("アプリの場所を取得できません。");
+        path = Environment.ExpandEnvironmentVariables(path.Trim());
+        if (!Path.IsPathFullyQualified(path))
+            throw new InvalidOperationException("アプリの場所を取得できません。");
+        path = Path.GetFullPath(path);
+        path = ResolveShortcutChain(path, ResolveShortcutTarget);
+        if (Directory.Exists(path)) return new ApplicationFolderLocation(path, true);
+        if (File.Exists(path)) return new ApplicationFolderLocation(path, false);
+        throw new FileNotFoundException("アプリの場所が見つからないか、アクセスできません。", path);
+    }
+
+    internal static string ResolveShortcutChain(string path, Func<string, string> resolve)
+    {
+        var visitedShortcuts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (string.Equals(Path.GetExtension(path), ".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            if (visitedShortcuts.Count >= 8 || !visitedShortcuts.Add(path))
+                throw new InvalidOperationException("ショートカットのリンク先を取得できません。");
+            path = resolve(path);
+        }
+        return path;
+    }
+
+    private static string? GetAppsFolderLocation(string target)
+    {
+        object? shellObject = null;
+        object? folderObject = null;
+        object? itemObject = null;
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("Shell.Application", throwOnError: true)!;
+            shellObject = Activator.CreateInstance(shellType)!;
+            dynamic shell = shellObject;
+            folderObject = shell.NameSpace("shell:AppsFolder");
+            if (folderObject is null) return null;
+            dynamic folder = folderObject;
+            itemObject = folder.ParseName(target);
+            if (itemObject is null) return null;
+            dynamic item = itemObject;
+            var packagePath = target.Contains('!', StringComparison.Ordinal)
+                ? Convert.ToString(item.ExtendedProperty("System.AppUserModel.PackageInstallPath"), CultureInfo.InvariantCulture)
+                : null;
+            return string.IsNullOrWhiteSpace(packagePath)
+                ? Convert.ToString(item.ExtendedProperty("System.Link.TargetParsingPath"), CultureInfo.InvariantCulture)
+                : packagePath;
+        }
+        finally
+        {
+            ReleaseComObject(itemObject);
+            ReleaseComObject(folderObject);
+            ReleaseComObject(shellObject);
+        }
+    }
+
+    private static string ResolveShortcutTarget(string shortcutPath)
+    {
+        object? shellObject = null;
+        object? folderObject = null;
+        object? itemObject = null;
+        object? linkObject = null;
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("Shell.Application", throwOnError: true)!;
+            shellObject = Activator.CreateInstance(shellType)!;
+            dynamic shell = shellObject;
+            folderObject = shell.NameSpace(Path.GetDirectoryName(shortcutPath));
+            if (folderObject is null) throw new FileNotFoundException("ショートカットが見つかりません。", shortcutPath);
+            dynamic folder = folderObject;
+            itemObject = folder.ParseName(Path.GetFileName(shortcutPath));
+            if (itemObject is null) throw new FileNotFoundException("ショートカットが見つかりません。", shortcutPath);
+            dynamic item = itemObject;
+            linkObject = item.GetLink;
+            if (linkObject is null) throw new InvalidOperationException("ショートカットのリンク先を取得できません。");
+            dynamic link = linkObject;
+            var target = Environment.ExpandEnvironmentVariables(Convert.ToString(link.Path, CultureInfo.InvariantCulture) ?? string.Empty);
+            if (!Path.IsPathFullyQualified(target) || string.Equals(target, shortcutPath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("ショートカットのリンク先を取得できません。");
+            return Path.GetFullPath(target);
+        }
+        finally
+        {
+            ReleaseComObject(linkObject);
+            ReleaseComObject(itemObject);
+            ReleaseComObject(folderObject);
+            ReleaseComObject(shellObject);
         }
     }
 

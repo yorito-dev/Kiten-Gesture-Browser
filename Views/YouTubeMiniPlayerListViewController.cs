@@ -11,7 +11,7 @@ using TabBrowser.Services.Workspaces;
 namespace TabBrowser.Views;
 
 internal sealed record YouTubeMiniPlayerListElements(
-    Popup YouTubeMiniPlayerListPopup,
+    YouTubeMiniPlayerListWindow YouTubeMiniPlayerListWindow,
     ListBox YouTubeMiniPlayerList,
     TextBlock YouTubeMiniPlayerListEmptyText,
     TextBlock YouTubeMiniPlayerListSummaryText,
@@ -21,7 +21,30 @@ internal sealed record YouTubeMiniPlayerListElements(
     Button YouTubeMiniPlayerArrangeMenuButton,
     Button YouTubeMiniPlayerRestoreArrangementButton,
     Button YouTubeMiniPlayerPlayPauseAllButton,
-    Button YouTubeMiniPlayerRestoreClosedButton);
+    Button YouTubeMiniPlayerRestoreClosedButton,
+    Button YouTubeMiniPlayerPauseAllButton,
+    Button YouTubeMiniPlayerLiveEdgeAllButton,
+    Button YouTubeMiniPlayerCloseAllButton,
+    FrameworkElement YouTubeMiniPlayerGlobalActionsRoot,
+    Popup? YouTubeMiniPlayerClosedHistoryPopup = null,
+    ItemsControl? YouTubeMiniPlayerClosedHistoryList = null);
+
+internal sealed record YouTubeMiniPlayerGlobalActionsState(
+    int TotalCount, int LoadedCount, int LiveCount, bool AllMuted, bool AllMinimized, bool IsLiveSeekInProgress, int SelectedCount = 0)
+{
+    public string ScopeText => SelectedCount > 0 ? $"対象：選択 {TotalCount}件（チェックした動画だけ）" : $"対象：全 {TotalCount}件（チェックすると選択分だけ）";
+    public string PlayActionText => SelectedCount > 0 ? "選択を再生" : "すべて再生";
+    public string PauseActionText => SelectedCount > 0 ? "選択を一時停止" : "すべて一時停止";
+    public string CloseActionText => SelectedCount > 0 ? "選択を閉じる" : "すべて閉じる";
+    public string TotalCountText => $"{TotalCount}件";
+    public string LoadedCountText => $"{LoadedCount}件";
+    public string LiveCountText => $"{LiveCount}件";
+    public string LiveActionText => IsLiveSeekInProgress ? "ライブ位置へ移動中…" : "ライブ配信を最新位置へ";
+    public string MuteActionText => (SelectedCount > 0 ? "選択を" : "すべて") + (AllMuted ? "ミュート解除" : "ミュート");
+    public string MuteDescription => AllMuted ? "対象のプレイヤーのミュートを解除" : "対象のプレイヤーの音声を消す";
+    public string MinimizeActionText => (SelectedCount > 0 ? "選択を" : "すべて") + (AllMinimized ? "最小化解除" : "最小化");
+    public string MinimizeDescription => AllMinimized ? "対象のプレイヤーの最小化を解除" : "対象のプレイヤーをタスクバーへ";
+}
 
 internal sealed record YouTubeMiniPlayerListOwnerSource(
     MainWindow Owner, IReadOnlyList<YouTubeMiniPlayerState> States);
@@ -29,7 +52,8 @@ internal sealed record YouTubeMiniPlayerListOwnerSource(
 internal sealed record YouTubeMiniPlayerListRuntimeSnapshot(
     YouTubeMiniPlayerDisplayHealthSnapshot? DisplayHealth,
     bool IsLocalVideoLoaded, bool HasLocalVideoLoadFailure, bool IsRuntimeLoaded,
-    YouTubeMiniPlayerAudioFocusMode? FocusMode, bool IsFocusTarget, bool IsPreviewTarget);
+    YouTubeMiniPlayerAudioFocusMode? FocusMode, bool IsFocusTarget, bool IsPreviewTarget,
+    bool? LiveChatAvailability = null, bool IsChatWindowOpen = false);
 
 internal interface IYouTubeMiniPlayerListHost
 {
@@ -40,9 +64,12 @@ internal interface IYouTubeMiniPlayerListHost
     bool HasInitialArrangement { get; }
     bool HasRestorablePlayer { get; }
     bool IsRestoringClosedPlayer { get; }
+    bool IsLiveSeekInProgress { get; }
+    bool IsListOperationInProgress => false;
     ModifierKeys Modifiers { get; }
     IReadOnlyList<YouTubeMiniPlayerListOwnerSource> GetOwnerSources();
     Task CaptureStatesAsync(MainWindow owner);
+    YouTubeMiniPlayerState? GetActivePlayer();
     YouTubeMiniPlayerListRuntimeSnapshot CaptureRuntimeSnapshot(YouTubeMiniPlayerListItem item);
     bool IsItemLoaded(YouTubeMiniPlayerListItem item);
     bool ShouldPlayAllLoadedPlayers();
@@ -60,6 +87,8 @@ internal interface IYouTubeMiniPlayerListHost
     Task StopHoverPreviewAsync();
     bool TryGetCursorDevicePoint(out Point point);
     void DoDragDrop(DependencyObject source, IDataObject data, DragDropEffects effects);
+    IReadOnlyList<YouTubeMiniPlayerListItem> GetClosedHistoryItems();
+    Task RestoreClosedHistoryAsync(Guid id);
 }
 
 internal sealed class YouTubeMiniPlayerListViewController
@@ -75,6 +104,10 @@ internal sealed class YouTubeMiniPlayerListViewController
     private readonly IYouTubeMiniPlayerListHost _host;
     private readonly Func<YouTubeMiniPlayerState, CancellationToken, Task<ImageSource?>> _loadThumbnail;
     private bool _isStopped;
+    private Guid? _activePlayerId;
+    private ListBoxItem? _selectionCapture;
+    private IReadOnlyList<YouTubeMiniPlayerListItem> _closedHistoryItems = [];
+    private CancellationTokenSource? _closedHistoryThumbnailCancellation;
 
     public YouTubeMiniPlayerListViewController(
         YouTubeMiniPlayerListElements elements,
@@ -92,7 +125,7 @@ internal sealed class YouTubeMiniPlayerListViewController
 
     public IReadOnlyList<YouTubeMiniPlayerListItem> Items => _youTubeMiniPlayerListItems;
     public YouTubeMiniPlayerListInteractionCoordinator Interaction => _youTubeMiniPlayerListInteractionCoordinator;
-    private Popup YouTubeMiniPlayerListPopup => _elements.YouTubeMiniPlayerListPopup;
+    private YouTubeMiniPlayerListWindow YouTubeMiniPlayerListWindow => _elements.YouTubeMiniPlayerListWindow;
     private ListBox YouTubeMiniPlayerList => _elements.YouTubeMiniPlayerList;
     private TextBlock YouTubeMiniPlayerListEmptyText => _elements.YouTubeMiniPlayerListEmptyText;
     private TextBlock YouTubeMiniPlayerListSummaryText => _elements.YouTubeMiniPlayerListSummaryText;
@@ -127,6 +160,9 @@ internal sealed class YouTubeMiniPlayerListViewController
         _isStopped = true;
         _youTubeMiniPlayerListRefreshTimer.Stop();
         _youTubeMiniPlayerListRefreshTimer.Tick -= RefreshTimer_Tick;
+        ResetYouTubeMiniPlayerListDragState();
+        if (_elements.YouTubeMiniPlayerClosedHistoryPopup is { } popup) popup.IsOpen = false;
+        ClearClosedHistoryItems();
     }
 
     private static async Task<ImageSource?> LoadThumbnailAsync(
@@ -138,8 +174,14 @@ internal sealed class YouTubeMiniPlayerListViewController
 
     public async Task RefreshYouTubeMiniPlayerListAsync(bool capturePlaybackState)
     {
-        if ((_isStopped || _host.IsClosingWindow)
-            || _youTubeMiniPlayerStateSyncCoordinator.IsListRefreshRunning
+        if (_isStopped || _host.IsClosingWindow) return;
+        // 行の更新を見送る場合も、情報バーの対象と表示期限は更新する。
+        var activePlayer = _host.GetActivePlayer();
+        _activePlayerId = activePlayer?.Id;
+        foreach (var item in _youTubeMiniPlayerListItems) item.UpdateActivePlayer(item.State.Id == _activePlayerId);
+        YouTubeMiniPlayerListWindow.ShowActivePlayerTitle(activePlayer?.Title ?? string.Empty);
+        YouTubeMiniPlayerListWindow.ClearExpiredOperationStatus();
+        if (_youTubeMiniPlayerStateSyncCoordinator.IsListRefreshRunning
             || _youTubeMiniPlayerListDragCoordinator.IsDragActive)
         {
             return;
@@ -177,6 +219,7 @@ internal sealed class YouTubeMiniPlayerListViewController
                 .OfType<YouTubeMiniPlayerListItem>()
                 .Select(static item => item.State.Id)
                 .ToHashSet();
+            var previousItemCount = _youTubeMiniPlayerListItems.Count;
             var items = SynchronizeYouTubeMiniPlayerListItems(windows);
             var workspaceShelfSignature = string.Join(
                 '|',
@@ -207,6 +250,7 @@ internal sealed class YouTubeMiniPlayerListViewController
             _host.UpdateAudioFocusBar();
             _host.UpdateWindowHighlights();
             _host.UpdateAudioIndicators();
+            if (items.Count != previousItemCount) YouTubeMiniPlayerListWindow.FitToContentHeight();
         }
         finally
         {
@@ -262,7 +306,9 @@ internal sealed class YouTubeMiniPlayerListViewController
             var runtime = _host.CaptureRuntimeSnapshot(item);
             item.UpdateRuntimeState(
                 runtime.DisplayHealth, runtime.IsLocalVideoLoaded, runtime.HasLocalVideoLoadFailure,
-                runtime.IsRuntimeLoaded, runtime.FocusMode, runtime.IsFocusTarget, runtime.IsPreviewTarget);
+                runtime.IsRuntimeLoaded, runtime.FocusMode, runtime.IsFocusTarget, runtime.IsPreviewTarget,
+                runtime.LiveChatAvailability, runtime.IsChatWindowOpen);
+            item.UpdateActivePlayer(item.State.Id == _activePlayerId);
         }
 
         while (_youTubeMiniPlayerListItems.Count > desiredItems.Count)
@@ -270,7 +316,7 @@ internal sealed class YouTubeMiniPlayerListViewController
             _youTubeMiniPlayerListItems.RemoveAt(_youTubeMiniPlayerListItems.Count - 1);
         }
 
-        if (YouTubeMiniPlayerListPopup.IsOpen
+        if (YouTubeMiniPlayerListWindow.IsOpen
             && _youTubeMiniPlayerThumbnailLoadCoordinator.TryGetCurrentBatchToken(
                 out var cancellationToken))
         {
@@ -339,7 +385,14 @@ internal sealed class YouTubeMiniPlayerListViewController
 
         _host.UpdateAudioFocusBar();
         _host.UpdateWindowHighlights();
+        UpdateYouTubeMiniPlayerListToolbarState(Items.ToList());
     }
+
+    public void YouTubeMiniPlayerSelectAllButton_Click(object sender, RoutedEventArgs e)
+        => YouTubeMiniPlayerList.SelectAll();
+
+    public void YouTubeMiniPlayerClearSelectionButton_Click(object sender, RoutedEventArgs e)
+        => YouTubeMiniPlayerList.UnselectAll();
 
     public void YouTubeMiniPlayerListItem_PreviewMouseLeftButtonDown(
         object sender,
@@ -347,19 +400,23 @@ internal sealed class YouTubeMiniPlayerListViewController
     {
         ResetYouTubeMiniPlayerListDragState();
         if (sender is not ListBoxItem { DataContext: YouTubeMiniPlayerListItem listItem } item
-            || e.ClickCount > 1
             || _host.Modifiers != ModifierKeys.None
             || FindYouTubeMiniPlayerListVisualParent<ButtonBase>(e.OriginalSource as DependencyObject) is not null)
         {
             return;
         }
 
+        // 標準の単一選択で他の行を解除せず、クリックは解放時に確定する。
+        e.Handled = true;
+        if (e.ClickCount > 1) return;
+        YouTubeMiniPlayerList.Focus();
         var startPoint = e.GetPosition(YouTubeMiniPlayerList);
         _youTubeMiniPlayerListDragCoordinator.BeginCandidate(
             listItem.State.Id,
             item.IsSelected,
             startPoint.X,
             startPoint.Y);
+        if (Mouse.Capture(item, CaptureMode.SubTree)) _selectionCapture = item;
     }
 
     public void YouTubeMiniPlayerListItem_PreviewMouseLeftButtonUp(
@@ -373,20 +430,26 @@ internal sealed class YouTubeMiniPlayerListViewController
         }
 
         var candidate = _youTubeMiniPlayerListDragCoordinator.CaptureCandidate();
-        var shouldDeselect = !_youTubeMiniPlayerListDragCoordinator.IsDragActive
-            && candidate.SourceWasSelected
+        var shouldToggle = !_youTubeMiniPlayerListDragCoordinator.IsDragActive
             && candidate.SourceId == listItem.State.Id
             && e.ClickCount <= 1
             && _host.Modifiers == ModifierKeys.None
-            && FindYouTubeMiniPlayerListVisualParent<ButtonBase>(e.OriginalSource as DependencyObject) is null;
+            && FindYouTubeMiniPlayerListVisualParent<ButtonBase>(e.OriginalSource as DependencyObject) is null
+            && (!item.IsLoaded || IsCursorWithinYouTubeMiniPlayerListItem(item));
         ResetYouTubeMiniPlayerListDragState();
-        if (!shouldDeselect)
+        if (!shouldToggle)
         {
             return;
         }
 
-        item.IsSelected = false;
+        item.IsSelected = !candidate.SourceWasSelected;
         e.Handled = true;
+    }
+
+    public void YouTubeMiniPlayerListItem_LostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (ReferenceEquals(sender, _selectionCapture) && ReferenceEquals(sender, e.OriginalSource))
+            ResetYouTubeMiniPlayerListDragState();
     }
 
     public void YouTubeMiniPlayerList_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -579,19 +642,33 @@ internal sealed class YouTubeMiniPlayerListViewController
 
     public void ResetYouTubeMiniPlayerListDragState()
     {
+        var capture = _selectionCapture;
+        _selectionCapture = null;
         _youTubeMiniPlayerListDragCoordinator.ResetCandidate();
+        if (capture?.IsMouseCaptured == true) capture.ReleaseMouseCapture();
+    }
+
+    public bool ScrollToActivePlayer()
+    {
+        if (_isStopped || !string.IsNullOrEmpty(YouTubeMiniPlayerListWindow.OperationStatus)
+            || string.IsNullOrEmpty(YouTubeMiniPlayerListWindow.InformationText)) return false;
+        var item = _youTubeMiniPlayerListItems.FirstOrDefault(item => item.State.Id == _activePlayerId);
+        if (item is null) return false;
+        YouTubeMiniPlayerList.ScrollIntoView(item);
+        return true;
     }
 
     public void YouTubeMiniPlayerListItem_MouseDoubleClick(
         object sender,
         MouseButtonEventArgs e)
     {
-        if ((sender as ListBoxItem)?.DataContext is not YouTubeMiniPlayerListItem item
+        if (sender is not ListBoxItem { DataContext: YouTubeMiniPlayerListItem item } container
             || FindYouTubeMiniPlayerListVisualParent<ButtonBase>(e.OriginalSource as DependencyObject) is not null)
         {
             return;
         }
 
+        container.IsSelected = true;
         _host.RestoreAndBringToFront(item);
         e.Handled = true;
     }
@@ -676,49 +753,55 @@ internal sealed class YouTubeMiniPlayerListViewController
     {
         var states = items.Select(static item => item.State).ToList();
         var hasPlayers = states.Count > 0;
-        var allMuted = hasPlayers && states.All(static state => state.IsMuted);
-        var allMinimized = hasPlayers && states.All(static state => state.IsMinimized);
+        var canOperate = !_host.IsLiveSeekInProgress && !_host.IsListOperationInProgress;
         var loadedItems = items.Where(_host.IsItemLoaded).ToList();
         var playingCount = loadedItems.Count(static item => item.State.IsPaused == false);
         var audioCount = loadedItems.Count(static item =>
             item.State.IsPaused == false && !item.State.IsMuted);
 
         YouTubeMiniPlayerListSummaryText.Text =
-            $"YTミニプレイヤー  {states.Count}件｜再生{playingCount}｜音声{audioCount}  ⋮⋮";
-        YouTubeMiniPlayerMuteAllToggleButton.Content = allMuted
-            ? "全ミュート解除"
-            : "全ミュート";
-        YouTubeMiniPlayerMuteAllToggleButton.ToolTip = allMuted
-            ? "すべてのミニプレイヤーのミュートを解除"
-            : "すべてのミニプレイヤーをミュート";
-        YouTubeMiniPlayerMuteAllToggleButton.IsEnabled = hasPlayers;
-        YouTubeMiniPlayerMinimizeRestoreAllButton.Content = allMinimized
-            ? "全復帰"
-            : "全最小";
+            $"YTミニプレイヤー  {states.Count}件｜再生{playingCount}｜音声{audioCount}";
+        var targets = GetOperationTargets();
+        var loadedTargets = targets.Where(_host.IsItemLoaded).ToList();
+        var allMuted = targets.Count > 0 && targets.All(static item => item.State.IsMuted);
+        var allMinimized = targets.Count > 0 && targets.All(static item => item.State.IsMinimized);
+        var globalState = new YouTubeMiniPlayerGlobalActionsState(targets.Count, loadedTargets.Count,
+            loadedTargets.Count(static item => item.State.SourceKind == MiniPlayerSourceKind.YouTube && item.State.IsLiveBroadcast),
+            allMuted, allMinimized, _host.IsLiveSeekInProgress, YouTubeMiniPlayerList.SelectedItems.Count);
+        if (!Equals(_elements.YouTubeMiniPlayerGlobalActionsRoot.DataContext, globalState))
+        {
+            _elements.YouTubeMiniPlayerGlobalActionsRoot.DataContext = globalState;
+        }
+        YouTubeMiniPlayerMuteAllToggleButton.ToolTip = globalState.MuteDescription;
+        YouTubeMiniPlayerMuteAllToggleButton.IsEnabled = targets.Count > 0 && canOperate;
         YouTubeMiniPlayerMinimizeRestoreAllButton.ToolTip = allMinimized
-            ? "すべてのミニプレイヤーを復帰"
-            : "すべてのミニプレイヤーを最小化";
-        YouTubeMiniPlayerMinimizeRestoreAllButton.IsEnabled = hasPlayers;
+            ? "対象のミニプレイヤーを復帰"
+            : "対象のミニプレイヤーを最小化";
+        YouTubeMiniPlayerMinimizeRestoreAllButton.IsEnabled = targets.Count > 0 && canOperate;
+        _elements.YouTubeMiniPlayerCloseAllButton.IsEnabled = targets.Count > 0 && canOperate;
+        _elements.YouTubeMiniPlayerPauseAllButton.IsEnabled = loadedTargets.Count > 0 && canOperate;
+        _elements.YouTubeMiniPlayerLiveEdgeAllButton.IsEnabled = globalState.LiveCount > 0 && canOperate;
         YouTubeMiniPlayerGlobalActionsButton.IsEnabled = hasPlayers;
-        YouTubeMiniPlayerArrangeMenuButton.IsEnabled = hasPlayers;
+        YouTubeMiniPlayerArrangeMenuButton.IsEnabled = hasPlayers && canOperate;
         YouTubeMiniPlayerRestoreArrangementButton.Visibility =
             _host.HasInitialArrangement
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
         UpdateYouTubeMiniPlayerPlayPauseAllButton();
-        YouTubeMiniPlayerPlayPauseAllButton.IsEnabled = loadedItems.Count > 0;
+        YouTubeMiniPlayerPlayPauseAllButton.IsEnabled = loadedTargets.Count > 0 && canOperate;
+        YouTubeMiniPlayerArrangeMenuButton.ToolTip = globalState.ScopeText;
         UpdateYouTubeMiniPlayerRestoreClosedButtonState();
     }
 
     public void UpdateYouTubeMiniPlayerPlayPauseAllButton()
     {
-        var shouldPlayAll = _host.ShouldPlayAllLoadedPlayers();
-        YouTubeMiniPlayerPlayPauseAllButton.Content = shouldPlayAll ? "全再生" : "全一時停止";
-        YouTubeMiniPlayerPlayPauseAllButton.ToolTip = shouldPlayAll
-            ? "読み込み済みのミニプレイヤーをすべて再生"
-            : "読み込み済みのミニプレイヤーをすべて一時停止";
+        YouTubeMiniPlayerPlayPauseAllButton.ToolTip = "対象の読み込み済みミニプレイヤーを再生";
     }
+
+    public IReadOnlyList<YouTubeMiniPlayerListItem> GetOperationTargets(bool selectionOnly = false)
+        => (selectionOnly || YouTubeMiniPlayerList.SelectedItems.Count > 0
+            ? YouTubeMiniPlayerList.SelectedItems : YouTubeMiniPlayerList.Items).OfType<YouTubeMiniPlayerListItem>().ToArray();
 
     public void UpdateYouTubeMiniPlayerRestoreClosedButtonState()
     {
@@ -728,6 +811,65 @@ internal sealed class YouTubeMiniPlayerListViewController
             : Visibility.Collapsed;
         YouTubeMiniPlayerRestoreClosedButton.IsEnabled =
             hasRestorablePlayer && !_host.IsRestoringClosedPlayer;
+        if (_elements.YouTubeMiniPlayerClosedHistoryPopup?.IsOpen == true)
+        {
+            if (!YouTubeMiniPlayerRestoreClosedButton.IsEnabled) _elements.YouTubeMiniPlayerClosedHistoryPopup.IsOpen = false;
+            else RefreshClosedHistoryItems();
+        }
+    }
+
+    public void OpenClosedHistory()
+    {
+        if (_isStopped || _host.IsClosingWindow || !YouTubeMiniPlayerListWindow.IsOpen
+            || !_host.HasRestorablePlayer || _host.IsRestoringClosedPlayer
+            || _elements.YouTubeMiniPlayerClosedHistoryPopup is not { } popup
+            || _elements.YouTubeMiniPlayerClosedHistoryList is null) return;
+        RefreshClosedHistoryItems();
+        if (_closedHistoryItems.Count > 0) popup.IsOpen = true;
+    }
+
+    private void RefreshClosedHistoryItems()
+    {
+        var items = _host.GetClosedHistoryItems();
+        if (items.Select(item => (item.State.Id, item.State.UpdatedAt))
+            .SequenceEqual(_closedHistoryItems.Select(item => (item.State.Id, item.State.UpdatedAt)))) return;
+        ClearClosedHistoryItems();
+        _closedHistoryItems = items;
+        if (_elements.YouTubeMiniPlayerClosedHistoryList is { } list) list.ItemsSource = items;
+        if (items.Count == 0)
+        {
+            if (_elements.YouTubeMiniPlayerClosedHistoryPopup is { } popup) popup.IsOpen = false;
+            return;
+        }
+        _closedHistoryThumbnailCancellation = new();
+        var token = _closedHistoryThumbnailCancellation.Token;
+        foreach (var item in items) _ = EnsureYouTubeMiniPlayerListThumbnailAsync(item, token);
+    }
+
+    public void ClosedHistoryPopupClosed()
+    {
+        if (_elements.YouTubeMiniPlayerClosedHistoryPopup?.IsOpen != true) ClearClosedHistoryItems();
+    }
+
+    public void ClearClosedHistoryItems()
+    {
+        var cancellation = _closedHistoryThumbnailCancellation;
+        _closedHistoryThumbnailCancellation = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+        foreach (var item in _closedHistoryItems) item.CancelThumbnailLoad();
+        _closedHistoryItems = [];
+        if (_elements.YouTubeMiniPlayerClosedHistoryList is { } list) list.ItemsSource = null;
+    }
+
+    public async Task RestoreClosedHistoryItemAsync(Guid id)
+    {
+        if (_isStopped || _host.IsClosingWindow || !_host.HasRestorablePlayer || _host.IsRestoringClosedPlayer) return;
+        var isAvailable = _host.GetClosedHistoryItems().Any(item => item.State.Id == id);
+        if (_elements.YouTubeMiniPlayerClosedHistoryPopup is { } popup) popup.IsOpen = false;
+        ClearClosedHistoryItems();
+        // 閉じた際にItemsSourceを解放するため、選択したIDは呼び出し前に確定しておく。
+        if (isAvailable) await _host.RestoreClosedHistoryAsync(id);
     }
 
     public static T? FindYouTubeMiniPlayerListVisualParent<T>(DependencyObject? source)

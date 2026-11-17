@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { mkdtemp, writeFile, readFile, mkdir, rm } = require('node:fs/promises');
+const { mkdtemp, writeFile, readFile, mkdir, rm, open, readdir } = require('node:fs/promises');
 const { join, resolve, basename, sep } = require('node:path');
 const { tmpdir } = require('node:os');
 const { waitForChromeEndpoint } = require('./ChromeTestLauncher.cjs');
@@ -163,11 +163,15 @@ test('接続先fileの読取errorを無視して成功にしない', async t => 
 
 test('stderrを受信しない実Chromeでもfile経由で実CDP接続できる', async () => {
     const profile = await mkdtemp(join(tmpdir(), 'tabbrowser-launcher-test-'));
+    const logPath = join(profile, 'startup-stderr.log');
+    const debugLogPath = join(profile, 'chrome-debug.log');
+    const startupLog = await open(logPath, 'w');
     const browser = spawn(process.env.KITEN_BROWSER_TEST_CHROME
         || join(process.env.ProgramFiles, 'Google/Chrome/Application/chrome.exe'), [
         '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
-        '--disable-extensions', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'
-    ], { windowsHide: true, stdio: 'ignore' });
+        '--disable-extensions', '--enable-logging', '--v=1', `--log-file=${debugLogPath}`,
+        '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'
+    ], { windowsHide: true, stdio: ['ignore', 'ignore', startupLog.fd] });
     let socket;
     try {
         const endpoint = await waitForChromeEndpoint(browser, profile);
@@ -187,6 +191,13 @@ test('stderrを受信しない実Chromeでもfile経由で実CDP接続できる'
         });
         assert.match(version.product, /Chrome\//);
         console.log(`stderrなし実接続: source=${endpoint.source} stderrBytes=${endpoint.stderrBytes} CDP=Browser.getVersion product=${version.product}`);
+    } catch (error) {
+        // 接続判定へは渡さず、専用の架空ページで起動できない理由だけを診断する。
+        console.log(`Chrome起動診断: ${(await readFile(logPath, 'utf8').catch(() => '取得できません')).slice(-12000)}`);
+        console.log(`Chrome詳細診断: ${(await readFile(debugLogPath, 'utf8').catch(() => '取得できません')).slice(-12000)}`);
+        console.log(`Chrome専用profile: ${profile}; files=${JSON.stringify(await readdir(profile))}`);
+        console.log(`Chrome起動引数: ${JSON.stringify(browser.spawnargs)}`);
+        throw error;
     } finally {
         if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: 2, method: 'Browser.close' }));
         if (browser.exitCode === null) {
@@ -194,6 +205,7 @@ test('stderrを受信しない実Chromeでもfile経由で実CDP接続できる'
         }
         socket?.close();
         if (browser.exitCode === null) browser.kill();
+        await startupLog.close();
         assert.ok(resolve(profile).startsWith(resolve(tmpdir()) + sep));
         assert.ok(basename(profile).startsWith('tabbrowser-launcher-test-'));
         await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

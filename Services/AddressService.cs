@@ -67,9 +67,13 @@ public sealed class AddressService
     }
 
     public string CreateSearchUrl(string text)
+        => FormatSearchUrl(_settings.SearchUrlTemplate, text);
+
+    internal static string FormatSearchUrl(string template, string text)
     {
         return string.Format(
-            _settings.SearchUrlTemplate,
+            System.Globalization.CultureInfo.InvariantCulture,
+            template,
             Uri.EscapeDataString(text.Trim()));
     }
 
