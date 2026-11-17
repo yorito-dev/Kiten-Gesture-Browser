@@ -39,11 +39,11 @@ public sealed class ApplicationChannelServiceTests
     public void ExistingInstanceActivationMatchesOnlyTheSameExecutablePath()
     {
         Assert.True(SingleInstanceService.AreSameExecutablePath(
-            @"C:\SampleData\TabBrowser\publish\TabBrowser-Stable\TabBrowser.exe",
-            @"c:\SAMPLEDATA\TabBrowser\publish\TabBrowser-Stable\TabBrowser.exe"));
+            @"C:\sample\TabBrowser\publish\TabBrowser-Stable\TabBrowser.exe",
+            @"C:\sample\TabBrowser\publish\TabBrowser-Stable\TabBrowser.exe"));
         Assert.False(SingleInstanceService.AreSameExecutablePath(
-            @"C:\SampleData\TabBrowser\publish\TabBrowser-Stable\TabBrowser.exe",
-            @"C:\SampleData\TabBrowser\publish\TabBrowser-Portable\TabBrowser.exe"));
+            @"C:\sample\TabBrowser\publish\TabBrowser-Stable\TabBrowser.exe",
+            @"C:\sample\TabBrowser\publish\TabBrowser-Portable\TabBrowser.exe"));
         Assert.False(SingleInstanceService.AreSameExecutablePath(null, @"C:\TabBrowser.exe"));
     }
 

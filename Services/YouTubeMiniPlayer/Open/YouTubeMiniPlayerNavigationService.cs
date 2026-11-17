@@ -65,6 +65,7 @@ public static class YouTubeMiniPlayerNavigationService
         state.DurationSeconds = null;
         state.IsLiveBroadcast = false;
         state.IsAtLiveEdge = false;
+        state.IsLiveEdgeStateKnown = false;
         state.LiveViewerCountText = null;
         state.AbRepeatStartSeconds = null;
         state.AbRepeatEndSeconds = null;

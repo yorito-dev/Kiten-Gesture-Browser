@@ -147,6 +147,8 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
     {
         runtime.TaskbarWindow.Activated += (_, _) =>
         {
+            // 一覧へフォーカスが移っても、最後に操作したプレイヤーを識別できるようにする。
+            runtime.LastActivatedTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
             if (runtime.IsTaskbarActivationInProgress)
             {
                 return;
@@ -347,6 +349,7 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
         state.IsTopmost = isTopmost;
         state.UpdatedAt = DateTimeOffset.UtcNow;
         runtime.TaskbarWindow.Topmost = state.IsTopmost;
+        YouTubeMiniPlayerChromeFactory.RefreshListWindowHighlight(runtime);
         YouTubeMiniPlayerChromeFactory.UpdateTopmostButton(runtime.TitleBandTopmostButton, state.IsTopmost);
         if (runtime.TitleBandPopup.IsOpen)
         {

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -8,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using TabBrowser.Models;
 using TabBrowser.Models.QuickLook;
+using TabBrowser.Models.Workspaces;
 using TabBrowser.Services;
 using TabBrowser.Services.QuickLook;
 
@@ -21,6 +23,7 @@ internal interface ICommandPaletteViewHost
     IReadOnlyList<CommandPaletteItem> Search(string? query, bool includeUnavailable);
     void QueueApplicationIconLoad();
     void QueueExecution(CommandPaletteExecutionMode mode, CommandPaletteItem item);
+    void OpenApplicationFolder(ApplicationLaunchItem application);
     void ClosePalette();
     void ApplyShortcutWindowOrder();
     void CloseContext();
@@ -48,6 +51,8 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal const int CommandPalettePageSelectionCount = 8;
     private const double CommandPalettePanelEdgeMargin = 8;
     private static readonly TimeSpan CommandPaletteUsageSaveDelay = TimeSpan.FromSeconds(30);
+    private static readonly DependencyPropertyDescriptor? ContextMenuIsOpenDescriptor =
+        DependencyPropertyDescriptor.FromProperty(ContextMenu.IsOpenProperty, typeof(ContextMenu));
     private readonly CommandPaletteElements _elements;
     private readonly ICommandPaletteViewHost _host;
     private readonly string _quickLookSourceId;
@@ -64,6 +69,8 @@ internal sealed class CommandPaletteViewController : IDisposable
     private SearchQuickLookItemSource? _commandPaletteQuickLookSource;
     private bool _initialized;
     private bool _disposed;
+    private ContextMenu? _applicationContextMenu;
+    private bool _applicationContextMenuPreviousStaysOpen;
     private DispatcherOperation? _commandPaletteFocusOperation;
     private DispatcherOperation? _commandPaletteTextInputOperation;
     private readonly Queue<string?> _pendingCommandPaletteTextInput = new();
@@ -147,6 +154,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal void Close()
     {
         if (_disposed) return;
+        CloseApplicationContextMenu();
         ResetCommandPaletteInput();
         _commandPaletteSearchRefreshTimer.Stop();
         _isCommandPaletteImeCompositionActive = false;
@@ -218,6 +226,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal void CommandPaletteOverlay_Closed(object? sender, EventArgs e)
     {
         if (_disposed) return;
+        CloseApplicationContextMenu();
         ResetCommandPaletteInput();
         _commandPaletteSearchRefreshTimer.Stop();
         _host.CloseContext();
@@ -466,6 +475,83 @@ internal sealed class CommandPaletteViewController : IDisposable
         _host.QueueExecution(CommandPaletteExecutionMode.Default, item);
     }
 
+    internal bool OpenApplicationContextMenu(ListBoxItem row)
+    {
+        if (!IsCommandPaletteOpen || row.DataContext is not CommandPaletteItem item
+            || !TryGetApplication(item, out var application))
+            return false;
+
+        CloseApplicationContextMenu();
+        CommandPaletteList.SelectedItem = item;
+        var menu = new ContextMenu { PlacementTarget = row, Placement = PlacementMode.MousePoint };
+        var openFolder = new MenuItem { Header = "アプリのあるフォルダーを開く" };
+        openFolder.Click += (_, _) => _host.OpenApplicationFolder(application);
+        menu.Items.Add(openFolder);
+        menu.Closed += ApplicationContextMenu_Closed;
+        ContextMenuIsOpenDescriptor?.AddValueChanged(menu, ApplicationContextMenu_IsOpenChanged);
+        menu.AddHandler(Mouse.PreviewMouseDownOutsideCapturedElementEvent,
+            new MouseButtonEventHandler(ApplicationContextMenu_OutsideMouseDown), true);
+        _applicationContextMenuPreviousStaysOpen = CommandPaletteOverlay.StaysOpen;
+        _applicationContextMenu = menu;
+        // 子メニューへマウスキャプチャが移る間、親Popupを閉じない。
+        CommandPaletteOverlay.StaysOpen = true;
+        try { menu.IsOpen = true; }
+        catch { ReleaseApplicationContextMenu(menu); throw; }
+        return true;
+    }
+
+    internal static bool TryGetApplication(CommandPaletteItem item, out ApplicationLaunchItem application)
+    {
+        if (item is { Type: CommandPaletteItemType.Application, Payload: ApplicationLaunchItem candidate })
+        {
+            application = candidate;
+            return true;
+        }
+        if (item is { Type: CommandPaletteItemType.Workspace, Payload: ShellItem { Kind: ShellItemKind.Application } shellItem })
+        {
+            application = new ApplicationLaunchItem
+            {
+                DisplayName = item.Title,
+                Kind = ApplicationLaunchKind.ShellPath,
+                LaunchTarget = shellItem.TargetPath
+            };
+            return true;
+        }
+        application = null!;
+        return false;
+    }
+
+    private void ApplicationContextMenu_OutsideMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (IsCommandPaletteOpen && !IsCommandPalettePanelHit(e)) _host.ClosePalette();
+    }
+
+    private void ApplicationContextMenu_Closed(object sender, RoutedEventArgs e)
+        => ReleaseApplicationContextMenu((ContextMenu)sender);
+
+    private void ApplicationContextMenu_IsOpenChanged(object? sender, EventArgs e)
+    {
+        if (sender is ContextMenu { IsOpen: false } menu) ReleaseApplicationContextMenu(menu);
+    }
+
+    private void CloseApplicationContextMenu()
+    {
+        if (_applicationContextMenu is not { } menu) return;
+        menu.IsOpen = false;
+        ReleaseApplicationContextMenu(menu);
+    }
+
+    private void ReleaseApplicationContextMenu(ContextMenu menu)
+    {
+        if (!ReferenceEquals(_applicationContextMenu, menu)) return;
+        _applicationContextMenu = null;
+        menu.Closed -= ApplicationContextMenu_Closed;
+        ContextMenuIsOpenDescriptor?.RemoveValueChanged(menu, ApplicationContextMenu_IsOpenChanged);
+        menu.RemoveHandler(Mouse.PreviewMouseDownOutsideCapturedElementEvent,
+            new MouseButtonEventHandler(ApplicationContextMenu_OutsideMouseDown));
+        CommandPaletteOverlay.StaysOpen = _applicationContextMenuPreviousStaysOpen;
+    }
+
     internal void CommandPaletteList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_disposed) return;
@@ -707,6 +793,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        CloseApplicationContextMenu();
         _disposed = true;
         ResetCommandPaletteInput();
         _commandPaletteSearchRefreshTimer.Stop();

@@ -520,10 +520,76 @@ public static class YouTubeMiniPlayerChromeFactory
         return isVisible ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    internal static void ApplyListWindowHighlight(YouTubeMiniPlayerRuntime runtime, bool isSelected, bool isHovered,
+        Brush selectedBrush, Brush hoveredBrush)
+    {
+        var highlightBorder = runtime.ListHighlightBorder;
+        runtime.IsListHighlightRequested = !runtime.IsDisposed && !runtime.IsClosingTaskbarWindow && (isSelected || isHovered);
+        highlightBorder.BorderBrush = isHovered ? hoveredBrush : isSelected ? selectedBrush : Brushes.Transparent;
+        RefreshListWindowHighlight(runtime);
+    }
+
+    internal const double ListWindowHighlightThickness = 4;
+
+    internal static void AttachListWindowHighlight(YouTubeMiniPlayerRuntime runtime)
+    {
+        runtime.Root.SizeChanged += (_, _) => RefreshListWindowHighlight(runtime);
+        runtime.Root.IsVisibleChanged += (_, _) => RefreshListWindowHighlight(runtime);
+        runtime.TaskbarWindow.LocationChanged += (_, _) => RefreshListWindowHighlight(runtime);
+        runtime.TaskbarWindow.StateChanged += (_, _) => RefreshListWindowHighlight(runtime);
+        runtime.TaskbarWindow.Activated += (_, _) => RefreshListWindowHighlight(runtime);
+        runtime.TaskbarWindow.Deactivated += (_, _) => RefreshListWindowHighlight(runtime);
+        runtime.TaskbarWindow.Closed += (_, _) =>
+        {
+            runtime.IsListHighlightRequested = false;
+            runtime.Popup.IsOpen = false;
+            runtime.Popup.Child = null;
+        };
+        runtime.Popup.Opened += (_, _) =>
+        {
+            YouTubeMiniPlayerPopupService.MakeInputTransparent(runtime.Popup, runtime.ListHighlightBorder);
+            RefreshListWindowHighlight(runtime);
+        };
+    }
+
+    internal static void RefreshListWindowHighlight(YouTubeMiniPlayerRuntime runtime)
+    {
+        var border = runtime.ListHighlightBorder;
+        var visible = (runtime.IsListHighlightRequested || runtime.IsInputTransparent) && !runtime.IsDisposed && !runtime.IsClosingTaskbarWindow
+            && !runtime.IsFullScreen && !runtime.State.IsMinimized && runtime.TaskbarWindow.WindowState != WindowState.Minimized;
+        if (runtime.IsInputTransparent && border.Child is null)
+            border.Child = new TextBlock
+            {
+                Text = "透過中・F8で解除／F8＋ドラッグで移動",
+                Foreground = new SolidColorBrush(Color.FromRgb(103, 232, 249)),
+                Background = new SolidColorBrush(Color.FromRgb(16, 18, 28)),
+                FontSize = 11,
+                Padding = new Thickness(6, 2, 6, 2),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                IsHitTestVisible = false
+            };
+        else if (!runtime.IsInputTransparent) border.Child = null;
+        border.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (!visible || !runtime.Root.IsVisible) runtime.Popup.IsOpen = false;
+        var thickness = ListWindowHighlightThickness;
+        border.BorderThickness = new Thickness(thickness);
+        border.Width = (runtime.Root.ActualWidth > 0 ? runtime.Root.ActualWidth : runtime.State.Width) + 2 * thickness;
+        border.Height = (runtime.Root.ActualHeight > 0 ? runtime.Root.ActualHeight : runtime.State.Height) + 2 * thickness;
+        YouTubeMiniPlayerPopupService.SetRelativePosition(runtime.Popup, runtime.Root, border, new Point(-thickness, -thickness));
+        runtime.Popup.IsOpen = visible && runtime.Root.IsVisible;
+        if (runtime.Popup.IsOpen)
+        {
+            // 本体のDPIと前後関係へ追従させ、別アプリより無条件に前へ出さない。
+            PopupWindowOrderService.ApplyRelativeBounds(runtime.Popup, border, runtime.Root, runtime.Root,
+                new Rect(-thickness, -thickness, border.Width, border.Height));
+        }
+    }
+
     private static ControlTemplate CreateResizeThumbTemplate()
     {
         var border = new FrameworkElementFactory(typeof(Border));
-        border.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)));
+        border.SetValue(Border.BackgroundProperty, Brushes.Transparent);
         return new ControlTemplate(typeof(Thumb))
         {
             VisualTree = border

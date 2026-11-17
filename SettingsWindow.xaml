@@ -180,6 +180,17 @@
                     </Grid>
                 </Border>
 
+                <Border x:Name="AdBlockingSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Text="広告ブロック" FontWeight="SemiBold" Margin="0,0,0,10" />
+                        <CheckBox x:Name="EnableAdBlockingCheckBox" Content="広告配信先への通信をブロックする（YouTubeは常に除外）" />
+                        <TextBlock Text="除外するサイトのホスト名" Margin="0,8,0,6" />
+                        <TextBox x:Name="AdBlockingExcludedHostsBox" MinHeight="54" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" />
+                        <TextBlock Text="1行に1ホスト。サブドメインは個別に指定します。サイト情報からも変更できます。" TextWrapping="Wrap" Foreground="#9CA3AF" FontSize="12" Margin="0,5,0,0" />
+                        <TextBlock Text="空の広告専用枠も全サイト共通で詰めます。本文・画像・操作部・YouTubeのページとフレームは保護します。不明な広告枠や空白は残ります。広告の再取得には再読み込みが必要です。" TextWrapping="Wrap" Foreground="#9CA3AF" FontSize="12" Margin="0,5,0,0" />
+                    </StackPanel>
+                </Border>
+
                 <Border x:Name="BrowsingHistorySettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
                     <StackPanel>
                         <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="閲覧履歴" />
@@ -223,6 +234,7 @@
                         <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="YouTubeミニプレイヤー" />
                         <CheckBox x:Name="EnableYouTubeMiniPlayerLiveContinuationCheckBox" Content="ライブ終了後、同じ配信者の次のライブへ自動で移動する" />
                         <TextBlock Margin="20,4,0,12" Foreground="#9CA3AF" FontSize="11" TextWrapping="Wrap" Text="配信中の別枠を確認できた場合だけ移動します。保存すると、開いているプレイヤーにも反映されます。" />
+
                         <CheckBox x:Name="EnableYouTubeMiniPlayerHoverAudioPreviewCheckBox" Content="一覧でマウスオーバー中の動画だけを一時視聴する" />
                         <TextBlock Margin="20,4,0,0" Foreground="#9CA3AF" FontSize="11" Text="短時間マウスを止めた場合だけ再生し、一覧から外れると元の音声・再生状態へ戻します。" />
                         <CheckBox x:Name="EnableYouTubeMiniPlayerSizeBasedQualityCheckBox" Margin="0,12,0,0" Content="表示サイズに合わせて画質上限を調整する" />
@@ -368,7 +380,7 @@
                             <CheckBox x:Name="ShowAddExtensionButtonCheckBox" Width="130" Content="拡張追加" />
                             <CheckBox x:Name="ShowImportExtensionButtonCheckBox" Width="130" Content="拡張取込" />
                             <CheckBox x:Name="ShowManageExtensionsButtonCheckBox" Width="130" Content="拡張管理" />
-                            <CheckBox x:Name="ShowGestureSettingsButtonCheckBox" Width="130" Content="ジェスチャー設定" />
+                            <CheckBox x:Name="ShowGestureSettingsButtonCheckBox" Width="130" Content="マウス操作" />
                             <CheckBox x:Name="ShowSettingsButtonCheckBox" Width="130" Content="設定" />
                             <CheckBox x:Name="ShowExtensionIconsCheckBox" Width="130" Content="拡張アイコン" />
                             <CheckBox x:Name="ShowStatusTextCheckBox" Width="130" Content="状態表示" />
@@ -389,6 +401,19 @@
                             <TextBlock x:Name="GestureSummaryText" Margin="0,6,0,0" Foreground="#9CA3AF" FontSize="12" />
                         </StackPanel>
                         <Button Grid.Column="1" Content="設定" Click="OpenGestureSettingsButton_Click" Style="{StaticResource DialogButtonStyle}" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="SuperDragSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="スーパードラッグ" />
+                            <TextBlock Margin="0,6,12,0" Foreground="#9CA3AF" FontSize="12" TextWrapping="Wrap" Text="テキスト・リンク・画像の4方向と除外サイトを専用ウィンドウで設定します。" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="設定" Click="OpenSuperDragSettingsButton_Click" Style="{StaticResource DialogButtonStyle}" />
                     </Grid>
                 </Border>
             </StackPanel>

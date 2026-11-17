@@ -45,11 +45,14 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public Border ListHighlightBorder { get; } = listHighlightBorder;
 
+    public bool IsListHighlightRequested { get; set; }
+
     public Border AudioStatusBadge { get; } = audioStatusBadge;
 
     public TextBlock AudioStatusText { get; } = audioStatusText;
 
     public Window TaskbarWindow { get; } = taskbarWindow;
+    public long LastActivatedTimestamp { get; set; }
 
     public TextBlock TaskbarTitleText { get; } = taskbarTitleText;
 
@@ -90,6 +93,10 @@ internal sealed class YouTubeMiniPlayerRuntime(
     public LocalVideoPlayerView? LocalVideoView { get; } = localVideoView;
 
     public bool IsDisposed { get; set; }
+
+    public bool IsInputTransparent { get; set; }
+
+    public IDisposable? TransparencyRegistration { get; set; }
 
     public bool IsApplyingMinimumSize { get; set; }
 
@@ -164,9 +171,7 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public bool IsLoadStoppedForInactivity { get; set; }
 
-    public string? LiveChatAvailabilityAttemptVideoId { get; set; }
-
-    public int LiveChatAvailabilityAttemptCount { get; set; }
+    public YouTubeMiniPlayerLiveChatRequests LiveChatRequests { get; } = new();
 
     public bool? LiveChatAvailability { get; set; }
 
@@ -205,6 +210,10 @@ internal sealed class YouTubeMiniPlayerRuntime(
     public double WebDragStartHeight { get; set; }
 
     public Point WebDragStartScreenPoint { get; set; }
+
+    public MiniPlayerResizeEdges WebDragResizeEdges { get; set; }
+
+    public bool WebDragCancelled { get; set; }
 
     public Rect FullScreenRestoreBounds { get; set; } = Rect.Empty;
 

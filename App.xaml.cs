@@ -16,6 +16,8 @@ public partial class App : Application
 {
     private readonly ApplicationStabilityService _applicationStabilityService = new();
     private readonly SingleInstanceService _singleInstanceService = new();
+    private readonly HashSet<Window> _keyboardShortcutWindows = [];
+    private ApplicationKeyboardShortcutHook? _keyboardShortcutHook;
     private ApplicationHangWatchdog? _applicationHangWatchdog;
     private bool _isPrimaryInstance;
     private Task _privateBrowsingStartupCleanupTask = Task.CompletedTask;
@@ -62,6 +64,10 @@ public partial class App : Application
             FrameworkElement.LoadedEvent,
             new RoutedEventHandler(ApplyWindowTheme));
         EventManager.RegisterClassHandler(
+            typeof(Window),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(WatchKeyboardShortcutWindow));
+        EventManager.RegisterClassHandler(
             typeof(ButtonBase),
             ButtonBase.ClickEvent,
             new RoutedEventHandler(RecordButtonActivityForHangDiagnostics),
@@ -71,6 +77,9 @@ public partial class App : Application
             MenuItem.ClickEvent,
             new RoutedEventHandler(RecordMenuActivityForHangDiagnostics),
             handledEventsToo: true);
+        _keyboardShortcutHook = new ApplicationKeyboardShortcutHook(
+            () => Windows.OfType<MainWindow>());
+        _keyboardShortcutHook.Start();
         base.OnStartup(e);
         _applicationHangWatchdog = new ApplicationHangWatchdog(Dispatcher);
         _privateBrowsingStartupCleanupTask = PrivateBrowsingDataService.CleanupStaleContextsAsync();
@@ -80,6 +89,14 @@ public partial class App : Application
     {
         if (_isPrimaryInstance)
         {
+            _keyboardShortcutHook?.Dispose();
+            _keyboardShortcutHook = null;
+            foreach (var window in _keyboardShortcutWindows)
+            {
+                window.Activated -= OnKeyboardShortcutWindowActivated;
+                window.Closed -= OnKeyboardShortcutWindowClosed;
+            }
+            _keyboardShortcutWindows.Clear();
             ClipboardHistory.Dispose();
             RunExitCleanup(async () =>
             {
@@ -129,6 +146,9 @@ public partial class App : Application
         Task.Run(cleanup).GetAwaiter().GetResult();
     }
 
+    internal void RecordUiOperationException(string operation, Exception exception)
+        => _applicationStabilityService.RecordException($"ui-{operation}", exception, isTerminating: false);
+
     private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         var isRecoverableWpfAutomationException =
@@ -161,6 +181,27 @@ public partial class App : Application
         if (sender is Window window)
         {
             WindowThemeService.ApplyDarkTitleBar(window);
+        }
+    }
+
+    private void WatchKeyboardShortcutWindow(object sender, RoutedEventArgs e)
+    {
+        if (sender is Window window && _keyboardShortcutWindows.Add(window))
+        {
+            window.Activated += OnKeyboardShortcutWindowActivated;
+            window.Closed += OnKeyboardShortcutWindowClosed;
+        }
+    }
+
+    private void OnKeyboardShortcutWindowActivated(object? sender, EventArgs e)
+        => _keyboardShortcutHook?.Reinstall();
+
+    private void OnKeyboardShortcutWindowClosed(object? sender, EventArgs e)
+    {
+        if (sender is Window window && _keyboardShortcutWindows.Remove(window))
+        {
+            window.Activated -= OnKeyboardShortcutWindowActivated;
+            window.Closed -= OnKeyboardShortcutWindowClosed;
         }
     }
 

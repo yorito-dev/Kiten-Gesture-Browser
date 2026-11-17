@@ -428,7 +428,7 @@ public sealed class YouTubeControlScriptServiceTests
     }
 
     [Fact]
-    public void BuildMiniPlayerSizeBasedQualityScriptCanReleaseItsRangeWhenDisabled()
+    public void BuildMiniPlayerSizeBasedQualityScriptRequestsHighestWhenSizePolicyIsOff()
     {
         var script = YouTubeControlScriptService.BuildMiniPlayerSizeBasedQualityScript(
             isEnabled: false,
@@ -436,9 +436,8 @@ public sealed class YouTubeControlScriptServiceTests
             isFullScreen: false);
 
         Assert.Contains("const enabled = false;", script);
-        Assert.Contains("existing.releaseRange?.();", script);
-        Assert.Contains("existing?.dispose?.();", script);
-        Assert.Contains("delete window[bridgeKey];", script);
+        Assert.Contains("const requestedQualityCap = \"highres\";", script);
+        Assert.DoesNotContain("delete window[bridgeKey];", script);
     }
 
     [Fact]
@@ -447,7 +446,7 @@ public sealed class YouTubeControlScriptServiceTests
         var script = YouTubeControlScriptService.BuildMiniPlayerWatchPageScript("test-token");
 
         Assert.Contains("__tabBrowserYouTubeMiniPlayerLayoutBridge", script);
-        Assert.Contains("layoutBridgeVersion = 20", script);
+        Assert.Contains("layoutBridgeVersion = 21", script);
         Assert.Contains("(player || document).querySelectorAll(\"video\")", script);
         Assert.Contains("playingVideos.includes(activeVideo)", script);
         Assert.Contains("layoutState.activeVideo = video", script);
@@ -534,7 +533,7 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("pressedMiniPlayerSideButton === event.button", script);
         Assert.Contains("document.addEventListener(\"auxclick\"", script);
         Assert.Contains("deltaX < dragGestureThreshold && deltaY < dragGestureThreshold", script);
-        Assert.Contains("const isYouTubeInteractiveTarget = target =>", script);
+        Assert.Contains("const isYouTubeInteractiveTarget = (target, includeControlsBackground = true) =>", script);
         Assert.Contains("const isYouTubeEndScreenTarget = target =>", script);
         Assert.Contains(".html5-endscreen", script);
         Assert.Contains(".ytp-endscreen-content", script);
@@ -547,7 +546,8 @@ public sealed class YouTubeControlScriptServiceTests
             script);
         Assert.Contains("window.addEventListener(\"click\", suppressVideoSurfaceClick, true)", script);
         Assert.Contains("isYouTubeInteractiveTarget(event.target)", script);
-        Assert.Contains("if (isYouTubeControlsTarget(event))", script);
+        Assert.Contains("if (isYouTubeControlsTarget(event) && !resizeEdges)", script);
+        Assert.Contains("isYouTubeNativeMenuOpen() || isYouTubeInteractiveTarget(event.target, false)", script);
         Assert.Contains("event.preventDefault();", script);
         Assert.Contains("event.stopImmediatePropagation();", script);
         var dragPointerDownStart = script.IndexOf(
@@ -563,7 +563,12 @@ public sealed class YouTubeControlScriptServiceTests
             StringComparison.Ordinal);
         Assert.True(dragPointerDownStart >= 0);
         Assert.True(dragPointerMoveStart > dragPointerDownStart);
-        Assert.True(pointerCaptureStart > dragPointerMoveStart);
+        // 最外縁1 DIPは押下時に捕捉し、内側10 DIPは移動閾値を超えてから捕捉する。
+        var edgeCaptureCondition = script.IndexOf("if (resizeEdges && playerBounds &&", dragPointerDownStart, StringComparison.Ordinal);
+        Assert.InRange(edgeCaptureCondition, dragPointerDownStart, pointerCaptureStart - 1);
+        Assert.InRange(pointerCaptureStart, dragPointerDownStart, dragPointerMoveStart - 1);
+        Assert.True(script.IndexOf("document.documentElement.setPointerCapture(event.pointerId)",
+            dragPointerMoveStart, StringComparison.Ordinal) > dragPointerMoveStart);
         Assert.Contains("data-tabbrowser-mini-player-fullscreen", script);
         Assert.Contains(".ytp-chrome-bottom", script);
         Assert.Contains(".ytp-title", script);

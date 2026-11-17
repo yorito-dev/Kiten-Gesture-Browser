@@ -40,6 +40,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
     private double _remainingSeconds;
     private double? _progressPercentOverride;
     private bool _canResumeOperation;
+    private bool _canPauseOperation;
     private bool _isDangerous;
     private DownloadItemState _state = DownloadItemState.Pending;
     private DownloadFileKind _kind = DownloadFileKind.Other;
@@ -124,6 +125,9 @@ public sealed class DownloadItem : INotifyPropertyChanged
             if (SetField(ref _state, value))
             {
                 OnPropertyChanged(nameof(StateText));
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(FailureSummary));
+                OnPropertyChanged(nameof(FailureAdvice));
                 OnPropertyChanged(nameof(CanCancel));
                 OnPropertyChanged(nameof(CanPauseOrResume));
                 OnPropertyChanged(nameof(CanOpen));
@@ -216,6 +220,19 @@ public sealed class DownloadItem : INotifyPropertyChanged
         }
     }
 
+    // 実行中のWebView2操作がある場合だけ設定する。履歴には保存しない。
+    public bool CanPauseOperation
+    {
+        get => _canPauseOperation;
+        set
+        {
+            if (SetField(ref _canPauseOperation, value))
+            {
+                OnPropertyChanged(nameof(CanPauseOrResume));
+            }
+        }
+    }
+
     public bool CanResumeOperation
     {
         get => _canResumeOperation;
@@ -249,6 +266,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
             if (SetField(ref _errorText, value ?? string.Empty))
             {
                 OnPropertyChanged(nameof(StateText));
+                OnPropertyChanged(nameof(FailureSummary));
             }
         }
     }
@@ -339,6 +357,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
             if (SetField(ref _isFinalizingExternalSegment, value))
             {
                 OnPropertyChanged(nameof(StateText));
+                OnPropertyChanged(nameof(StatusText));
                 OnPropertyChanged(nameof(CanCancel));
                 OnPropertyChanged(nameof(CanPauseOrResume));
                 OnPropertyChanged(nameof(CanSaveAndContinue));
@@ -355,6 +374,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(StateText));
                 OnPropertyChanged(nameof(DetailText));
+                OnPropertyChanged(nameof(FailureSummary));
             }
         }
     }
@@ -367,6 +387,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
             if (SetField(ref _failureSuggestion, value ?? string.Empty))
             {
                 OnPropertyChanged(nameof(DetailText));
+                OnPropertyChanged(nameof(FailureAdvice));
             }
         }
     }
@@ -401,6 +422,22 @@ public sealed class DownloadItem : INotifyPropertyChanged
             DownloadItemState.Failed => string.IsNullOrWhiteSpace(ErrorText) ? "失敗" : "失敗: " + ErrorText,
             _ => State.ToString()
         };
+
+    public string StatusText => State == DownloadItemState.Failed && !IsFinalizingExternalSegment
+        ? "失敗"
+        : StateText;
+
+    public string FailureSummary => State != DownloadItemState.Failed
+        ? string.Empty
+        : string.Join(" ", (string.IsNullOrWhiteSpace(FailureReason)
+            ? string.IsNullOrWhiteSpace(ErrorText) ? "ダウンロードが中断されました" : ErrorText
+            : FailureReason).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    public string FailureAdvice => State != DownloadItemState.Failed
+        ? string.Empty
+        : string.IsNullOrWhiteSpace(FailureSuggestion)
+            ? "詳細で原因を確認し、必要に応じて再試行してください。"
+            : FailureSuggestion;
 
     public string KindText => Kind switch
     {
@@ -440,7 +477,8 @@ public sealed class DownloadItem : INotifyPropertyChanged
     public bool CanSaveAndContinue => false;
 
     public bool CanPauseOrResume => !IsFinalizingExternalSegment
-        && (State == DownloadItemState.InProgress || (State == DownloadItemState.Paused && CanResumeOperation));
+        && ((State == DownloadItemState.InProgress && CanPauseOperation)
+            || (State == DownloadItemState.Paused && CanResumeOperation));
 
     public string PauseResumeButtonText => State == DownloadItemState.Paused ? "再開" : "一時停止";
 

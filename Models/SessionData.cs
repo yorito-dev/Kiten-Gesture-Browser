@@ -66,6 +66,23 @@ public sealed class SessionWindowState
     public WindowPlacementSettings? Placement { get; set; }
 
     public bool? IsAlwaysOnTop { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsYouTubeMiniPlayerListOpen { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsYouTubeMiniPlayerListCollapsed { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public YouTubeMiniPlayerListPositionState? YouTubeMiniPlayerListPosition { get; set; }
+}
+
+public sealed class YouTubeMiniPlayerListPositionState
+{
+    // 複数画面・DPIでも同じ場所へ戻せるよう、画面上の物理ピクセル座標を使う。
+    public double Left { get; set; }
+
+    public double Top { get; set; }
 }
 
 public sealed class SessionTabState

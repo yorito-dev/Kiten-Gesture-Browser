@@ -280,6 +280,7 @@ public sealed class YouTubeLiveChatWindowControllerTests
         }));
         var controller = new YouTubeLiveChatWindowController(host);
         host.State.IsAtLiveEdge = true;
+        host.State.IsLiveEdgeStateKnown = true;
         await controller.OpenYouTubeLiveChatAsync(host.State);
         var surface = Assert.Single(host.Created);
         Assert.True(controller.ContainsWindow(host.State.Id));
@@ -287,6 +288,7 @@ public sealed class YouTubeLiveChatWindowControllerTests
         Assert.Contains("dark_theme=1", host.Uri.Query);
         Assert.Equal(live, host.State.IsLiveBroadcast);
         Assert.Equal(live, host.State.IsAtLiveEdge);
+        Assert.Equal(live, host.State.IsLiveEdgeStateKnown);
         Assert.Equal(live ? "1,234 人が視聴中" : null, host.State.LiveViewerCountText);
         Assert.Equal(new bool?[] { null, true }, host.Buttons);
         Assert.Equal(new[] { "show", "exit", "initialize" }, surface.Calls);

@@ -83,7 +83,7 @@ internal sealed class UrlThumbnailCaptureCoordinator
 
         return uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
                || uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-               || uri.Scheme.Equals(Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase)
+               || (uri.IsFile && !BrowserUrlRulesService.IsRemoteFileUrl(uri))
             ? url
             : null;
     }

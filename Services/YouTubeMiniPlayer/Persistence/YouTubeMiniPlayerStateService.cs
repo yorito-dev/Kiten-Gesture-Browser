@@ -213,6 +213,7 @@ public static class YouTubeMiniPlayerStateService
                 if (!isLive)
                 {
                     state.IsAtLiveEdge = false;
+                    state.IsLiveEdgeStateKnown = false;
                     state.LiveViewerCountText = null;
                 }
             }
@@ -227,6 +228,7 @@ public static class YouTubeMiniPlayerStateService
             if (TryReadBoolean(root, "isAtLiveEdge", out var isAtLiveEdge))
             {
                 state.IsAtLiveEdge = isAtLiveEdge;
+                state.IsLiveEdgeStateKnown = state.IsLiveBroadcast;
             }
         }
         catch

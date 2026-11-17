@@ -25,7 +25,8 @@ internal static class YouTubeMiniPlayerRuntimeFactory
         WebView2? webView,
         LocalVideoPlayerView? localVideoView)
     {
-        var popup = new Popup();
+        // 既存のPopupを、一覧から要求されたときだけ表示する外側の強調枠に使う。
+        var popup = new Popup { AllowsTransparency = true, StaysOpen = true, IsHitTestVisible = false };
         var root = new Border
         {
             Width = state.Width,
@@ -33,7 +34,7 @@ internal static class YouTubeMiniPlayerRuntimeFactory
             MinWidth = YouTubeMiniPlayerLayoutService.MinimumWidth,
             MinHeight = YouTubeMiniPlayerLayoutService.MinimumHeight,
             Background = new SolidColorBrush(Color.FromRgb(8, 10, 14)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(138, 180, 248)),
+            BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(YouTubeMiniPlayerLayoutService.FrameBorderThickness),
             CornerRadius = new CornerRadius(8),
             ClipToBounds = true
@@ -51,11 +52,11 @@ internal static class YouTubeMiniPlayerRuntimeFactory
         {
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(8 + YouTubeMiniPlayerChromeFactory.ListWindowHighlightThickness),
             IsHitTestVisible = false,
             Visibility = Visibility.Collapsed
         };
-        Panel.SetZIndex(listHighlightBorder, int.MaxValue);
+        popup.Child = listHighlightBorder;
         var audioStatusText = new TextBlock
         {
             Foreground = Brushes.White,
@@ -102,7 +103,6 @@ internal static class YouTubeMiniPlayerRuntimeFactory
         layout.Children.Add(webHost);
         chrome.Children.Add(layout);
         chrome.Children.Add(audioStatusBadge);
-        chrome.Children.Add(listHighlightBorder);
 
         root.Child = chrome;
         var playerWindow = CreatePlayerWindow(title, state, root);
@@ -134,6 +134,7 @@ internal static class YouTubeMiniPlayerRuntimeFactory
             webHost,
             webView,
             localVideoView);
+        YouTubeMiniPlayerChromeFactory.AttachListWindowHighlight(runtime);
         YouTubeMiniPlayerChromeFactory.UpdateLiveViewerCount(
             runtime,
             state.IsLiveBroadcast,
@@ -187,6 +188,7 @@ internal static class YouTubeMiniPlayerRuntimeFactory
                 GlassFrameThickness = new Thickness(0),
                 UseAeroCaptionButtons = false
             });
+        window.SourceInitialized += (_, _) => WindowThemeService.HideBorder(window);
         return window;
     }
 

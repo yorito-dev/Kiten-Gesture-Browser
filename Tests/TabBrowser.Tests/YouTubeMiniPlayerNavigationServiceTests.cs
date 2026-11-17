@@ -304,6 +304,7 @@ public sealed class YouTubeMiniPlayerNavigationServiceTests
             DurationSeconds = 300,
             IsLiveBroadcast = true,
             IsAtLiveEdge = true,
+            IsLiveEdgeStateKnown = true,
             AbRepeatStartSeconds = 10,
             AbRepeatEndSeconds = 20,
             IsAbRepeatEnabled = true,
@@ -324,6 +325,7 @@ public sealed class YouTubeMiniPlayerNavigationServiceTests
         Assert.Null(state.DurationSeconds);
         Assert.False(state.IsLiveBroadcast);
         Assert.False(state.IsAtLiveEdge);
+        Assert.False(state.IsLiveEdgeStateKnown);
         Assert.Null(state.AbRepeatStartSeconds);
         Assert.Null(state.AbRepeatEndSeconds);
         Assert.False(state.IsAbRepeatEnabled);

@@ -43,6 +43,10 @@ public sealed class YouTubeMiniPlayerState
     public bool IsAtLiveEdge { get; set; }
 
     [JsonIgnore]
+    // ライブ端が未取得の状態を、取得済みのfalseと区別する。
+    public bool IsLiveEdgeStateKnown { get; set; }
+
+    [JsonIgnore]
     public string? LiveViewerCountText { get; set; }
 
     public double? VideoAspectRatio { get; set; }

@@ -60,10 +60,14 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                     queueSave);
                 YouTubeMiniPlayerRuntimeLifecycleService.AttachFullScreenHandler(
                     runtimes[currentState.Id]);
-                webView.ZoomFactorChanged += (_, _) =>
+                webView.ZoomFactorChanged += async (_, _) =>
                 {
                     if (IsCurrentWebView(currentState, webView, runtimes))
+                    {
                         YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtimes[currentState.Id]);
+                        await YouTubeMiniPlayerScriptExecutionService.ExecuteAsync(currentState, runtimes,
+                            YouTubeControlScriptService.BuildMiniPlayerPageZoomScript(webView.ZoomFactor), false, _ => { });
+                    }
                 };
                 YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtimes[currentState.Id]);
             },
@@ -364,31 +368,17 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
             return null;
         }
 
-        if (!string.Equals(
-                runtime.LiveChatAvailabilityAttemptVideoId,
-                videoId,
-                StringComparison.Ordinal))
-        {
-            runtime.LiveChatAvailabilityAttemptVideoId = videoId;
-            runtime.LiveChatAvailabilityAttemptCount = 0;
-        }
-
-        if (runtime.LiveChatAvailabilityAttemptCount >= 2)
+        var availability = await runtime.LiveChatRequests.ReadAsync(videoId, webView,
+            current => ReadLiveChatButtonAvailabilityAsync(state, webView, runtimes, videoId, current));
+        if (!IsCurrentWebView(state, webView, runtimes) || !IsCurrentVideo(state, videoId))
         {
             return null;
         }
 
-        var availability = await ReadLiveChatButtonAvailabilityAsync(
-            state,
-            webView,
-            runtimes,
-            videoId);
-        if (availability.HasValue)
+        if (availability is { } currentAvailability)
         {
-            runtime.LiveChatAvailabilityAttemptCount++;
+            UpdateLiveChatButtonAvailability(state, webView, runtimes, currentAvailability.IsAvailable);
         }
-
-        UpdateLiveChatButtonAvailability(state, webView, runtimes, availability?.IsAvailable);
         return availability;
     }
 
@@ -432,7 +422,8 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
         YouTubeMiniPlayerState state,
         WebView2 webView,
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
-        string expectedVideoId)
+        string expectedVideoId,
+        Func<bool> isCurrentRequest)
     {
         if (webView.CoreWebView2 is not { } core)
         {
@@ -443,7 +434,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
         {
             var result = await core.ExecuteScriptAsync(
                 YouTubeMiniPlayerWebViewService.BuildLiveStatusScript(expectedVideoId));
-            if (!IsCurrentVideo(state, expectedVideoId)
+            if (!isCurrentRequest() || !IsCurrentVideo(state, expectedVideoId)
                 || !IsCurrentWebView(state, webView, runtimes))
             {
                 return null;
@@ -464,6 +455,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
             if (!isLive)
             {
                 state.IsAtLiveEdge = false;
+                state.IsLiveEdgeStateKnown = false;
             }
 
             state.LiveViewerCountText = isLive
@@ -506,9 +498,9 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
     {
         state.IsLiveBroadcast = false;
         state.IsAtLiveEdge = false;
+        state.IsLiveEdgeStateKnown = false;
         state.LiveViewerCountText = null;
-        runtime.LiveChatAvailabilityAttemptVideoId = null;
-        runtime.LiveChatAvailabilityAttemptCount = 0;
+        runtime.LiveChatRequests.Reset();
         YouTubeMiniPlayerChromeFactory.UpdateLiveViewerCount(
             runtime,
             isLive: false,
@@ -551,5 +543,62 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
             completeGestureInteraction,
             close);
         return placeholder.Root;
+    }
+}
+
+// NavigationCompleted／canplay／playingが重なる間の同一問い合わせを共有する。所有UIスレッドで使う。
+internal sealed class YouTubeMiniPlayerLiveChatRequests
+{
+    private string? _videoId;
+    private object? _document;
+    private int _generation;
+    private int _attempts;
+    private Task<YouTubeLiveChatAvailabilityResult?>? _pending;
+
+    public void Reset()
+    {
+        _generation++;
+        _videoId = null;
+        _document = null;
+        _attempts = 0;
+        _pending = null;
+    }
+
+    public Task<YouTubeLiveChatAvailabilityResult?> ReadAsync(string videoId, object document,
+        Func<Func<bool>, Task<YouTubeLiveChatAvailabilityResult?>> read)
+    {
+        if (_videoId != videoId || !ReferenceEquals(_document, document))
+        {
+            Reset();
+            _videoId = videoId;
+            _document = document;
+        }
+        if (_pending is not null) return _pending;
+        if (_attempts >= 2) return Task.FromResult<YouTubeLiveChatAvailabilityResult?>(null);
+
+        var completion = new TaskCompletionSource<YouTubeLiveChatAvailabilityResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var generation = _generation;
+        _pending = completion.Task;
+        _ = CompleteAsync();
+        return completion.Task;
+
+        async Task CompleteAsync()
+        {
+            YouTubeLiveChatAvailabilityResult? result = null;
+            Exception? failure = null;
+            try
+            {
+                result = await read(() => generation == _generation);
+                if (generation != _generation) result = null;
+                else if (result.HasValue) _attempts++;
+            }
+            catch (Exception ex) { failure = ex; }
+            finally
+            {
+                if (generation == _generation && ReferenceEquals(_pending, completion.Task)) _pending = null;
+            }
+            if (failure is not null) completion.TrySetException(failure);
+            else completion.TrySetResult(result);
+        }
     }
 }

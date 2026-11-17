@@ -76,7 +76,7 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
 
         if (message.Kind == YouTubeMiniPlayerWebMessageKind.Drag)
         {
-            HandleDrag(state, message.DragPhase, message.IsResize, runtimes, callbacks);
+            HandleDrag(state, message.DragPhase, message.IsResize, runtimes, callbacks, message.ResizeEdges, message.Cancelled);
             return;
         }
 
@@ -228,7 +228,9 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
         YouTubeMiniPlayerDragPhase phase,
         bool isResize,
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
-        YouTubeMiniPlayerWebMessageDispatchCallbacks callbacks)
+        YouTubeMiniPlayerWebMessageDispatchCallbacks callbacks,
+        MiniPlayerResizeEdges resizeEdges,
+        bool cancelled)
     {
         if (!runtimes.TryGetValue(state.Id, out var runtime))
         {
@@ -248,6 +250,6 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
                 callbacks.Clamp,
                 callbacks.SyncPopupOffsets,
                 callbacks.ReapplyContentTransform,
-                callbacks.QueueSave));
+                callbacks.QueueSave), resizeEdges, cancelled);
     }
 }

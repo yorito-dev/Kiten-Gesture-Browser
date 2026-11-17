@@ -31,7 +31,10 @@ public sealed record RuntimeYouTubePlaybackDiagnosticEntry(
     long? TotalVideoFrames,
     long? DroppedVideoFrames,
     long? CorruptedVideoFrames,
-    long? StallDurationMilliseconds);
+    long? StallDurationMilliseconds,
+    double? VideoWidth = null,
+    double? VideoHeight = null,
+    string? WaitKind = null);
 
 public sealed record RuntimeMiniPlayerFrameSample(
     DateTimeOffset ObservedAt,
@@ -1499,6 +1502,8 @@ public static class RuntimeDiagnosticReportFormatter
                 + $" networkState={FormatPlaybackMetric(entry.NetworkState)}"
                 + $" paused={FormatPlaybackMetric(entry.IsPaused)}"
                 + $" bufferedAhead={FormatPlaybackMetric(entry.BufferedAheadSeconds)}"
+                + $" videoSize={FormatPlaybackMetric(entry.VideoWidth)}x{FormatPlaybackMetric(entry.VideoHeight)}"
+                + $" waitKind={entry.WaitKind ?? "unknown"}"
                 + frameText
                 + $" corrupted={entry.CorruptedVideoFrames?.ToString() ?? "不明"}"
                 + stallText);

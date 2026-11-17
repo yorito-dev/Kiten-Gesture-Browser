@@ -647,9 +647,12 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
 
         dialog.Owner = Window.GetWindow(this);
 
-        await ModelessWindowService.ShowAsync(dialog);
+        await ShowNewNoteEditorAsync(dialog);
         TrySaveWorkspaceNoteEditorWindowPlacement(dialog, dialog.IsAccepted ? noteId : null);
     }
+
+    internal static Task<bool> ShowNewNoteEditorAsync(WorkspaceNoteEditWindow dialog)
+        => ModelessWindowService.ShowAsync(dialog, allowMultiple: true);
 
     private void AddFolderMenuItem_Click(object sender, RoutedEventArgs e)
     {
@@ -858,7 +861,16 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
             || ExternalUrlDropFormats.Any(format => e.Data.GetDataPresent(format));
     }
 
-    private static DragDropEffects GetWorkspaceDropEffect(DragEventArgs e)
+    internal static bool CanCreateCardFromDrop(DragEventArgs e)
+    {
+        return e.Data.GetData(WorkspaceCardDragPayload.DataFormat) is WorkspaceCardDragPayload { Roots.Count: > 0 }
+            || e.Data.GetData(TabShelfDragPayload.DataFormat) is TabShelfDragPayload shelf
+                && (shelf.Tabs.Count > 0 || shelf.YouTubeMiniPlayers.Count > 0)
+            || TryGetDroppedPaths(e, out _)
+            || TryGetExternalDropLink(e, out _, out _);
+    }
+
+    internal static DragDropEffects GetWorkspaceDropEffect(DragEventArgs e)
     {
         if (e.Data.GetDataPresent(WorkspaceCardDragPayload.DataFormat))
         {
@@ -1011,11 +1023,18 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
             return false;
         }
 
-        if (Uri.TryCreate(value, UriKind.Absolute, out var absoluteUri)
-            && IsAllowedDroppedUrlScheme(absoluteUri.Scheme))
+        if (Uri.TryCreate(value, UriKind.Absolute, out var absoluteUri))
         {
-            url = absoluteUri.ToString();
-            return true;
+            if (BrowserUrlRulesService.IsRemoteFileUrl(absoluteUri))
+            {
+                return false;
+            }
+
+            if (IsAllowedDroppedUrlScheme(absoluteUri.Scheme))
+            {
+                url = absoluteUri.ToString();
+                return true;
+            }
         }
 
         if (LooksLikeDroppedHost(value))

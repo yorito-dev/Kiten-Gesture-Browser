@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using Microsoft.Win32;
 using TabBrowser.Models;
 using TabBrowser.Services;
+using TabBrowser.Views;
 
 namespace TabBrowser;
 
@@ -94,6 +95,9 @@ public partial class SettingsWindow : Window
             Environment.NewLine,
             _workingSettings.BrowsingHistory.ExcludedHosts);
         EnableExtensionsCheckBox.IsChecked = _workingSettings.EnableBrowserExtensions;
+        _workingSettings.AdBlocking = AdBlockingSettingsProfile.Normalize(_workingSettings.AdBlocking);
+        EnableAdBlockingCheckBox.IsChecked = _workingSettings.AdBlocking.IsEnabled;
+        AdBlockingExcludedHostsBox.Text = string.Join(Environment.NewLine, _workingSettings.AdBlocking.ExcludedHosts.Keys.Order());
 
         ApplyDownloadSettingsToInputs(_workingSettings.Downloads);
         ApplyToolbarVisibilityToInputs(_workingSettings.ToolbarVisibility);
@@ -107,6 +111,11 @@ public partial class SettingsWindow : Window
     public bool IsAccepted { get; private set; }
 
     public bool ContainerProfilesChanged { get; private set; }
+
+    public event EventHandler? SuperDragSettingsRequested;
+
+    private void OpenSuperDragSettingsButton_Click(object sender, RoutedEventArgs e)
+        => SuperDragSettingsRequested?.Invoke(this, EventArgs.Empty);
 
     private void ApplyYouTubeMiniPlayerQualityThresholdsToSliders(
         int lowWidthThreshold,
@@ -261,10 +270,7 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        _workingSettings.GestureStartThreshold = dialog.ResultSettings.GestureStartThreshold;
-        _workingSettings.GestureDirectionThreshold = dialog.ResultSettings.GestureDirectionThreshold;
-        _workingSettings.PreserveContextMenuOnShortRightClick = dialog.ResultSettings.PreserveContextMenuOnShortRightClick;
-        _workingSettings.GestureMappings = GestureSettingsCatalog.NormalizeMappings(dialog.ResultSettings.GestureMappings);
+        GestureSettingsCatalog.ApplyEditingResult(_workingSettings, dialog.ResultSettings);
         UpdateGestureSummary();
         SetError(string.Empty);
     }
@@ -456,6 +462,7 @@ public partial class SettingsWindow : Window
     {
         ApplySettingsTabSelection(SettingsTabControl.SelectedIndex);
         SettingsScrollViewer.ScrollToTop();
+
     }
 
     private void SettingsTabControl_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -516,13 +523,15 @@ public partial class SettingsWindow : Window
         SetSectionVisibility(selectedIndex == AppearanceSettingsTabIndex,
             QuickLookSettingsSection,
             ToolbarSettingsSection,
-            GestureSettingsSection);
+            GestureSettingsSection,
+            SuperDragSettingsSection);
         SetSectionVisibility(selectedIndex == MediaSettingsTabIndex,
             YouTubeMiniPlayerSettingsSection,
 
             DownloadSettingsSection);
 
         SetSectionVisibility(selectedIndex == IntegrationSettingsTabIndex,
+            AdBlockingSettingsSection,
             ClipboardHistorySettingsSection,
             BrowsingHistorySettingsSection,
 
@@ -677,6 +686,13 @@ public partial class SettingsWindow : Window
                 .ToList()
         });
         result.EnableBrowserExtensions = EnableExtensionsCheckBox.IsChecked == true;
+        if (!AdBlockingSettingsProfile.TryBuildEditingResult(EnableAdBlockingCheckBox.IsChecked == true,
+                AdBlockingExcludedHostsBox.Text, out var adBlocking, out var invalidAdBlockingHost))
+        {
+            SetValidationError(AdBlockingExcludedHostsBox, "除外するホスト名を確認してください: " + invalidAdBlockingHost);
+            return false;
+        }
+        result.AdBlocking = adBlocking;
 
         result.Downloads = DownloadSettingsProfile.Normalize(new DownloadSettings
         {
@@ -1066,7 +1082,8 @@ public partial class SettingsWindow : Window
 
         if (IsWithinSection(target, QuickLookSettingsSection)
             || IsWithinSection(target, ToolbarSettingsSection)
-            || IsWithinSection(target, GestureSettingsSection))
+            || IsWithinSection(target, GestureSettingsSection)
+            || IsWithinSection(target, SuperDragSettingsSection))
         {
             return AppearanceSettingsTabIndex;
         }
@@ -1078,7 +1095,8 @@ public partial class SettingsWindow : Window
             return MediaSettingsTabIndex;
         }
 
-        if (IsWithinSection(target, ClipboardHistorySettingsSection)
+        if (IsWithinSection(target, AdBlockingSettingsSection)
+            || IsWithinSection(target, ClipboardHistorySettingsSection)
             || IsWithinSection(target, BrowsingHistorySettingsSection)
             || IsWithinSection(target, ContainerSettingsSection)
 

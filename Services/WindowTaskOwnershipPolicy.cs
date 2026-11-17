@@ -20,6 +20,7 @@ internal static class WindowTaskOwnershipPolicy
     [
         Drain("amazon-prime-video-readiness"),
         Drain("address-suggestion-open"),
+        Drain("ad-space-collapse-refresh"),
         Drain("background-tab-load"),
         Drain("background-thumbnail-warmup"),
         Drain("bookmark-delete"),
@@ -32,6 +33,7 @@ internal static class WindowTaskOwnershipPolicy
         Drain("command-palette-tab-thumbnail"),
         Drain("command-palette-url-thumbnail"),
         Drain("command-palette-execute"),
+        Drain("command-palette-open-application-folder"),
         Drain("extension-toolbar-refresh"),
         Drain("folder-tab-navigate-back"),
         Drain("folder-tab-navigate-forward"),
@@ -68,8 +70,10 @@ internal static class WindowTaskOwnershipPolicy
         Drain("webview-process-group-recovery"),
         Drain("webview-render-process-reload"),
         Drain("youtube-application-fullscreen-exit"),
+
         Drain("youtube-control-popup-placement"),
         Drain("youtube-mini-player-layout-verification"),
+        Drain("youtube-mini-player-resume-recovery"),
         Drain("youtube-shorts-history-replace-navigation"),
 
         Continue("MainWindow.ClipboardHistory.cs", "OpenSettingsDialogAsync", 1,
@@ -178,8 +182,8 @@ internal static class WindowTaskOwnershipPolicy
         Continue("YouTubeMiniPlayerActivityController.cs", "ApplyYouTubeMiniPlayerSizeBasedQualityAsync", 2,
             "mini-player Runtime", "品質ControllerがRuntimeの既存Timerと適用signatureを使い、RuntimeDisposeでTimerを停止する。"),
         ContinueMiniPlayer("CancelYouTubeMiniPlayerRightInputAsync", 1, "mini-player input generation"),
-        Continue("YouTubeMiniPlayerListViewController.cs", "EnsureYouTubeMiniPlayerListThumbnailAsync", 2,
-            "mini-player thumbnail request CTS", "一覧Controllerの既存batch CTSと項目のsource key・世代が取得と結果反映を所有する。"),
+        Continue("YouTubeMiniPlayerListViewController.cs", "EnsureYouTubeMiniPlayerListThumbnailAsync", 3,
+            "mini-player thumbnail request CTS", "一覧のbatch CTSと閉じた動画メニューの専用CTS、項目のsource key・世代が取得と結果反映を所有し、終了時に取り消す。"),
         ContinueMiniPlayer("ExecuteYouTubeMiniPlayerGestureAsync", 1, "mini-player Runtime gesture"),
         ContinueMiniPlayer("ExecuteYouTubeMiniPlayerGestureCommandAsync", 1, "mini-player Runtime gesture"),
         ContinueMiniPlayer("overlayPlacementCallbacks.UpdateToolbarPlacementAsync", 1, "mini-player overlay callback"),

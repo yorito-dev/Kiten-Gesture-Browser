@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Data;
 using System.Windows.Media;
 using TabBrowser.Models;
 using TabBrowser.Services;
@@ -35,10 +36,13 @@ internal interface IYouTubeMiniPlayerListActionsHost
     bool CanControlVolume(YouTubeMiniPlayerListItem item);
     Task<bool> SetVolumeAsync(YouTubeMiniPlayerListItem item, double volume);
     Task<bool> SetAudioBoostAsync(YouTubeMiniPlayerListItem item, int decibels);
+    Task<bool> SeekToRatioAsync(YouTubeMiniPlayerListItem item, double ratio);
     void QueueSave(YouTubeMiniPlayerListItem item);
     void SetStatus(YouTubeMiniPlayerListItem item, string message);
     Task RefreshListAsync();
     Task ExecuteCommandAsync(string actionId, YouTubeMiniPlayerListItem item, object? parameter = null);
+    void RefreshChatState(YouTubeMiniPlayerListItem item);
+    Task SetChatWindowOpenAsync(YouTubeMiniPlayerListItem item, bool isOpen);
 }
 
 internal sealed class YouTubeMiniPlayerListActionsController
@@ -54,6 +58,7 @@ internal sealed class YouTubeMiniPlayerListActionsController
     private YouTubeMiniPlayerListItem? _youTubeMiniPlayerListMoreTarget;
     private Task _youTubeMiniPlayerListVolumeApplyTask = Task.CompletedTask;
     private bool _isStopped;
+    private readonly HashSet<Guid> _progressSeekTargets = [];
 
     public YouTubeMiniPlayerListActionsController(
         YouTubeMiniPlayerListActionsElements elements, OwnedDispatcherTimer volumeTimer,
@@ -140,13 +145,27 @@ internal sealed class YouTubeMiniPlayerListActionsController
         YouTubeMiniPlayerSpeedPopup.IsOpen = false;
         YouTubeMiniPlayerVolumePopup.IsOpen = false;
         _youTubeMiniPlayerListMoreTarget = item;
+        _host.RefreshChatState(item);
         YouTubeMiniPlayerItemMorePopup.DataContext = item;
         YouTubeMiniPlayerItemMorePopup.PlacementTarget = button;
         YouTubeMiniPlayerItemMorePopup.IsOpen = true;
     }
 
+    public async Task YouTubeMiniPlayerItemChatButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isStopped || _youTubeMiniPlayerListMoreTarget is not { } item) return;
+        e.Handled = true;
+        var shouldOpen = !item.IsChatWindowOpen;
+        _host.RefreshChatState(item);
+        YouTubeMiniPlayerItemMorePopup.IsOpen = false;
+        if (!item.CanToggleChat) return;
+        await _host.SetChatWindowOpenAsync(item, shouldOpen);
+        await _host.RefreshListAsync();
+    }
+
     public void YouTubeMiniPlayerItemMorePopup_Closed(object sender, EventArgs e)
     {
+        if (YouTubeMiniPlayerItemMorePopup.IsOpen) return;
         _youTubeMiniPlayerListMoreTarget = null;
         YouTubeMiniPlayerItemMorePopup.DataContext = null;
         YouTubeMiniPlayerItemMorePopup.PlacementTarget = null;
@@ -185,6 +204,7 @@ internal sealed class YouTubeMiniPlayerListActionsController
         await FlushPendingYouTubeMiniPlayerListVolumeAsync();
 
         _youTubeMiniPlayerListVolumeTarget = item;
+        YouTubeMiniPlayerVolumePopup.DataContext = item;
         using (_youTubeMiniPlayerVolumeInteractionCoordinator.EnterProgrammaticVolumeUpdate())
         {
             YouTubeMiniPlayerVolumeTitleText.Text = item.Title;
@@ -276,6 +296,16 @@ internal sealed class YouTubeMiniPlayerListActionsController
         }
     }
 
+    public void YouTubeMiniPlayerVolumeSlider_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_isStopped || _youTubeMiniPlayerListVolumeTarget is null
+            || !YouTubeMiniPlayerVolumePopup.IsOpen || !YouTubeMiniPlayerVolumeSlider.IsEnabled
+            || !ReferenceEquals(sender, YouTubeMiniPlayerVolumeSlider)) return;
+        e.Handled = true;
+        YouTubeMiniPlayerVolumeSlider.SetCurrentValue(RangeBase.ValueProperty,
+            Math.Clamp(YouTubeMiniPlayerVolumeSlider.Value + e.Delta / 120d * 5, 0, 100));
+    }
+
     public void YouTubeMiniPlayerVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (YouTubeMiniPlayerVolumeValueText is not null)
@@ -301,6 +331,7 @@ internal sealed class YouTubeMiniPlayerListActionsController
 
         _youTubeMiniPlayerListVolumeTarget = null;
         YouTubeMiniPlayerVolumePopup.PlacementTarget = null;
+        YouTubeMiniPlayerVolumePopup.DataContext = null;
     }
 
     private async Task ApplyPendingYouTubeMiniPlayerListVolumeAsync()
@@ -334,6 +365,52 @@ internal sealed class YouTubeMiniPlayerListActionsController
     public async Task YouTubeMiniPlayerItemSeekBackButton_Click(object sender, RoutedEventArgs e)
     {
         await ExecuteYouTubeMiniPlayerListSeekAsync(sender, e, -10);
+    }
+
+    internal static bool TryGetProgressRatio(YouTubeMiniPlayerListItem item, double x, double width, out double ratio)
+    {
+        ratio = 0;
+        if (!item.CanSeekPlaybackProgress || !double.IsFinite(x) || !double.IsFinite(width) || width <= 0)
+            return false;
+        ratio = Math.Clamp(x / width, 0, 1);
+        return true;
+    }
+
+    public void YouTubeMiniPlayerProgress_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isStopped && sender is FrameworkElement { DataContext: YouTubeMiniPlayerListItem item, ToolTip: ToolTip toolTip } bar
+            && TryGetProgressRatio(item, e.GetPosition(bar).X, bar.ActualWidth, out var ratio))
+            toolTip.Content = item.GetPlaybackSeekToolTip(ratio);
+    }
+
+    public async Task YouTubeMiniPlayerProgress_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is FrameworkElement { DataContext: YouTubeMiniPlayerListItem item } bar
+            && TryGetProgressRatio(item, Mouse.GetPosition(bar).X, bar.ActualWidth, out var ratio))
+            await SeekProgressAsync(item, ratio);
+    }
+
+    internal async Task SeekProgressAsync(YouTubeMiniPlayerListItem item, double ratio)
+    {
+        if (_isStopped || !item.CanSeekPlaybackProgress || !double.IsFinite(ratio)
+            || !_progressSeekTargets.Add(item.State.Id)) return;
+        try
+        {
+            var changed = await _host.SeekToRatioAsync(item, Math.Clamp(ratio, 0, 1));
+            if (_isStopped) return;
+            if (!changed)
+            {
+                _host.SetStatus(item, "再生位置を変更できませんでした");
+                return;
+            }
+            _host.QueueSave(item);
+            await _host.RefreshListAsync();
+        }
+        finally
+        {
+            _progressSeekTargets.Remove(item.State.Id);
+        }
     }
 
     public async Task YouTubeMiniPlayerItemSeekForwardButton_Click(object sender, RoutedEventArgs e)
@@ -405,6 +482,7 @@ internal sealed class YouTubeMiniPlayerListActionsController
 
         YouTubeMiniPlayerAbRepeatPopup.IsOpen = false;
         _youTubeMiniPlayerListAbRepeatTarget = item;
+        YouTubeMiniPlayerAbRepeatPopup.DataContext = item;
         UpdateYouTubeMiniPlayerAbRepeatPopup(item);
         YouTubeMiniPlayerAbRepeatPopup.PlacementTarget = button;
         YouTubeMiniPlayerAbRepeatPopup.IsOpen = true;
@@ -442,13 +520,18 @@ internal sealed class YouTubeMiniPlayerListActionsController
     public void YouTubeMiniPlayerAbRepeatPopup_Closed(object sender, EventArgs e)
     {
         _youTubeMiniPlayerListAbRepeatTarget = null;
+        YouTubeMiniPlayerAbRepeatPopup.DataContext = null;
+        BindingOperations.ClearBinding(YouTubeMiniPlayerAbRepeatTitleText, TextBlock.TextProperty);
+        BindingOperations.ClearBinding(YouTubeMiniPlayerAbRepeatRangeText, TextBlock.TextProperty);
         YouTubeMiniPlayerAbRepeatPopup.PlacementTarget = null;
     }
 
     private void UpdateYouTubeMiniPlayerAbRepeatPopup(YouTubeMiniPlayerListItem item)
     {
-        YouTubeMiniPlayerAbRepeatTitleText.Text = item.Title;
-        YouTubeMiniPlayerAbRepeatRangeText.Text = item.AbRepeatRangeText;
+        YouTubeMiniPlayerAbRepeatTitleText.SetBinding(TextBlock.TextProperty,
+            new Binding(nameof(YouTubeMiniPlayerListItem.Title)) { Source = item });
+        YouTubeMiniPlayerAbRepeatRangeText.SetBinding(TextBlock.TextProperty,
+            new Binding(nameof(YouTubeMiniPlayerListItem.AbRepeatDurationText)) { Source = item });
         YouTubeMiniPlayerAbRepeatSetStartButton.IsEnabled = item.CanSetAbRepeatPoint;
         YouTubeMiniPlayerAbRepeatSetEndButton.IsEnabled = item.CanSetAbRepeatPoint
             && item.State.AbRepeatStartSeconds.HasValue;
@@ -480,6 +563,7 @@ internal sealed class YouTubeMiniPlayerListActionsController
 
         YouTubeMiniPlayerSpeedPopup.IsOpen = false;
         _youTubeMiniPlayerListSpeedTarget = item;
+        YouTubeMiniPlayerSpeedPopup.DataContext = item;
         YouTubeMiniPlayerSpeedPopup.PlacementTarget = button;
         YouTubeMiniPlayerSpeedPopup.IsOpen = true;
     }
@@ -520,6 +604,7 @@ internal sealed class YouTubeMiniPlayerListActionsController
     public void YouTubeMiniPlayerSpeedPopup_Closed(object sender, EventArgs e)
     {
         _youTubeMiniPlayerListSpeedTarget = null;
+        YouTubeMiniPlayerSpeedPopup.DataContext = null;
         YouTubeMiniPlayerSpeedPopup.PlacementTarget = null;
     }
 

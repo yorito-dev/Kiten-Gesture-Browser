@@ -56,6 +56,9 @@ public sealed class YouTubePlaybackDiagnosticController
             return;
         }
 
+        var waitKind = observation.Operation is "stall-start" or "sample-stall-start"
+            ? YouTubePlaybackDiagnosticService.ClassifyWait(message)
+            : "none";
         _tracker.AddDiagnosticEntry(new RuntimeYouTubePlaybackDiagnosticEntry(
             observedAt,
             _host.WindowIndex,
@@ -71,7 +74,10 @@ public sealed class YouTubePlaybackDiagnosticController
             message.TotalVideoFrames,
             message.DroppedVideoFrames,
             message.CorruptedVideoFrames,
-            observation.StallDurationMilliseconds));
+            observation.StallDurationMilliseconds,
+            message.VideoNaturalWidth,
+            message.VideoNaturalHeight,
+            waitKind));
 
         var fields = new List<string>
         {
@@ -94,7 +100,10 @@ public sealed class YouTubePlaybackDiagnosticController
             $"totalFrames={FormatMetric(message.TotalVideoFrames)}",
             $"droppedFrames={FormatMetric(message.DroppedVideoFrames)}",
             $"corruptedFrames={FormatMetric(message.CorruptedVideoFrames)}",
-            $"droppedRate={FormatDroppedFrameRate(message.TotalVideoFrames, message.DroppedVideoFrames)}"
+            $"droppedRate={FormatDroppedFrameRate(message.TotalVideoFrames, message.DroppedVideoFrames)}",
+            $"videoWidth={FormatMetric(message.VideoNaturalWidth)}",
+            $"videoHeight={FormatMetric(message.VideoNaturalHeight)}",
+            $"waitKind={waitKind}"
         };
         if (observation.StallDurationMilliseconds is { } stallDuration)
         {

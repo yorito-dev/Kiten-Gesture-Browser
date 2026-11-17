@@ -110,6 +110,10 @@ public partial class LocalVideoPlayerView : UserControl, IDisposable
 
     public FrameworkElement DragSurface => Surface;
 
+    internal bool IsControlsTarget(DependencyObject? source) => source is not null
+        && (ReferenceEquals(source, ControlsPanel) || ControlsPanel.IsAncestorOf(source)
+            || ReferenceEquals(source, PlaceholderPanel) || PlaceholderPanel.IsAncestorOf(source));
+
     public void ConfigureGestures(
         AppSettings settings,
         Func<string?, string?, Task> executeCommandAsync,

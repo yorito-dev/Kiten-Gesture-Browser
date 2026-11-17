@@ -60,6 +60,7 @@ internal sealed class YouTubeMiniPlayerAudioController
     private readonly OwnedDispatcherTimer _youTubeMiniPlayerHoverAudioPreviewTimer;
     private readonly IYouTubeMiniPlayerAudioHost _host;
     private bool _isStopped;
+    private long _hoverPreviewGeneration;
 
     public YouTubeMiniPlayerAudioController(
         YouTubeMiniPlayerAudioElements elements,
@@ -105,6 +106,7 @@ internal sealed class YouTubeMiniPlayerAudioController
     public void StopHoverTracking()
     {
         _isStopped = true;
+        _hoverPreviewGeneration++;
         _youTubeMiniPlayerHoverAudioPreviewTimer.Stop();
         _youTubeMiniPlayerHoverAudioPreviewTimer.Tick -= HoverTimer_Tick;
         _youTubeMiniPlayerListInteractionCoordinator.ClearPendingHoverPreview();
@@ -117,6 +119,7 @@ internal sealed class YouTubeMiniPlayerAudioController
             return;
         }
 
+        _hoverPreviewGeneration++;
         _youTubeMiniPlayerListInteractionCoordinator.SetPendingHoverPreview(targetId);
         _youTubeMiniPlayerHoverAudioPreviewTimer.Stop();
         _youTubeMiniPlayerHoverAudioPreviewTimer.Start();
@@ -124,6 +127,7 @@ internal sealed class YouTubeMiniPlayerAudioController
 
     public void CancelPendingYouTubeMiniPlayerHoverAudioPreview()
     {
+        _hoverPreviewGeneration++;
         _youTubeMiniPlayerHoverAudioPreviewTimer.Stop();
         _youTubeMiniPlayerListInteractionCoordinator.ClearPendingHoverPreview();
     }
@@ -136,10 +140,15 @@ internal sealed class YouTubeMiniPlayerAudioController
             return;
         }
 
+        var generation = _hoverPreviewGeneration;
         using (await _audioSession.EnterAsync())
         {
+            // 待機中に離脱した要求や、同じ行へ戻る前の古い要求を再開しない。
+            if (!IsCurrentHoverPreviewRequest(targetId, generation)) return;
             await StopYouTubeMiniPlayerHoverAudioPreviewCoreAsync();
+            if (!IsCurrentHoverPreviewRequest(targetId, generation)) return;
             var items = await CaptureLoadedYouTubeMiniPlayerAudioItemsAsync();
+            if (!IsCurrentHoverPreviewRequest(targetId, generation)) return;
             var states = items
                 .Select(static item => new YouTubeMiniPlayerAudioFocusState(
                     item.State.Id,
@@ -156,6 +165,7 @@ internal sealed class YouTubeMiniPlayerAudioController
             var targetApplied = false;
             foreach (var planItem in plan.OrderBy(static item => item.DesiredMuted == true ? 0 : 1))
             {
+                if (!IsCurrentHoverPreviewRequest(targetId, generation)) break;
                 if (!itemsById.TryGetValue(planItem.Id, out var item))
                 {
                     continue;
@@ -168,7 +178,7 @@ internal sealed class YouTubeMiniPlayerAudioController
                 }
             }
 
-            if (!targetApplied)
+            if (!targetApplied || !IsCurrentHoverPreviewRequest(targetId, generation))
             {
                 await StopYouTubeMiniPlayerHoverAudioPreviewCoreAsync();
                 return;
@@ -178,6 +188,11 @@ internal sealed class YouTubeMiniPlayerAudioController
         }
 
     }
+
+    private bool IsCurrentHoverPreviewRequest(Guid targetId, long generation)
+        => !_isStopped && _host.IsHoverPreviewEnabled
+            && generation == _hoverPreviewGeneration
+            && _youTubeMiniPlayerListInteractionCoordinator.IsPendingHoverPreview(targetId);
 
     private async Task<bool> ApplyYouTubeMiniPlayerHoverViewingPlanItemAsync(
         YouTubeMiniPlayerListItem item,
@@ -233,9 +248,7 @@ internal sealed class YouTubeMiniPlayerAudioController
         YouTubeMiniPlayerActiveAudioFocusText.Text = hasFocus
             ? $"音声フォーカス: {GetYouTubeMiniPlayerAudioFocusTargetText(_audioSession.FocusMode)}"
             : "音声フォーカス中";
-        YouTubeMiniPlayerAudioFocusSelectionText.Text = selectedCount > 0
-            ? $"選択 {selectedCount}件"
-            : "選択なし";
+        YouTubeMiniPlayerAudioFocusSelectionText.Text = $"選択 {selectedCount} / {YouTubeMiniPlayerList.Items.Count}件";
         YouTubeMiniPlayerPlaySelectedOnlyButton.IsEnabled = selectedCount > 0;
         YouTubeMiniPlayerPauseOutsideSelectionButton.IsEnabled = selectedCount > 0;
         YouTubeMiniPlayerMuteOutsideSelectionButton.IsEnabled = selectedCount > 0;

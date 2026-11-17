@@ -474,10 +474,12 @@ public sealed class YouTubeControlService
                 return;
             }
 
+            var token = _getWebMessageToken(tab);
+            if (string.IsNullOrWhiteSpace(token)) return;
             await _executeScriptAsync(
                 tab,
                 YouTubeControlScriptService.BuildPlaybackStateBridgeScript(
-                    _getWebMessageToken(tab),
+                    token,
                     isActive),
                 false);
         }
@@ -505,10 +507,12 @@ public sealed class YouTubeControlService
                 return;
             }
 
+            var token = _getWebMessageToken(tab);
+            if (string.IsNullOrWhiteSpace(token)) return;
             var resultJson = await _executeScriptAsync(
                 tab,
                 YouTubeControlScriptService.BuildPlaybackStateRestoreReadyBridgeScript(
-                    _getWebMessageToken(tab),
+                    token,
                     request.VideoId,
                     request.PositionSeconds,
                     request.Speed,

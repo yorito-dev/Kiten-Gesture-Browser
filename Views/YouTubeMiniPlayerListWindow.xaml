@@ -1,0 +1,37 @@
+<Window x:Class="TabBrowser.Views.YouTubeMiniPlayerListWindow"
+        x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="YouTubeミニプレイヤー一覧"
+        Width="780" Height="680" MinWidth="780" MinHeight="180"
+        Background="#11141A" Foreground="#F3F4F6"
+        ShowInTaskbar="True" Topmost="True" ResizeMode="CanMinimize" WindowStyle="None"
+        WindowStartupLocation="Manual">
+    <Window.Resources>
+        <ToolTip x:Key="CaptionHelp" Placement="RelativePoint" StaysOpen="True"
+                 Background="#11141A" Foreground="#F3F4F6" BorderBrush="#3A404D"
+                 Padding="7,5" FontSize="12" MaxWidth="480" IsHitTestVisible="False">
+            <TextBlock Text="ドラッグして移動（他のディスプレイへ移動可能）。ダブルクリックで表示、非表示。右クリックメニューで位置を戻す"
+                       TextWrapping="Wrap" />
+        </ToolTip>
+        <MenuItem x:Key="CaptionHoverPreviewMenuItem" Header="一時視聴：オフ"
+                      Background="#11141A" Foreground="#F3F4F6"
+                      ToolTip="一時視聴はオフです。クリックでオンにすると、マウスを重ねた動画だけを一時視聴します"
+                      ToolTipService.ShowOnDisabled="True" AutomationProperties.Name="一時視聴をオンにする"
+                      Click="CaptionHoverPreview_Click" />
+        <ContextMenu x:Key="CaptionContextMenu" Background="#11141A" Foreground="#F3F4F6"
+                     BorderBrush="#3A404D" BorderThickness="1" FontSize="13" StaysOpen="False">
+            <MenuItem Header="デフォルトのウィンドウ位置に戻す" Background="#11141A" Foreground="#F3F4F6"
+                      Click="CaptionResetPosition_Click" />
+            <Separator Background="#3A404D" />
+            <StaticResource ResourceKey="CaptionHoverPreviewMenuItem" />
+        </ContextMenu>
+    </Window.Resources>
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="39" ResizeBorderThickness="0"
+                            CornerRadius="0" GlassFrameThickness="0"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+    <ContentPresenter x:Name="ListContentHost" />
+</Window>

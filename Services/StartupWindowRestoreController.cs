@@ -40,13 +40,46 @@ internal sealed class StartupWindowRestoreController(
     private bool _isRestoring;
     private bool _hasRestoredInitialWindowSession;
 
+    public bool ShouldRestoreMiniPlayerList { get; private set; }
+    public YouTubeMiniPlayerListPositionState? MiniPlayerListPosition { get; private set; }
+    public bool? MiniPlayerListCollapsed { get; private set; }
+
     public int PendingCount => _pendingWindows.Count;
 
-    public void RestoreInitialWindowSession(SessionWindowState state, Action<SessionData> restoreSession)
+    public void RestoreInitialWindowSession(SessionWindowState state, Action<SessionData> restoreSession, bool restoreMiniPlayerList = false)
     {
         restoreSession(SessionSnapshotService.FromWindow(state));
+        RequestMiniPlayerListRestore(restoreMiniPlayerList && state.IsYouTubeMiniPlayerListOpen,
+            restoreMiniPlayerList ? state.YouTubeMiniPlayerListPosition : null,
+            restoreMiniPlayerList ? state.IsYouTubeMiniPlayerListCollapsed : null);
         // 通常タブ0件も復元済み。Loadedで別Windowの共通セッションを読み直さない。
         _hasRestoredInitialWindowSession = true;
+    }
+
+    public void RequestMiniPlayerListRestore(bool isOpen, YouTubeMiniPlayerListPositionState? position = null, bool? isCollapsed = null)
+    {
+        ShouldRestoreMiniPlayerList = isOpen;
+        MiniPlayerListPosition = position;
+        MiniPlayerListCollapsed = isCollapsed;
+    }
+
+    // 動画の枠の復元後に一度だけ表示し、一覧を開くために動画は読み込まない。
+    public void RestoreMiniPlayerListIfRequested(Action showList, Action<YouTubeMiniPlayerListPositionState>? restorePosition = null, Action<bool>? restoreCollapsed = null)
+    {
+        if (host.IsClosingWindow || lifetimeToken.IsCancellationRequested) return;
+        if (MiniPlayerListPosition is { } position)
+        {
+            MiniPlayerListPosition = null;
+            restorePosition?.Invoke(position);
+        }
+        if (MiniPlayerListCollapsed is { } isCollapsed)
+        {
+            MiniPlayerListCollapsed = null;
+            restoreCollapsed?.Invoke(isCollapsed);
+        }
+        if (!ShouldRestoreMiniPlayerList) return;
+        ShouldRestoreMiniPlayerList = false;
+        showList();
     }
 
     public bool ShouldRestoreSessionOnLoaded(int tabCount)

@@ -29,7 +29,9 @@ internal sealed record YouTubeMiniPlayerRecoveryCallbacks(
     Func<YouTubeMiniPlayerPlaybackStateSnapshot, CancellationToken, Task<bool>> ReloadCurrentWebViewAsync,
     Func<YouTubeMiniPlayerPlaybackStateSnapshot, CancellationToken, Task<bool>> RecreateWebViewAsync,
     Func<YouTubeMiniPlayerPlaybackStateSnapshot, CancellationToken, Task<bool>> OpenSourceTabAsync,
-    Action<YouTubeMiniPlayerRecoveryStage, string>? StageChanged = null);
+    Action<YouTubeMiniPlayerRecoveryStage, string>? StageChanged = null,
+    Action? AbortUnresponsiveTarget = null,
+    Func<YouTubeMiniPlayerPlaybackStateSnapshot>? GetFallbackState = null);
 
 internal readonly record struct YouTubeMiniPlayerPlaybackHealthProbe(
     bool HasVideo,
@@ -54,12 +56,20 @@ internal sealed class YouTubeMiniPlayerRecoveryService : IDisposable
 
     private readonly object _sync = new();
     private readonly Dictionary<Guid, RecoveryOperation> _operations = [];
-    private readonly SemaphoreSlim _recoveryGate;
+    private readonly YouTubeMiniPlayerRecoveryQueue _recoveryQueue;
+    private readonly Func<Task, TimeSpan, CancellationToken, Task> _wait;
     private bool _isDisposed;
 
-    public YouTubeMiniPlayerRecoveryService(SemaphoreSlim? recoveryGate = null)
+    public YouTubeMiniPlayerRecoveryService(SemaphoreSlim? recoveryGate = null,
+        Func<Task, TimeSpan, CancellationToken, Task>? wait = null)
     {
-        _recoveryGate = recoveryGate ?? new SemaphoreSlim(1, 1);
+        _recoveryQueue = YouTubeMiniPlayerRecoveryQueue.For(recoveryGate ?? new SemaphoreSlim(1, 1));
+        _wait = wait ?? ((task, timeout, token) => task.WaitAsync(timeout, token));
+    }
+
+    public YouTubeMiniPlayerRecoveryStage? GetStage(Guid id)
+    {
+        lock (_sync) return _operations.TryGetValue(id, out var operation) ? operation.Stage : null;
     }
 
     public Task<YouTubeMiniPlayerRecoveryResult> RequestAsync(
@@ -276,57 +286,25 @@ internal sealed class YouTubeMiniPlayerRecoveryService : IDisposable
         bool allowSourceTabFallback,
         YouTubeMiniPlayerRecoveryCallbacks callbacks)
     {
-        var recoveryGateEntered = false;
+        IDisposable? lease = null;
         try
         {
-            await Task.Yield();
             SetStage(operation, YouTubeMiniPlayerRecoveryStage.WaitingForConfirmation, reason, callbacks);
             if (confirmationDelay > TimeSpan.Zero)
             {
                 await Task.Delay(confirmationDelay, operation.Cancellation.Token);
             }
 
-            await _recoveryGate.WaitAsync(operation.Cancellation.Token);
-            recoveryGateEntered = true;
-
-            if (!await callbacks.ConfirmFailureAsync(operation.Cancellation.Token))
-            {
-                return YouTubeMiniPlayerRecoveryResult.NotNeeded;
-            }
-
-            SetStage(operation, YouTubeMiniPlayerRecoveryStage.CapturingState, reason, callbacks);
-            var snapshot = await callbacks.CaptureStateAsync(operation.Cancellation.Token);
-
-            if (!skipCurrentWebViewReload)
-            {
-                SetStage(operation, YouTubeMiniPlayerRecoveryStage.ReloadingCurrentWebView, reason, callbacks);
-                if (await TryRunStageAsync(
-                        token => callbacks.ReloadCurrentWebViewAsync(snapshot, token),
-                        operation.Cancellation.Token))
-                {
-                    return YouTubeMiniPlayerRecoveryResult.RecoveredByReload;
-                }
-            }
-
-            SetStage(operation, YouTubeMiniPlayerRecoveryStage.RecreatingWebView, reason, callbacks);
-            if (await TryRunStageAsync(
-                    token => callbacks.RecreateWebViewAsync(snapshot, token),
-                    operation.Cancellation.Token))
-            {
-                return YouTubeMiniPlayerRecoveryResult.RecoveredByRecreate;
-            }
-
-            if (!allowSourceTabFallback)
-            {
-                return YouTubeMiniPlayerRecoveryResult.Failed;
-            }
-
-            SetStage(operation, YouTubeMiniPlayerRecoveryStage.OpeningSourceTab, reason, callbacks);
-            return await TryRunStageAsync(
-                    token => callbacks.OpenSourceTabAsync(snapshot, token),
-                    operation.Cancellation.Token)
-                ? YouTubeMiniPlayerRecoveryResult.SourceTabOpened
-                : YouTubeMiniPlayerRecoveryResult.Failed;
+            lease = await _recoveryQueue.EnterAsync(operation.Cancellation.Token);
+            return await RunBoundedAsync(
+                token => ExecuteStagesAsync(operation, reason, skipCurrentWebViewReload, allowSourceTabFallback, callbacks, token),
+                TimeSpan.FromSeconds(45), operation.Cancellation.Token);
+        }
+        catch (TimeoutException)
+        {
+            operation.Cancellation.Cancel();
+            callbacks.AbortUnresponsiveTarget?.Invoke();
+            return YouTubeMiniPlayerRecoveryResult.Failed;
         }
         catch (OperationCanceledException) when (operation.Cancellation.IsCancellationRequested)
         {
@@ -334,35 +312,109 @@ internal sealed class YouTubeMiniPlayerRecoveryService : IDisposable
         }
         finally
         {
-            if (recoveryGateEntered)
-            {
-                _recoveryGate.Release();
-            }
-
+            lease?.Dispose();
             lock (_sync)
             {
-                if (_operations.TryGetValue(miniPlayerId, out var current)
-                    && ReferenceEquals(operation, current))
-                {
+                if (_operations.TryGetValue(miniPlayerId, out var current) && ReferenceEquals(operation, current))
                     _operations.Remove(miniPlayerId);
-                }
             }
-
             operation.Cancellation.Dispose();
         }
     }
 
-    private static async Task<bool> TryRunStageAsync(
+    private async Task<YouTubeMiniPlayerRecoveryResult> ExecuteStagesAsync(RecoveryOperation operation, string reason,
+        bool skipCurrentWebViewReload, bool allowSourceTabFallback, YouTubeMiniPlayerRecoveryCallbacks callbacks,
+        CancellationToken token)
+    {
+        if (!await RunBoundedAsync(callbacks.ConfirmFailureAsync, TimeSpan.FromSeconds(15), token))
+        {
+            return YouTubeMiniPlayerRecoveryResult.NotNeeded;
+        }
+
+        SetStage(operation, YouTubeMiniPlayerRecoveryStage.CapturingState, reason, callbacks);
+        var fallback = callbacks.GetFallbackState?.Invoke();
+        YouTubeMiniPlayerPlaybackStateSnapshot snapshot;
+        try { snapshot = await RunBoundedAsync(callbacks.CaptureStateAsync, TimeSpan.FromSeconds(5), token); }
+        catch (TimeoutException) when (callbacks.GetFallbackState is not null)
+        {
+            callbacks.AbortUnresponsiveTarget?.Invoke();
+            snapshot = fallback!.Value;
+        }
+
+        if (!skipCurrentWebViewReload)
+        {
+            SetStage(operation, YouTubeMiniPlayerRecoveryStage.ReloadingCurrentWebView, reason, callbacks);
+            if (await TryRunStageAsync(
+                    token => callbacks.ReloadCurrentWebViewAsync(snapshot, token),
+                    token, callbacks.AbortUnresponsiveTarget))
+            {
+                return YouTubeMiniPlayerRecoveryResult.RecoveredByReload;
+            }
+        }
+
+        SetStage(operation, YouTubeMiniPlayerRecoveryStage.RecreatingWebView, reason, callbacks);
+        if (await TryRunStageAsync(
+                token => callbacks.RecreateWebViewAsync(snapshot, token),
+                token, callbacks.AbortUnresponsiveTarget))
+        {
+            return YouTubeMiniPlayerRecoveryResult.RecoveredByRecreate;
+        }
+
+        if (!allowSourceTabFallback)
+        {
+            return YouTubeMiniPlayerRecoveryResult.Failed;
+        }
+
+        SetStage(operation, YouTubeMiniPlayerRecoveryStage.OpeningSourceTab, reason, callbacks);
+        return await TryRunStageAsync(
+                token => callbacks.OpenSourceTabAsync(snapshot, token),
+                token, callbacks.AbortUnresponsiveTarget)
+            ? YouTubeMiniPlayerRecoveryResult.SourceTabOpened
+            : YouTubeMiniPlayerRecoveryResult.Failed;
+    }
+
+    private async Task<T> RunBoundedAsync<T>(Func<CancellationToken, Task<T>> execute, TimeSpan timeout, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        using var stage = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var task = execute(stage.Token);
+        try
+        {
+            await _wait(task, timeout, token);
+            token.ThrowIfCancellationRequested();
+            return await task;
+        }
+        catch
+        {
+            stage.Cancel();
+            ObserveLateCompletion(task);
+            throw;
+        }
+    }
+
+    // 期限切れのネイティブ処理は継続し得る。Windowには触れず、遅延した失敗だけを観測する。
+    internal static void ObserveLateCompletion(Task task)
+    {
+        _ = task.ContinueWith(failed => _ = failed.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    private async Task<bool> TryRunStageAsync(
         Func<CancellationToken, Task<bool>> execute,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Action? abort)
     {
         try
         {
-            return await execute(cancellationToken);
+            return await RunBoundedAsync(execute, TimeSpan.FromSeconds(20), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (TimeoutException)
+        {
+            abort?.Invoke();
+            return false;
         }
         catch
         {

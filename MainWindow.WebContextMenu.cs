@@ -21,6 +21,7 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
     private readonly PageContextMenuController _pageContextMenuController;
     private BrowserTab? _pageContextMenuGestureSourceTab;
     private long? _pageContextMenuGestureInteractionId;
+    private double _pageContextMenuGestureZoomFactor = 1;
     private bool _suppressWorkspaceRightClickUntilRelease;
     private bool _suppressRightWheelContextMenuOnce;
 
@@ -173,7 +174,8 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
             GetJsonString(root, "selectedText"),
             GetJsonBool(root, "isEditable"),
             GetJsonDouble(root, "x"),
-            GetJsonDouble(root, "y"));
+            GetJsonDouble(root, "y"),
+            GetJsonBool(root, "isYouTubeVideo"));
     }
 
     private void ShowPageContextMenu(
@@ -184,7 +186,8 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
         string? selectedText,
         bool isEditable,
         double? clientX,
-        double? clientY)
+        double? clientY,
+        bool isYouTubeVideo = false)
     {
         if (!_tabs.Contains(sourceTab) || GetTabWebView(sourceTab) is not { } webView)
         {
@@ -207,7 +210,7 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
                 ? linkUri
                 : null;
             return new PageContextMenuTarget(
-                normalizedPageUri, normalizedLinkUri, miniPlayerLinkUri, linkText, selectedText, isEditable);
+                normalizedPageUri, normalizedLinkUri, miniPlayerLinkUri, linkText, selectedText, isEditable, isYouTubeVideo);
         });
     }
 
@@ -230,6 +233,9 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
             return false;
         }
 
+        var allowYouTubeContextMenu = _pageContextMenuController.CanOpenYouTubeContextMenu;
+        var zoomFactor = allowYouTubeContextMenu ? webView.ZoomFactor : 1;
+        if (!double.IsFinite(zoomFactor) || zoomFactor <= 0) zoomFactor = 1;
         var interaction = s_inputInteractionHub.TryBegin(
             InputInteractionKind.PageGesture,
             _workspaceWindowId,
@@ -242,8 +248,10 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
 
         _pageContextMenuGestureSourceTab = sourceTab;
         _pageContextMenuGestureInteractionId = currentInteraction.Id;
+        _pageContextMenuGestureZoomFactor = zoomFactor;
         menu.IsOpen = false;
-        _ = StartPageContextMenuGestureAsync(sourceTab, clientPoint, currentInteraction.Id);
+        var gesturePoint = new Point(clientPoint.X / zoomFactor, clientPoint.Y / zoomFactor);
+        _ = StartPageContextMenuGestureAsync(sourceTab, gesturePoint, currentInteraction.Id, allowYouTubeContextMenu);
         return true;
     }
 
@@ -257,6 +265,8 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
 
         _pageContextMenuGestureSourceTab = null;
         _pageContextMenuGestureInteractionId = null;
+        var zoomFactor = _pageContextMenuGestureZoomFactor;
+        _pageContextMenuGestureZoomFactor = 1;
         if (!_tabs.Contains(sourceTab)
             || GetTabWebView(sourceTab) is not { } webView
             || webView.CoreWebView2 is null)
@@ -265,27 +275,33 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
         }
 
         var clientPoint = webView.PointFromScreen(new Point(screenPoint.X, screenPoint.Y));
-        _ = FinishPageContextMenuGestureAsync(sourceTab, clientPoint, interactionId);
+        var gesturePoint = new Point(clientPoint.X / zoomFactor, clientPoint.Y / zoomFactor);
+        _ = FinishPageContextMenuGestureAsync(sourceTab, gesturePoint, interactionId);
     }
 
     private async Task StartPageContextMenuGestureAsync(
         BrowserTab sourceTab,
         Point clientPoint,
-        long interactionId)
+        long interactionId,
+        bool allowYouTubeContextMenu)
     {
+        var webMessageToken = GetTabGestureHostWebMessageToken(sourceTab);
         if (GetTabWebView(sourceTab)?.CoreWebView2 is not { } core
-            || string.IsNullOrWhiteSpace(GetTabWebMessageToken(sourceTab)))
+            || string.IsNullOrWhiteSpace(webMessageToken))
         {
             s_inputInteractionHub.TryComplete(interactionId);
             return;
         }
 
-        var token = JsonSerializer.Serialize(GetTabWebMessageToken(sourceTab));
+        var token = JsonSerializer.Serialize(webMessageToken);
         var x = clientPoint.X.ToString(CultureInfo.InvariantCulture);
         var y = clientPoint.Y.ToString(CultureInfo.InvariantCulture);
         try
         {
-            var result = await core.ExecuteScriptAsync($"window.__tabBrowserGestureHostStartAt?.({token}, {x}, {y});");
+            var script = allowYouTubeContextMenu
+                ? $"window.__tabBrowserGestureHostStartAt?.({token}, {x}, {y}, true);"
+                : $"window.__tabBrowserGestureHostStartAt?.({token}, {x}, {y});";
+            var result = await core.ExecuteScriptAsync(script);
             if (!string.Equals(result, "true", StringComparison.Ordinal)
                 || !s_inputInteractionHub.IsCurrent(interactionId))
             {
@@ -309,14 +325,15 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
         Point clientPoint,
         long interactionId)
     {
+        var webMessageToken = GetTabGestureHostWebMessageToken(sourceTab);
         if (GetTabWebView(sourceTab)?.CoreWebView2 is not { } core
-            || string.IsNullOrWhiteSpace(GetTabWebMessageToken(sourceTab)))
+            || string.IsNullOrWhiteSpace(webMessageToken))
         {
             s_inputInteractionHub.TryComplete(interactionId);
             return;
         }
 
-        var token = JsonSerializer.Serialize(GetTabWebMessageToken(sourceTab));
+        var token = JsonSerializer.Serialize(webMessageToken);
         var x = clientPoint.X.ToString(CultureInfo.InvariantCulture);
         var y = clientPoint.Y.ToString(CultureInfo.InvariantCulture);
         try
@@ -335,12 +352,14 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
 
     private void CancelInputInteractionForTab(BrowserTab tab)
     {
+        _superDragCoordinator.Cancel(tab.Id);
         _pageContextMenuController.CloseForTab(tab);
 
         if (ReferenceEquals(_pageContextMenuGestureSourceTab, tab))
         {
             _pageContextMenuGestureSourceTab = null;
             _pageContextMenuGestureInteractionId = null;
+            _pageContextMenuGestureZoomFactor = 1;
         }
 
         ResetNativeWebGestureForTab(tab);

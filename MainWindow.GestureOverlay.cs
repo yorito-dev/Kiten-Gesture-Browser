@@ -1,7 +1,9 @@
+using System.Text.Json;
 using System.Threading;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
 using TabBrowser.Models;
 using TabBrowser.Services;
 using TabBrowser.Views;
@@ -17,6 +19,8 @@ public partial class MainWindow : IPageGestureVisualHost, INativeWebGestureHost
     private int _pageGesturePendingDeviceY;
     private int _pageGestureUpdateQueued;
     private readonly NativeWebGestureController _nativeWebGestureController;
+    private readonly SuperDragCoordinator _superDragCoordinator = new();
+    private SuperDragSearchMenu? _superDragSearchMenu;
 
     bool INativeWebGestureHost.ContainsTab(BrowserTab tab) => _tabs.Contains(tab);
 
@@ -218,6 +222,11 @@ public partial class MainWindow : IPageGestureVisualHost, INativeWebGestureHost
         if (replaced.Kind == InputInteractionKind.PageContextMenu
             && _pageContextMenuController.CloseForReplacedInteraction(replaced.Id))
         {
+            return;
+        }
+        if (replaced.Kind == InputInteractionKind.PageContextMenu && _superDragSearchMenu?.InteractionId == replaced.Id)
+        {
+            _superDragSearchMenu.Dispose();
             return;
         }
 
@@ -593,4 +602,82 @@ public partial class MainWindow : IPageGestureVisualHost, INativeWebGestureHost
 
     private void ClosePageGestureOverlayWindow()
         => _pageGestureVisualController.ClosePageGestureOverlayWindow();
+
+    private void HandleSuperDragMessage(BrowserTab sourceTab, CoreWebView2WebMessageReceivedEventArgs args, JsonElement message)
+    {
+        if (_isClosingWindow || !ReferenceEquals(ActiveTab, sourceTab) || !_tabs.Contains(sourceTab)
+            || sourceTab.IsLoading || GetTabGestureHostWebMessageToken(sourceTab) is null
+            || GetTabWebView(sourceTab)?.CoreWebView2 is not { } core)
+        {
+            _superDragCoordinator.Cancel(sourceTab.Id);
+            return;
+        }
+        var superDrag = SuperDragSettingsProfile.Normalize(_settings.SuperDrag);
+        var operation = _superDragCoordinator.Receive(sourceTab.Id, core, core.Source, args.Source, message, superDrag);
+        if (operation is null) return;
+        if (operation.Action == "Copy")
+        {
+            if (operation.Kind == "text") CopySelectedText(operation.Value);
+            else CopyContextLink(LinkCopyFormat.Url, operation.Value, null, "URLをコピーしました");
+            return;
+        }
+        if (operation.Action == "CopyMarkdown")
+        {
+            CopyContextLink(LinkCopyFormat.Markdown, operation.Value, operation.LinkText, "リンクをMarkdown形式でコピーしました");
+            return;
+        }
+        if (operation.Action == "Translate") { OpenContextMenuTranslation(sourceTab, operation.Value, null); return; }
+        if (operation.Action is "ChooseSearchForeground" or "ChooseSearchBackground")
+        {
+            var selection = _superDragCoordinator.BeginSearchSelection(sourceTab.Id, core, core.Source, operation, superDrag,
+                _addressService.CreateSearchUrl, SearchSelectedTextMaxLength);
+            var interaction = s_inputInteractionHub.TryBegin(InputInteractionKind.PageContextMenu,
+                _workspaceWindowId, sourceTab.Id, DateTimeOffset.Now);
+            if (!interaction.Accepted || interaction.Current is not { } currentInteraction)
+            {
+                _superDragCoordinator.CloseSearchSelection(selection.Id);
+                return;
+            }
+            var menu = new SuperDragSearchMenu(_superDragCoordinator, selection, action =>
+            {
+                var isCurrentDocument = s_inputInteractionHub.IsCurrent(currentInteraction.Id) && !_isClosingWindow
+                    && !_windowShutdownCoordinator.IsStarted && IsVisible && WindowState != WindowState.Minimized
+                    && ReferenceEquals(ActiveTab, sourceTab) && _tabs.Contains(sourceTab)
+                    && !sourceTab.IsLoading && GetTabGestureHostWebMessageToken(sourceTab) is not null;
+                if (!isCurrentDocument) { _superDragCoordinator.Cancel(sourceTab.Id); return null; }
+                var currentCore = GetTabWebView(sourceTab)?.CoreWebView2;
+                if (currentCore is null) { _superDragCoordinator.Cancel(sourceTab.Id); return null; }
+                return _superDragCoordinator.TakeSearchSelection(selection.Id, sourceTab.Id, currentCore, currentCore.Source,
+                    isCurrentDocument,
+                    SuperDragSettingsProfile.Normalize(_settings.SuperDrag), _addressService.CreateSearchUrl,
+                    SearchSelectedTextMaxLength, action);
+            }, navigation => OpenSuperDragNavigation(sourceTab, navigation), s_inputInteractionHub, currentInteraction.Id);
+            _superDragSearchMenu = menu;
+            menu.Show(this);
+            return;
+        }
+        var navigation = SuperDragCoordinator.CreateNavigation(operation, _addressService.CreateSearchUrl, SearchSelectedTextMaxLength,
+            superDrag.CustomSearchProviders);
+        if (navigation is null)
+        {
+            SetStatus("実行できるHTTP／HTTPSのURLがありません", autoClear: true);
+            return;
+        }
+        OpenSuperDragNavigation(sourceTab, navigation);
+    }
+
+    private void OpenSuperDragNavigation(BrowserTab sourceTab, SuperDragNavigation navigation)
+    {
+        if (navigation.Disposition == "NewWindow") { OpenLinkInNewWindow(sourceTab, navigation.Url, null); return; }
+        if (navigation.Disposition == "SplitRight") { QueueWebContextRightSplitOpen(sourceTab, navigation.Url); return; }
+        if (navigation.Disposition == "SplitBottom") { QueueWebContextBottomSplitOpen(sourceTab, navigation.Url); return; }
+        var opened = OpenBackgroundTabNextTo(sourceTab, navigation.Url, title: navigation.Title);
+        if (navigation.Disposition == "Foreground")
+        {
+            SelectTab(opened);
+            QueueSelectedTabActivation();
+        }
+        if (navigation.Title is not null)
+            SetStatus(navigation.Title + "を" + (navigation.Disposition == "Foreground" ? "前面タブ" : "裏タブ") + "で開きました", autoClear: true);
+    }
 }

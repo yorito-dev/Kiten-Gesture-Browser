@@ -29,6 +29,8 @@ public sealed class AppSettings
 
     public List<GestureMappingSettings> GestureMappings { get; set; } = GestureSettingsCatalog.CreateDefaultMappings();
 
+    public SuperDragSettings SuperDrag { get; set; } = new();
+
     public bool EnableFocusedViewingCpuSaver { get; set; } = true;
 
     public double FocusedViewingCpuSaverDelaySeconds { get; set; } = 60;
@@ -40,6 +42,8 @@ public sealed class AppSettings
     public BrowsingHistorySettings BrowsingHistory { get; set; } = new();
 
     public SitePrivacySettings SitePrivacy { get; set; } = new();
+
+    public AdBlockingSettings AdBlocking { get; set; } = new();
 
     public bool EnableBrowserExtensions { get; set; } = true;
 
@@ -1054,7 +1058,7 @@ internal static class PublicSettingsCompatibility
         "enableOnePasswordIntegration", "onePasswordCliPath", "ytDlpPath",
         "enableYouTubePoTokenProvider", "youTubePoTokenPluginDirectory",
         "youTubePoTokenProviderBaseUrl", "useMwebClient",
-        "chatGptReadability", "fiveChLiveReadability", "enableXReadableMode"
+        "chatGptReadability", "fiveChLiveReadability", "enableXReadableMode", "youTubeFavoriteLive"
     ];
 
     internal static readonly string[] ToolbarKeys = ["showOnePasswordCandidateButton"];
@@ -1376,6 +1380,14 @@ public static class GestureSettingsCatalog
         new("ToggleWorkspace", "Workspace OS を開く／元のタブへ戻る"),
         new("ShowWorkspaceWindow", "Workspace OS を別ウィンドウで開く")
     ];
+
+    public static void ApplyEditingResult(AppSettings target, AppSettings result)
+    {
+        target.GestureStartThreshold = result.GestureStartThreshold;
+        target.GestureDirectionThreshold = result.GestureDirectionThreshold;
+        target.PreserveContextMenuOnShortRightClick = result.PreserveContextMenuOnShortRightClick;
+        target.GestureMappings = NormalizeMappings(result.GestureMappings);
+    }
 
     public static List<GestureMappingSettings> CreateDefaultMappings()
     {

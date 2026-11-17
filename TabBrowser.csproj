@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.1.0-preview.6</KitenReleaseVersion>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.2.0-preview.1</KitenReleaseVersion>
     <KitenReleaseClass Condition="'$(KitenReleaseClass)' == ''">Preview</KitenReleaseClass>
     <KitenBuildVerification Condition="'$(KitenBuildVerification)' == ''">unverified</KitenBuildVerification>
     <KitenDistributionPageUrl Condition="'$(KitenDistributionPageUrl)' == ''" />
@@ -33,7 +33,7 @@
   <ItemGroup>
     <Content Include="Scripts\GestureHost.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Help\user-guide.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="docs\images\user-guide\**\*" Exclude="docs\images\user-guide\07-youtube-mini-player.png;docs\images\user-guide\07b-youtube-mini-player-controls.png;docs\images\user-guide\08-mini-player-list.png">
+    <Content Include="docs\images\user-guide\**\*" Exclude="docs\images\user-guide\07-youtube-mini-player.png;docs\images\user-guide\07b-youtube-mini-player-controls.png;docs\images\user-guide\08-mini-player-list.png;docs\images\user-guide\10-settings-categories.png">
       <Link>Help\images\user-guide\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <TargetPath>Help\images\user-guide\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -83,6 +83,7 @@ public sealed class DownloadService
             BytesReceived = operation.BytesReceived,
             TotalBytesToReceive = NormalizeByteCount(operation.TotalBytesToReceive),
             CanResumeOperation = operation.CanResume,
+            CanPauseOperation = true,
             IsDangerous = safety.ShouldWarn,
             SafetyWarning = safety.WarningText,
             StartedAt = DateTimeOffset.Now

@@ -162,7 +162,9 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
 
     public bool HasThumbnail => !IsFolder && Thumbnail is not null;
 
-    public bool ShowFallbackIcon => !IsFolder && !IsSplitSession && !HasDisplayFavicon;
+    public bool ShowFallbackIcon => !IsFolder && !IsSplitSession && !ShowApplicationBadge && !HasDisplayFavicon;
+
+    public bool ShowApplicationFallbackIcon => ShowApplicationBadge && !HasDisplayFavicon;
 
     public IReadOnlyList<SessionTab> PrimarySplitTabs => GetPrimarySplitTabs();
 
@@ -227,6 +229,10 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
 
     public bool IsShellDirectory => Item is ShellItem { Kind: ShellItemKind.Directory };
 
+    public bool ShowApplicationBadge => Item is ShellItem { Kind: ShellItemKind.Application };
+
+    public bool ShowShortcutBadge => Item is ShellItem { Kind: ShellItemKind.Shortcut };
+
     public bool ShowPhysicalDirectoryBadge => Item is ShellItem
     {
         Kind: ShellItemKind.Directory,
@@ -285,7 +291,8 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
             WorkspaceItemType.SessionGroup => "S",
             WorkspaceItemType.YouTubeMiniPlayerSet => "YT",
             WorkspaceItemType.Note => "N",
-            WorkspaceItemType.ShellItem => Item is ShellItem { Kind: ShellItemKind.Directory } ? "D" : "F",
+            WorkspaceItemType.ShellItem => Item is ShellItem { Kind: ShellItemKind.Application } ? "APP"
+                : Item is ShellItem { Kind: ShellItemKind.Directory } ? "D" : "F",
             _ => "L"
         };
 
@@ -518,6 +525,7 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasFavicon));
         OnPropertyChanged(nameof(HasDisplayFavicon));
         OnPropertyChanged(nameof(ShowFallbackIcon));
+        OnPropertyChanged(nameof(ShowApplicationFallbackIcon));
         OnPropertyChanged(nameof(SiteIconText));
         OnPropertyChanged(nameof(SiteIconBackground));
     }
@@ -601,6 +609,10 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
         RefreshShellState();
         OnPropertyChanged(nameof(TargetPath));
         OnPropertyChanged(nameof(IsShellDirectory));
+        OnPropertyChanged(nameof(ShowApplicationBadge));
+        OnPropertyChanged(nameof(ShowShortcutBadge));
+        OnPropertyChanged(nameof(ShowApplicationFallbackIcon));
+        OnPropertyChanged(nameof(ShowFallbackIcon));
         OnPropertyChanged(nameof(ShowPhysicalDirectoryBadge));
         OnPropertyChanged(nameof(ShowFolderTabDirectoryBadge));
         OnPropertyChanged(nameof(TypeLabel));

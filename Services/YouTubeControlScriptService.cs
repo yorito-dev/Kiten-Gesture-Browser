@@ -261,11 +261,13 @@ public static class YouTubeControlScriptService
         int lowWidthThreshold = YouTubeMiniPlayerQualitySettingsProfile.DefaultLowWidthThreshold,
         int highWidthThreshold = YouTubeMiniPlayerQualitySettingsProfile.DefaultHighWidthThreshold)
     {
-        var qualityCap = ResolveMiniPlayerQualityCap(
-            displayWidth,
-            isFullScreen,
-            lowWidthThreshold,
-            highWidthThreshold);
+        var qualityCap = isEnabled
+            ? ResolveMiniPlayerQualityCap(
+                displayWidth,
+                isFullScreen,
+                lowWidthThreshold,
+                highWidthThreshold)
+            : "highres";
         var serializedQualityCap = JsonSerializer.Serialize(qualityCap);
         var serializedEnabled = JsonSerializer.Serialize(isEnabled);
         return $$"""
@@ -275,21 +277,12 @@ public static class YouTubeControlScriptService
                 const enabled = {{serializedEnabled}};
                 const requestedQualityCap = {{serializedQualityCap}};
                 const existing = window[bridgeKey];
-                if (!enabled) {
-                    if (existing?.appliedByBridge && !existing.manualVideoIdentity) {
-                        existing.releaseRange?.();
-                    }
-                    existing?.dispose?.();
-                    delete window[bridgeKey];
-                    return { ok: true, enabled: false };
-                }
-
                 if (existing?.version === bridgeVersion) {
                     existing.qualityCap = requestedQualityCap;
                     existing.tryApply?.();
                     return {
                         ok: true,
-                        enabled: true,
+                        enabled,
                         installed: false,
                         qualityCap: requestedQualityCap,
                         manual: Boolean(existing.manualVideoIdentity)
@@ -305,6 +298,7 @@ public static class YouTubeControlScriptService
                     version: bridgeVersion,
                     qualityCap: requestedQualityCap,
                     appliedKey: "",
+                    appliedQuality: "",
                     appliedByBridge: false,
                     manualVideoIdentity: "",
                     lastVideoIdentity: "",
@@ -338,6 +332,7 @@ public static class YouTubeControlScriptService
                     }
                     state.appliedByBridge = false;
                     state.appliedKey = "";
+                    state.appliedQuality = "";
                 };
                 state.tryApply = () => {
                     const video = document.querySelector("video");
@@ -354,22 +349,24 @@ public static class YouTubeControlScriptService
                         state.lastVideoIdentity = videoIdentity;
                         state.manualVideoIdentity = "";
                         state.appliedKey = "";
+                        state.appliedQuality = "";
                         state.appliedByBridge = false;
                     }
                     if (state.manualVideoIdentity === videoIdentity) {
                         return true;
                     }
 
-                    const appliedKey = `${videoIdentity}|${state.qualityCap}`;
-                    if (state.appliedKey === appliedKey) {
-                        return true;
-                    }
                     const available = typeof player.getAvailableQualityLevels === "function"
                         ? player.getAvailableQualityLevels()
                         : [];
                     const quality = selectQuality(available);
                     if (!quality) {
                         return false;
+                    }
+                    const appliedKey = `${videoIdentity}|${state.qualityCap}`;
+                    if (state.appliedKey === appliedKey
+                        && qualityOrder.indexOf(quality) >= qualityOrder.indexOf(state.appliedQuality)) {
+                        return true;
                     }
                     if (typeof player.setPlaybackQualityRange === "function") {
                         player.setPlaybackQualityRange(quality, quality);
@@ -378,6 +375,7 @@ public static class YouTubeControlScriptService
                         player.setPlaybackQuality(quality);
                     }
                     state.appliedKey = appliedKey;
+                    state.appliedQuality = quality;
                     state.appliedByBridge = true;
                     return true;
                 };
@@ -422,7 +420,7 @@ public static class YouTubeControlScriptService
                 state.tryApply();
                 return {
                     ok: true,
-                    enabled: true,
+                    enabled,
                     installed: true,
                     qualityCap: requestedQualityCap,
                     manual: false
@@ -837,6 +835,13 @@ public static class YouTubeControlScriptService
             """;
     }
 
+    public static string BuildMiniPlayerPageZoomScript(double zoomFactor)
+    {
+        var zoom = double.IsFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
+        return "document.documentElement.setAttribute('data-tabbrowser-mini-player-page-zoom', "
+            + JsonSerializer.Serialize(zoom) + ");";
+    }
+
     public static string BuildMiniPlayerWatchPageScript()
     {
         return BuildMiniPlayerWatchPageScript(string.Empty);
@@ -994,6 +999,13 @@ public static class YouTubeControlScriptService
                     html[data-tabbrowser-mini-player-content-cursor="grabbing"] .html5-video-player,
                     html[data-tabbrowser-mini-player-content-cursor="grabbing"] video {
                         cursor: grabbing !important;
+                    }
+
+                    html[data-tabbrowser-mini-player-resize-cursor],
+                    html[data-tabbrowser-mini-player-resize-cursor] body,
+                    html[data-tabbrowser-mini-player-resize-cursor] .html5-video-player,
+                    html[data-tabbrowser-mini-player-resize-cursor] video {
+                        cursor: var(--tabbrowser-mini-player-resize-cursor) !important;
                     }
 
                     html[data-tabbrowser-mini-player-fullscreen="true"] .ytp-chrome-top,
@@ -1620,7 +1632,7 @@ public static class YouTubeControlScriptService
                 };
 
                 const layoutBridgeKey = "__tabBrowserYouTubeMiniPlayerLayoutBridge";
-                const layoutBridgeVersion = 20;
+                const layoutBridgeVersion = 21;
                 const existingLayoutBridge = window[layoutBridgeKey];
                 if (existingLayoutBridge?.version === layoutBridgeVersion) {
                     existingLayoutBridge.beginVerification?.(true);
@@ -1656,6 +1668,8 @@ public static class YouTubeControlScriptService
                         appliedVideo: null,
                         appliedWidth: 0,
                         appliedHeight: 0,
+                        appliedNaturalWidth: 0,
+                        appliedNaturalHeight: 0,
                         scheduleApply: null,
                         beginVerification: null,
                         setInteractiveResize: null,
@@ -1684,6 +1698,9 @@ public static class YouTubeControlScriptService
                             && layoutState.appliedVideo === video
                             && layoutState.appliedWidth === width
                             && layoutState.appliedHeight === height
+                            // 配信開始で元サイズが確定したときは、同じ要素・外寸でも再適用する。
+                            && layoutState.appliedNaturalWidth === (Number(video?.videoWidth) || 0)
+                            && layoutState.appliedNaturalHeight === (Number(video?.videoHeight) || 0)
                             && !hasLayoutStyleDrift()) {
                             layoutState.layoutVerified = Boolean(player && video) && !hasLayoutStyleDrift();
                             return;
@@ -1696,6 +1713,8 @@ public static class YouTubeControlScriptService
                             layoutState.appliedVideo = getVideo();
                             layoutState.appliedWidth = width;
                             layoutState.appliedHeight = height;
+                            layoutState.appliedNaturalWidth = Number(layoutState.appliedVideo?.videoWidth) || 0;
+                            layoutState.appliedNaturalHeight = Number(layoutState.appliedVideo?.videoHeight) || 0;
                         } finally {
                             // 補正中のstyle書き込みを次の補正理由にしない。
                             layoutState.contentTransformObserver?.takeRecords?.();
@@ -2171,7 +2190,8 @@ public static class YouTubeControlScriptService
                         pointerId: null,
                         startX: 0,
                         startY: 0,
-                        resizeMode: false
+                        resizeMode: false,
+                        resizeEdges: 0
                     };
                     const sendDrag = (phase, event) => {
                         if (!window.chrome?.webview?.postMessage) {
@@ -2181,10 +2201,12 @@ public static class YouTubeControlScriptService
                         window.chrome.webview.postMessage({
                             type: "youtubeMiniPlayerDrag",
                             phase,
-                            resize: state.resizeMode
+                            resize: state.resizeMode,
+                            resizeEdges: state.resizeEdges,
+                            cancelled: phase === "end" && (event?.type === "pointercancel" || event?.type === "lostpointercapture")
                         });
                     };
-                    const isYouTubeInteractiveTarget = target => Boolean(target?.closest?.([
+                    const isYouTubeInteractiveTarget = (target, includeControlsBackground = true) => Boolean(target?.closest?.([
                             "a[href]",
                             "button",
                             "input",
@@ -2194,8 +2216,7 @@ public static class YouTubeControlScriptService
                             "[role='menuitem']",
                             "[role='slider']",
                             "[contenteditable='true']",
-                            ".ytp-chrome-bottom",
-                            ".ytp-chrome-controls",
+                            ...(includeControlsBackground ? [".ytp-chrome-bottom", ".ytp-chrome-controls"] : []),
                             ".ytp-progress-bar-container",
                             ".ytp-progress-bar",
                             ".ytp-volume-area",
@@ -2225,6 +2246,60 @@ public static class YouTubeControlScriptService
                         const controlsHeight = Math.min(96, Math.max(56, bounds.height * 0.18));
                         return event.clientY >= bounds.bottom - controlsHeight;
                     };
+                    const isResizeFullScreen = () => Boolean(document.fullscreenElement)
+                        || document.documentElement.getAttribute("data-tabbrowser-mini-player-fullscreen") === "true";
+                    const getVideoResizeEdges = event => {
+                        if (isResizeFullScreen() || isYouTubeNativeMenuOpen() || isYouTubeInteractiveTarget(event.target, false)) return 0;
+                        const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                        const bounds = player?.getBoundingClientRect?.();
+                        if (!bounds || bounds.width <= 0 || bounds.height <= 0) return 0;
+                        const zoom = Number(document.documentElement.getAttribute("data-tabbrowser-mini-player-page-zoom")) || 1;
+                        const edgeInset = __TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_EDGE_INSET__ / zoom;
+                        const bottomInset = __TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_INSET__ / zoom;
+                        const corner = __TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_CORNER__ / zoom;
+                        const x = event.clientX - bounds.left, y = event.clientY - bounds.top;
+                        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > bounds.width || y > bounds.height) return 0;
+                        // 下辺は掴みやすい10 DIP、それ以外の最外縁は1 DIPだけ広い操作予約領域から分離する。
+                        const atEdge = x < edgeInset || bounds.width - x < edgeInset || y < edgeInset || bounds.height - y < bottomInset;
+                        if (!atEdge && isYouTubeControlsTarget(event)) return 0;
+                        const inset = atEdge ? edgeInset : __TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_INSET__ / zoom;
+                        let left = x < inset, right = bounds.width - x < inset;
+                        let top = y < inset, bottom = bounds.height - y < bottomInset;
+                        if (left || right) { top ||= y < corner; bottom ||= bounds.height - y < corner; }
+                        if (top || bottom) { left ||= x < corner; right ||= bounds.width - x < corner; }
+                        return (left ? 1 : 0) | (top ? 2 : 0) | (right ? 4 : 0) | (bottom ? 8 : 0);
+                    };
+                    let currentResizeCursorEdges = 0;
+                    const setResizeCursor = edges => {
+                        if (edges === currentResizeCursorEdges) return;
+                        currentResizeCursorEdges = edges;
+                        const cursor = ({ 1: "ew-resize", 4: "ew-resize", 2: "ns-resize", 8: "ns-resize",
+                            3: "nwse-resize", 12: "nwse-resize", 6: "nesw-resize", 9: "nesw-resize" })[edges];
+                        if (cursor) {
+                            document.documentElement.style.setProperty("--tabbrowser-mini-player-resize-cursor", cursor);
+                            document.documentElement.setAttribute("data-tabbrowser-mini-player-resize-cursor", "true");
+                        } else {
+                            document.documentElement.removeAttribute("data-tabbrowser-mini-player-resize-cursor");
+                            document.documentElement.style.removeProperty("--tabbrowser-mini-player-resize-cursor");
+                        }
+                    };
+                    let resizeHoverEvent = null;
+                    const updateResizeCursor = event => {
+                        resizeHoverEvent = event;
+                        const hoverEdges = state.dragging ? 0 : getVideoResizeEdges(event);
+                        setResizeCursor(isResizeFullScreen() || (event.buttons & 4) !== 0 ? 0
+                            : state.dragging ? state.resizeEdges || (state.resizeMode ? 12 : 0)
+                            : event.ctrlKey && (hoverEdges || !isYouTubeControlsTarget(event)) ? 12 : hoverEdges);
+                    };
+                    const updateResizeModifier = event => {
+                        if (event.key !== "Control" || !resizeHoverEvent) return;
+                        updateResizeCursor({ target: resizeHoverEvent.target,
+                            clientX: resizeHoverEvent.clientX, clientY: resizeHoverEvent.clientY,
+                            buttons: resizeHoverEvent.buttons, ctrlKey: event.ctrlKey });
+                    };
+                    document.addEventListener("pointerover", updateResizeCursor, true);
+                    document.addEventListener("keydown", updateResizeModifier, true);
+                    document.addEventListener("keyup", updateResizeModifier, true);
                     const isYouTubeEndScreenTarget = target => Boolean(target?.closest?.([
                             ".html5-endscreen",
                             ".ytp-endscreen-content",
@@ -2491,10 +2566,13 @@ public static class YouTubeControlScriptService
                         state.moved = false;
                         state.pointerId = null;
                         state.resizeMode = false;
+                        state.resizeEdges = 0;
+                        setResizeCursor(0);
                         try {
                             document.documentElement.releasePointerCapture(event.pointerId);
                         } catch {
                         }
+                        if (event.type === "pointerup") updateResizeCursor(event);
                     };
 
                     document.addEventListener("pointerdown", (event) => {
@@ -2502,7 +2580,9 @@ public static class YouTubeControlScriptService
                             return;
                         }
 
-                        if (isYouTubeControlsTarget(event)) {
+                        if (isResizeFullScreen()) return;
+                        const resizeEdges = getVideoResizeEdges(event);
+                        if (isYouTubeControlsTarget(event) && !resizeEdges) {
                             return;
                         }
 
@@ -2512,8 +2592,24 @@ public static class YouTubeControlScriptService
                         state.startX = event.screenX;
                         state.startY = event.screenY;
                         state.resizeMode = event.ctrlKey;
+                        state.resizeEdges = event.ctrlKey ? 0 : resizeEdges;
+                        state.resizeMode ||= state.resizeEdges !== 0;
+                        if (state.resizeMode) setResizeCursor(state.resizeEdges || 12);
+                        const playerBounds = (document.getElementById("movie_player") || document.querySelector(".html5-video-player"))?.getBoundingClientRect?.();
+                        const edgeInset = __TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_EDGE_INSET__ / (Number(document.documentElement.getAttribute("data-tabbrowser-mini-player-page-zoom")) || 1);
+                        const bottomInset = __TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_INSET__ / (Number(document.documentElement.getAttribute("data-tabbrowser-mini-player-page-zoom")) || 1);
+                        if (resizeEdges && playerBounds && (event.clientX - playerBounds.left < edgeInset || playerBounds.right - event.clientX < edgeInset
+                            || event.clientY - playerBounds.top < edgeInset || playerBounds.bottom - event.clientY < bottomInset)) {
+                            // 外へ引き始めても通知を失わないよう、従来の外周Thumbと同じく押下時に捕捉・開始する。
+                            state.moved = true;
+                            try { document.documentElement.setPointerCapture(event.pointerId); } catch {}
+                            sendDrag("start", event);
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }
                     }, true);
                     document.addEventListener("pointermove", (event) => {
+                        updateResizeCursor(event);
                         if (!state.dragging || state.pointerId !== event.pointerId) {
                             return;
                         }
@@ -2546,18 +2642,28 @@ public static class YouTubeControlScriptService
                     document.addEventListener("pointercancel", finishDrag, true);
                     document.addEventListener("lostpointercapture", finishDrag, true);
                     window.addEventListener("blur", () => {
+                        resizeHoverEvent = null;
+                        setResizeCursor(0);
                         if (!state.dragging || !state.moved || !window.chrome?.webview?.postMessage) {
                             return;
                         }
 
                         window.chrome.webview.postMessage({
                             type: "youtubeMiniPlayerDrag",
-                            phase: "end"
+                            phase: "end",
+                            cancelled: true
                         });
                         state.dragging = false;
                         state.moved = false;
                         state.pointerId = null;
                         state.resizeMode = false;
+                        state.resizeEdges = 0;
+                        setResizeCursor(0);
+                    });
+
+                    document.addEventListener("pointerleave", () => {
+                        resizeHoverEvent = null;
+                        if (!state.dragging) setResizeCursor(0);
                     });
 
                     const holdSeekState = {
@@ -3176,6 +3282,7 @@ public static class YouTubeControlScriptService
                         finishMiniPlayerRightWheel();
                     });
                     window.addEventListener("pagehide", () => {
+                        setResizeCursor(0);
                         setContentPanCursor("");
                         finishContentPan(null);
                         finishMiniPlayerGesture(null, false);
@@ -3215,6 +3322,18 @@ public static class YouTubeControlScriptService
             """.Replace(
                     "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_MESSAGE_TOKEN__",
                     serializedWebMessageToken,
+                    StringComparison.Ordinal)
+                .Replace(
+                    "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_INSET__",
+                    JsonSerializer.Serialize(YouTubeMiniPlayerInputService.VideoResizeInset),
+                    StringComparison.Ordinal)
+                .Replace(
+                    "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_EDGE_INSET__",
+                    JsonSerializer.Serialize(YouTubeMiniPlayerInputService.VideoResizeEdgeInset),
+                    StringComparison.Ordinal)
+                .Replace(
+                    "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_RESIZE_CORNER__",
+                    JsonSerializer.Serialize(YouTubeMiniPlayerInputService.VideoResizeCornerLength),
                     StringComparison.Ordinal)
                 .Replace(
                     "__TAB_BROWSER_YOUTUBE_MINI_PLAYER_GESTURE_SETTINGS__",
@@ -4689,6 +4808,93 @@ public static class YouTubeControlScriptService
                     looping: Boolean(video.loop),
                     isLive: true
                 };
+            })();
+            """;
+    }
+
+    public static string BuildSeekToLiveEdgeAndWaitScript()
+    {
+        var seekToLiveEdgeScript = BuildSeekToLiveEdgeScript();
+        return $$"""
+            (async () => {
+                const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
+                const video = document.querySelector("video");
+                if (!video) return { ok: false, found: false };
+                const videoId = player?.getVideoData?.()?.video_id;
+                const pageUrl = location.href;
+                const request = {};
+                window.__tabBrowserYouTubeMiniPlayerLiveSeek = request;
+                let userInterrupted = false;
+                const interrupt = event => { if (event.isTrusted) userInterrupted = true; };
+                document.addEventListener("pointerdown", interrupt, true);
+                document.addEventListener("keydown", interrupt, true);
+                const wasPaused = Boolean(video.paused);
+                const seek = () => {
+                    const result = {{seekToLiveEdgeScript}};
+                    // 純正ライブボタンが再生を始めても、確認・再試行中の一時停止を保つ。
+                    if (wasPaused && !video.paused) video.pause();
+                    return result;
+                };
+                try {
+                    let result = seek();
+                    if (!result.ok && result.reason !== "live-edge-unavailable") return result;
+                    const expectedPaused = Boolean(video.paused);
+                    const deadline = Date.now() + 4000;
+                    let nextAttemptAt = Date.now() + 1000;
+                    let attempts = 1;
+                    // 明示操作中だけ最大4秒確認し、未到達なら最大3回まで移動する。
+                    for (let check = 0; check < 16; check++) {
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        if (userInterrupted || window.__tabBrowserYouTubeMiniPlayerLiveSeek !== request
+                            || Boolean(video.paused) !== expectedPaused) {
+                            return { ok: false, found: true, reason: "live-edge-cancelled" };
+                        }
+                        if (document.querySelector("video") !== video || location.href !== pageUrl
+                            || (document.getElementById("movie_player") || document.querySelector(".html5-video-player")) !== player
+                            || player?.getVideoData?.()?.video_id !== videoId) {
+                            return { ok: false, found: true, reason: "live-target-changed" };
+                        }
+                        if ({{AdvertisementPlayingExpression}}) {
+                            return { ok: false, found: true, skipped: true, reason: "advertisement" };
+                        }
+                        const broadcast = player?.getPlayerResponse?.()?.microformat
+                            ?.playerMicroformatRenderer?.liveBroadcastDetails;
+                        if (broadcast?.endTimestamp) return { ok: false, found: true, reason: "not-live", isLive: false };
+
+                        const seekable = video.seekable;
+                        const liveEdge = seekable?.length > 0 ? Number(seekable.end(seekable.length - 1)) : Number.NaN;
+                        const position = Number(video.currentTime);
+                        const liveBadge = player?.querySelector(".ytp-live-badge")
+                            || document.querySelector(".ytp-live-badge");
+                        const liveHeadConfirmed = !liveBadge
+                            || liveBadge.classList.contains("ytp-live-badge-is-livehead");
+                        // 指示先の値や古いバッジだけで成功にせず、実際の位置と純正表示を確認する。
+                        if (!video.seeking && Number.isFinite(liveEdge) && liveEdge >= 0
+                            && Number.isFinite(position) && Math.abs(liveEdge - position) <= 2 && liveHeadConfirmed) {
+                            return {
+                                ok: true, found: true, position,
+                                duration: Number.isFinite(video.duration) ? video.duration : 0,
+                                paused: Boolean(video.paused), muted: Boolean(video.muted),
+                                volume: Number(video.volume) || 0, speed: Number(video.playbackRate) || 1,
+                                looping: Boolean(video.loop), isLive: true
+                            };
+                        }
+                        if (Date.now() >= deadline) break;
+                        if (Date.now() >= nextAttemptAt && attempts < 3 && !video.seeking) {
+                            attempts++;
+                            nextAttemptAt = Date.now() + 1000;
+                            result = seek();
+                            if (!result.ok && result.reason !== "live-edge-unavailable") return result;
+                        }
+                    }
+                    return { ok: false, found: true, reason: "live-edge-timeout", isLive: true };
+                } finally {
+                    document.removeEventListener("pointerdown", interrupt, true);
+                    document.removeEventListener("keydown", interrupt, true);
+                    if (window.__tabBrowserYouTubeMiniPlayerLiveSeek === request) {
+                        delete window.__tabBrowserYouTubeMiniPlayerLiveSeek;
+                    }
+                }
             })();
             """;
     }

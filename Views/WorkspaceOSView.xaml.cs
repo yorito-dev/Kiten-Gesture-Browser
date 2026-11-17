@@ -34,6 +34,7 @@ public partial class WorkspaceOSView : UserControl, IDisposable
     private Button? _workspaceDragHoverButton;
     private bool _workspaceDragHoverSwitching;
     private bool _initialized;
+    private Task? _initializationTask;
     private QuickLookSettings _quickLookSettings = QuickLookSettingsProfile.Normalize(null);
     private readonly SearchQuickLookItemSource _searchQuickLookSource;
     private readonly InboxQuickLookItemSource _inboxQuickLookSource;
@@ -410,6 +411,49 @@ public partial class WorkspaceOSView : UserControl, IDisposable
         return WorkspaceCanvas.TrySaveDroppedTabs(tabs, pointInCanvas);
     }
 
+    public bool TrySaveDroppedTabsAtDefaultPosition(IReadOnlyList<CapturedTabSnapshot> tabs)
+    {
+        if (_isDisposed || tabs.Count == 0 || DataContext is not WorkspaceOSViewModel viewModel)
+        {
+            return false;
+        }
+
+        if (viewModel.CurrentWorkspace is not null)
+        {
+            return viewModel.TrySaveDroppedTabsAtDefaultPosition(tabs);
+        }
+
+        if (_initialized)
+        {
+            return false;
+        }
+
+        _ = SaveDroppedTabsAfterInitializationAsync(viewModel, tabs);
+        return true;
+    }
+
+    private async Task SaveDroppedTabsAfterInitializationAsync(
+        WorkspaceOSViewModel viewModel,
+        IReadOnlyList<CapturedTabSnapshot> tabs)
+    {
+        await EnsureInitializedAsync(viewModel);
+        if (!_isDisposed)
+        {
+            viewModel.TrySaveDroppedTabsAtDefaultPosition(tabs);
+        }
+    }
+
+    private async Task EnsureInitializedAsync(WorkspaceOSViewModel viewModel)
+    {
+        _initializationTask ??= viewModel.InitializeAsync();
+        await _initializationTask;
+        if (!_initialized && !_isDisposed)
+        {
+            _initialized = true;
+            viewModel.StartWorkspacePreload();
+        }
+    }
+
     private void FocusShortcutScopeCore()
     {
         FocusManager.SetFocusedElement(FocusManager.GetFocusScope(this), this);
@@ -429,17 +473,8 @@ public partial class WorkspaceOSView : UserControl, IDisposable
             return;
         }
 
-        if (!_initialized)
-        {
-            _initialized = true;
-            await viewModel.InitializeAsync();
-            if (_isDisposed)
-            {
-                return;
-            }
-
-            viewModel.StartWorkspacePreload();
-        }
+        await EnsureInitializedAsync(viewModel);
+        if (_isDisposed) return;
 
         if (_isActive)
         {
@@ -1318,26 +1353,28 @@ public partial class WorkspaceOSView : UserControl, IDisposable
 
     private void WorkspaceNumber_DragEnter(object sender, DragEventArgs e)
     {
-        if (!TryGetWorkspaceCardDrag(sender, e, out _, out var target))
+        if (sender is not Button { DataContext: WorkspaceSlotViewModel target }
+            || !WorkspaceCanvasView.CanCreateCardFromDrop(e))
         {
             return;
         }
 
         StartWorkspaceDragHover((Button)sender, target);
 
-        e.Effects = DragDropEffects.Move;
+        e.Effects = WorkspaceCanvasView.GetWorkspaceDropEffect(e);
         e.Handled = true;
     }
 
     private void WorkspaceNumber_DragOver(object sender, DragEventArgs e)
     {
-        if (!TryGetWorkspaceCardDrag(sender, e, out _, out var target))
+        if (sender is not Button { DataContext: WorkspaceSlotViewModel target }
+            || !WorkspaceCanvasView.CanCreateCardFromDrop(e))
         {
             return;
         }
 
         StartWorkspaceDragHover((Button)sender, target);
-        e.Effects = DragDropEffects.Move;
+        e.Effects = WorkspaceCanvasView.GetWorkspaceDropEffect(e);
         e.Handled = true;
     }
 

@@ -1165,6 +1165,25 @@
                                                 </Style>
                                             </Image.Style>
                                         </Image>
+                                        <Viewbox x:Name="ApplicationFallbackIcon"
+                                                 Width="28"
+                                                 Height="24"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center"
+                                                 IsHitTestVisible="False"
+                                                 Visibility="{Binding ShowApplicationFallbackIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Canvas Width="24"
+                                                    Height="24">
+                                                <Path Fill="#1E293B"
+                                                      Stroke="#E0E7FF"
+                                                      StrokeThickness="1.5"
+                                                      Data="M2,3 H22 V21 H2 Z" />
+                                                <Path Fill="#93C5FD"
+                                                      Data="M3,4 H21 V8 H3 Z" />
+                                                <Path Fill="#E0E7FF"
+                                                      Data="M6,12 H11 V17 H6 Z M14,12 H18 V14 H14 Z M14,16 H18 V17 H14 Z" />
+                                            </Canvas>
+                                        </Viewbox>
                                         <TextBlock HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"
                                                    Foreground="#FFFFFF"
@@ -1186,6 +1205,43 @@
                                                 </Style>
                                             </TextBlock.Style>
                                         </TextBlock>
+                                        <Border x:Name="ApplicationBadge"
+                                                Width="32"
+                                                Height="13"
+                                                Margin="0,0,-2,0"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Bottom"
+                                                Background="#F20B1220"
+                                                BorderBrush="#FFA5B4FC"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding ShowApplicationBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <TextBlock HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="#F3F4F6"
+                                                       FontSize="9"
+                                                       Text="アプリ" />
+                                        </Border>
+                                        <Border x:Name="ShortcutBadge"
+                                                Width="16"
+                                                Height="13"
+                                                Margin="-2,0,0,0"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Bottom"
+                                                Background="#F20B1220"
+                                                BorderBrush="#FF94A3B8"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding ShowShortcutBadge, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Path Margin="3,2"
+                                                  Stroke="#F3F4F6"
+                                                  StrokeThickness="1.5"
+                                                  StrokeLineJoin="Round"
+                                                  Data="M0,7 V5 Q0,2 4,2 H8 M5,0 L8,2 L5,4"
+                                                  Stretch="Uniform" />
+                                        </Border>
                                         <Border Width="16"
                                                 Height="13"
                                                 Margin="0,0,-1,-1"

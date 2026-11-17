@@ -2078,6 +2078,146 @@ public sealed class WorkspaceRepositoryTests
     }
 
     [Fact]
+    public async Task TabDroppedOnWorkspaceHeaderSavesBookmarkAtDefaultPosition()
+    {
+        using var database = new TempDatabase();
+        var repository = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var service = new WorkspaceService(repository);
+        var workspace = await service.CreateWorkspaceAsync("Workspace", 1);
+        var viewModel = CreateWorkspaceViewModel(service, workspace.Id);
+        Assert.False(viewModel.TrySaveDroppedTabsAtDefaultPosition([]));
+        await viewModel.InitializeAsync();
+
+        Assert.True(viewModel.TrySaveDroppedTabsAtDefaultPosition(
+        [
+            new CapturedTabSnapshot
+            {
+                TabId = Guid.NewGuid(),
+                Title = "Dragged tab",
+                Url = "https://example.test/page",
+                TabIndex = 1
+            }
+        ]));
+        await WaitForAsync(() => !viewModel.IsWorkspaceSaving && viewModel.Items.Count == 1);
+
+        var bookmark = Assert.IsType<BookmarkItem>(Assert.Single(
+            await repository.GetWorkspaceItemsAsync(workspace.Id)));
+        Assert.Equal("Dragged tab", bookmark.Title);
+        Assert.Equal("https://example.test/page", bookmark.Url);
+        Assert.True(bookmark.X >= 0);
+        Assert.True(bookmark.Y >= 0);
+    }
+
+    [Fact]
+    public async Task TabDroppedOnCanvasWhileWorkspaceLoadsIsSavedAfterInitialization()
+    {
+        using var database = new TempDatabase();
+        var repository = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var workspace = await repository.CreateWorkspaceAsync(new Workspace { Name = "Workspace", Index = 1 });
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proxy = DispatchProxy.Create<IWorkspaceRepository, FaultingWorkspaceRepositoryProxy>();
+        var fault = (FaultingWorkspaceRepositoryProxy)proxy;
+        fault.Inner = repository;
+        fault.Fault = (method, _) => method.Name == nameof(IWorkspaceRepository.GetWorkspaceItemsAsync)
+            ? HoldWorkspaceLoadAsync() : null;
+
+        async Task<IReadOnlyList<WorkspaceItem>> HoldWorkspaceLoadAsync()
+        {
+            entered.TrySetResult();
+            await release.Task;
+            return await repository.GetWorkspaceItemsAsync(workspace.Id);
+        }
+
+        await using var viewModel = CreateWorkspaceViewModel(new WorkspaceService(proxy), workspace.Id);
+        try
+        {
+            var initialization = viewModel.InitializeAsync();
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Null(viewModel.CurrentWorkspace);
+
+            var save = Assert.IsType<AsyncRelayCommand>(viewModel.SaveDroppedShelfItemsCommand)
+                .ExecuteAsync(new WorkspaceShelfDropRequest(
+                    [new CapturedTabSnapshot
+                    {
+                        TabId = Guid.NewGuid(),
+                        Title = "Dragged tab",
+                        Url = "https://example.test/page",
+                        TabIndex = 1
+                    }],
+                    [],
+                    new WorkspaceCanvasPoint(240, 176)));
+            Assert.False(save.IsCompleted);
+            Assert.Empty(await repository.GetWorkspaceItemsAsync(workspace.Id));
+
+            release.TrySetResult();
+            await initialization.WaitAsync(TimeSpan.FromSeconds(10));
+            await save.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var bookmark = Assert.IsType<BookmarkItem>(Assert.Single(
+                await repository.GetWorkspaceItemsAsync(workspace.Id)));
+            Assert.Equal("https://example.test/page", bookmark.Url);
+            Assert.Equal((240d, 176d), (bookmark.X, bookmark.Y));
+            Assert.Single(viewModel.Items);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
+    [Fact]
+    public async Task TabDroppedWhileWorkspaceLoadsDoesNotSaveAfterViewModelDisposal()
+    {
+        using var database = new TempDatabase();
+        var repository = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var workspace = await repository.CreateWorkspaceAsync(new Workspace { Name = "Workspace", Index = 1 });
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proxy = DispatchProxy.Create<IWorkspaceRepository, FaultingWorkspaceRepositoryProxy>();
+        var fault = (FaultingWorkspaceRepositoryProxy)proxy;
+        fault.Inner = repository;
+        fault.Fault = (method, _) => method.Name == nameof(IWorkspaceRepository.GetWorkspaceItemsAsync)
+            ? HoldWorkspaceLoadAsync() : null;
+
+        async Task<IReadOnlyList<WorkspaceItem>> HoldWorkspaceLoadAsync()
+        {
+            entered.TrySetResult();
+            await release.Task;
+            return await repository.GetWorkspaceItemsAsync(workspace.Id);
+        }
+
+        await using var viewModel = CreateWorkspaceViewModel(new WorkspaceService(proxy), workspace.Id);
+        try
+        {
+            var initialization = viewModel.InitializeAsync();
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var save = Assert.IsType<AsyncRelayCommand>(viewModel.SaveDroppedShelfItemsCommand)
+                .ExecuteAsync(new WorkspaceShelfDropRequest(
+                    [new CapturedTabSnapshot
+                    {
+                        TabId = Guid.NewGuid(),
+                        Title = "Dragged tab",
+                        Url = "https://example.test/page",
+                        TabIndex = 1
+                    }],
+                    [],
+                    new WorkspaceCanvasPoint(240, 176)));
+            Assert.False(save.IsCompleted);
+
+            viewModel.Dispose();
+            release.TrySetResult();
+            await initialization.WaitAsync(TimeSpan.FromSeconds(10));
+            await save.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Empty(await repository.GetWorkspaceItemsAsync(workspace.Id));
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+    }
+
+    [Fact]
     public async Task DuplicateItemCommandCreatesBookmarkBesideSource()
     {
         using var database = new TempDatabase();
