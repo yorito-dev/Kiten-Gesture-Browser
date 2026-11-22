@@ -317,18 +317,10 @@ public sealed class FolderTabService
         var entries = new List<FolderTabEntry>();
         var isTruncated = false;
 
-        foreach (var path in Directory.EnumerateFileSystemEntries(normalizedPath))
+        foreach (var item in new DirectoryInfo(normalizedPath).EnumerateFileSystemInfos())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            FileAttributes attributes;
-            try
-            {
-                attributes = File.GetAttributes(path);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                continue;
-            }
+            var attributes = item.Attributes;
 
             if (!ShouldShowEntry(attributes, showHiddenItems))
             {
@@ -341,7 +333,10 @@ public sealed class FolderTabService
                 break;
             }
 
-            entries.Add(CreateEntry(path, attributes: attributes));
+            entries.Add(CreateEntry(
+                item.FullName,
+                attributes: attributes,
+                enumeratedItem: (attributes & FileAttributes.ReparsePoint) == 0 ? item : null));
         }
 
         SortEntries(entries, FolderTabSortMode.Name, FolderTabSortDirection.Ascending);
@@ -468,9 +463,10 @@ public sealed class FolderTabService
     private static FolderTabEntry CreateEntry(
         string path,
         string? relativeRoot = null,
-        FileAttributes? attributes = null)
+        FileAttributes? attributes = null,
+        FileSystemInfo? enumeratedItem = null)
     {
-        var isDirectory = Directory.Exists(path);
+        var isDirectory = enumeratedItem is null ? Directory.Exists(path) : enumeratedItem is DirectoryInfo;
         long? size = null;
         DateTime? lastWriteTime = null;
 
@@ -478,11 +474,11 @@ public sealed class FolderTabService
         {
             if (isDirectory)
             {
-                lastWriteTime = Directory.GetLastWriteTime(path);
+                lastWriteTime = enumeratedItem?.LastWriteTime ?? Directory.GetLastWriteTime(path);
             }
             else
             {
-                var file = new FileInfo(path);
+                var file = (FileInfo?)enumeratedItem ?? new FileInfo(path);
                 size = file.Length;
                 lastWriteTime = file.LastWriteTime;
             }

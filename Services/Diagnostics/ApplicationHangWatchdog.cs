@@ -69,11 +69,12 @@ public sealed class ApplicationHangWatchdog : IDisposable
     private const string DiagnosticFileName = "latest-ui-hang.log";
     private readonly Dispatcher _dispatcher;
     private readonly string _diagnosticsFolder;
+    private readonly TimeProvider _clock;
     private readonly ApplicationHangEpisodeTracker _episodeTracker = new(
         HangThreshold,
         MaximumIncidentCount);
     private readonly object _episodeGate = new();
-    private readonly System.Threading.Timer _timer;
+    private readonly ITimer _timer;
     private ApplicationHangUiSnapshot _lastUiSnapshot;
     private string _lastUiActivity = "none";
     private DateTimeOffset? _lastUiActivityAt;
@@ -86,13 +87,14 @@ public sealed class ApplicationHangWatchdog : IDisposable
     {
     }
 
-    internal ApplicationHangWatchdog(Dispatcher dispatcher, string diagnosticsFolder)
+    internal ApplicationHangWatchdog(Dispatcher dispatcher, string diagnosticsFolder, TimeProvider? clock = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _diagnosticsFolder = diagnosticsFolder;
-        _lastHeartbeatTimestamp = Stopwatch.GetTimestamp();
+        _clock = clock ?? AwakeTimeProvider.Instance;
+        _lastHeartbeatTimestamp = _clock.GetTimestamp();
         _lastUiSnapshot = CaptureUiSnapshot();
-        _timer = new System.Threading.Timer(
+        _timer = _clock.CreateTimer(
             static state => ((ApplicationHangWatchdog)state!).OnTimer(),
             this,
             HeartbeatInterval,
@@ -111,7 +113,7 @@ public sealed class ApplicationHangWatchdog : IDisposable
             ? element.GetType().Name
             : element.Name;
         _lastUiActivity = $"{normalizedKind}:{NormalizeIdentifier(elementIdentifier, "unnamed")}";
-        _lastUiActivityAt = DateTimeOffset.Now;
+        _lastUiActivityAt = _clock.GetLocalNow();
     }
 
     public void Dispose()
@@ -154,8 +156,14 @@ public sealed class ApplicationHangWatchdog : IDisposable
         }
 
         QueueHeartbeat();
-        var unresponsiveDuration = Stopwatch.GetElapsedTime(
-            Interlocked.Read(ref _lastHeartbeatTimestamp));
+        var lastHeartbeatTimestamp = Interlocked.Read(ref _lastHeartbeatTimestamp);
+        var timestamp = _clock.GetTimestamp();
+        if (lastHeartbeatTimestamp < 0 || timestamp < lastHeartbeatTimestamp)
+        {
+            return;
+        }
+
+        var unresponsiveDuration = _clock.GetElapsedTime(lastHeartbeatTimestamp, timestamp);
         int sequence;
         lock (_episodeGate)
         {
@@ -170,7 +178,7 @@ public sealed class ApplicationHangWatchdog : IDisposable
             WriteDiagnostic(
                 _diagnosticsFolder,
                 new ApplicationHangIncident(
-                    DateTimeOffset.Now,
+                    _clock.GetLocalNow(),
                     unresponsiveDuration,
                     sequence,
                     Volatile.Read(ref _lastUiSnapshot)));
@@ -210,7 +218,7 @@ public sealed class ApplicationHangWatchdog : IDisposable
         }
 
         Volatile.Write(ref _lastUiSnapshot, CaptureUiSnapshot());
-        Interlocked.Exchange(ref _lastHeartbeatTimestamp, Stopwatch.GetTimestamp());
+        Interlocked.Exchange(ref _lastHeartbeatTimestamp, _clock.GetTimestamp());
         Interlocked.Exchange(ref _heartbeatQueued, 0);
         lock (_episodeGate)
         {
@@ -224,7 +232,7 @@ public sealed class ApplicationHangWatchdog : IDisposable
         var windows = application?.Windows.OfType<Window>().ToList() ?? [];
         var activeWindow = windows.FirstOrDefault(static window => window.IsActive);
         return new ApplicationHangUiSnapshot(
-            DateTimeOffset.Now,
+            _clock.GetLocalNow(),
             Environment.CurrentManagedThreadId,
             GetCurrentThreadId(),
             windows.Count,
@@ -337,4 +345,18 @@ public sealed class ApplicationHangWatchdog : IDisposable
 
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
+
+    private sealed class AwakeTimeProvider : TimeProvider
+    {
+        public static AwakeTimeProvider Instance { get; } = new();
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        // APIが時刻を返せない場合は、次の有効なハートビートまで判定を保留する。
+        public override long GetTimestamp() => QueryUnbiasedInterruptTime(out var ticks) ? (long)ticks : -1;
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool QueryUnbiasedInterruptTime(out ulong unbiasedTime);
+    }
 }

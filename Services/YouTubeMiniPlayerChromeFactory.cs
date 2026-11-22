@@ -133,8 +133,7 @@ public static class YouTubeMiniPlayerChromeFactory
             Foreground = new SolidColorBrush(Color.FromRgb(255, 107, 107)),
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
+            VerticalAlignment = VerticalAlignment.Center
         };
         var liveViewerCountButton = CreateButton(
             string.Empty,
@@ -145,7 +144,13 @@ public static class YouTubeMiniPlayerChromeFactory
         liveViewerCountButton.MinWidth = 0;
         liveViewerCountButton.MaxWidth = LiveViewerCountWidth;
         liveViewerCountButton.HorizontalContentAlignment = HorizontalAlignment.Left;
-        liveViewerCountButton.Content = liveViewerCountText;
+        // 視聴者数の桁や単位を残し、既存の幅を超える文字列だけ縮める。
+        liveViewerCountButton.Content = new Viewbox
+        {
+            Child = liveViewerCountText,
+            Stretch = Stretch.Uniform,
+            StretchDirection = StretchDirection.DownOnly
+        };
         liveViewerCountButton.Visibility = Visibility.Collapsed;
         liveViewerCountButton.IsEnabled = false;
         Grid.SetColumn(liveViewerCountButton, 1);
@@ -299,14 +304,14 @@ public static class YouTubeMiniPlayerChromeFactory
 
     internal static void UpdateChatButtonAvailability(YouTubeMiniPlayerRuntime runtime, bool? isAvailable)
     {
-        runtime.LiveChatAvailability = isAvailable;
-        ApplyChatButtonState(runtime.TitleBandChatButton, isAvailable, runtime.IsLiveChatWindowOpen);
+        runtime.LiveChat.SetAvailability(isAvailable);
+        ApplyChatButtonState(runtime.TitleBandChatButton, isAvailable, runtime.LiveChat.IsWindowOpen);
     }
 
     internal static void UpdateChatWindowOpen(YouTubeMiniPlayerRuntime runtime, bool isOpen)
     {
-        runtime.IsLiveChatWindowOpen = isOpen;
-        ApplyChatButtonState(runtime.TitleBandChatButton, runtime.LiveChatAvailability, isOpen);
+        runtime.LiveChat.SetWindowOpen(isOpen);
+        ApplyChatButtonState(runtime.TitleBandChatButton, runtime.LiveChat.Availability, isOpen);
     }
 
     public static void UpdateChatButtonAvailability(Button button, bool? isAvailable)

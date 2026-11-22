@@ -1,8 +1,11 @@
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Threading;
+using Microsoft.Web.WebView2.Wpf;
 using TabBrowser.Models;
 using TabBrowser.Services;
 using Xunit;
@@ -75,26 +78,33 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
         });
     }
 
-    [Fact]
-    public async Task EarlierToolbarPlacementResultCannotOverwriteNewerDpiPlacement()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EarlierToolbarPlacementResultCannotOverwriteCurrentPlacement(bool invalidatePlacement)
     {
         var oldCompletion = new TaskCompletionSource<(double HorizontalOffset, double VerticalOffset)?>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var newCompletion = new TaskCompletionSource<(double HorizontalOffset, double VerticalOffset)?>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var generation = 0;
+        var overlay = new YouTubeMiniPlayerOverlayState();
         var applied = new List<Point>();
-        var oldGeneration = generation;
+        var (oldPlacement, oldRequest) = overlay.BeginToolbarPlacementRequest();
         var oldTask = YouTubeMiniPlayerToolbarPlacementRefreshService.ApplyCurrentAsync(
             () => oldCompletion.Task,
-            () => oldGeneration == generation,
+            () => overlay.IsCurrentToolbarPlacementRequest(oldPlacement, oldRequest),
             (x, y) => applied.Add(new Point(x, y)));
 
-        generation++;
-        var newGeneration = generation;
+        if (invalidatePlacement)
+        {
+            overlay.InvalidatePlacement();
+        }
+
+        Assert.Equal(!invalidatePlacement, overlay.IsCurrentToolbarPlacementRequest(oldPlacement, oldRequest));
+        var (newPlacement, newRequest) = overlay.BeginToolbarPlacementRequest();
         var newTask = YouTubeMiniPlayerToolbarPlacementRefreshService.ApplyCurrentAsync(
             () => newCompletion.Task,
-            () => newGeneration == generation,
+            () => overlay.IsCurrentToolbarPlacementRequest(newPlacement, newRequest),
             (x, y) => applied.Add(new Point(x, y)));
         newCompletion.SetResult((40, 60));
         await newTask;
@@ -103,6 +113,53 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
 
         Assert.Equal([new Point(40, 60)], applied);
     }
+
+    [Fact]
+    public void OpenToolbarMenuStopsOnlyItsHideTimer()
+    {
+        RunOnStaThread(() =>
+        {
+            var state = new YouTubeMiniPlayerState { Width = 480, Height = 270 };
+            var runtime = YouTubeMiniPlayerRuntimeFactory.Create(
+                state, new Style(typeof(Button)), "非表示タイマーの自動検証", new Border(), null, null).Runtime;
+            var delay = TimeSpan.FromSeconds(5);
+            void NoPlacement(YouTubeMiniPlayerRuntime _) { }
+
+            try
+            {
+                YouTubeMiniPlayerOverlayVisibilityService.SetTitleBandVisibility(runtime, false, delay, NoPlacement);
+                YouTubeMiniPlayerOverlayVisibilityService.SetToolbarVisibility(
+                    runtime, false, delay, NoPlacement, NoPlacement, NoPlacement, NoPlacement);
+                var titleTimer = Assert.IsType<System.Windows.Threading.DispatcherTimer>(runtime.Overlay.TitleBandHideTimer);
+                var toolbarTimer = Assert.IsType<System.Windows.Threading.DispatcherTimer>(runtime.Overlay.ToolbarHideTimer);
+                Assert.NotSame(titleTimer, toolbarTimer);
+                Assert.Equal(delay, titleTimer.Interval);
+                Assert.Equal(delay, toolbarTimer.Interval);
+                Assert.True(titleTimer.IsEnabled);
+                Assert.True(toolbarTimer.IsEnabled);
+
+                runtime.Overlay.IsToolbarMenuOpen = true;
+                YouTubeMiniPlayerOverlayVisibilityService.SetToolbarVisibility(
+                    runtime, false, delay, NoPlacement, NoPlacement, NoPlacement, NoPlacement);
+                Assert.True(titleTimer.IsEnabled);
+                Assert.False(toolbarTimer.IsEnabled);
+
+                runtime.Overlay.IsToolbarMenuOpen = false;
+                YouTubeMiniPlayerOverlayVisibilityService.SetToolbarVisibility(
+                    runtime, false, delay, NoPlacement, NoPlacement, NoPlacement, NoPlacement);
+                Assert.Same(toolbarTimer, runtime.Overlay.ToolbarHideTimer);
+                Assert.True(toolbarTimer.IsEnabled);
+            }
+            finally
+            {
+                YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+            }
+
+            Assert.False(runtime.Overlay.TitleBandHideTimer?.IsEnabled);
+            Assert.False(runtime.Overlay.ToolbarHideTimer?.IsEnabled);
+        });
+    }
+
     [Fact]
     public void TitleTooltipShowsFullCurrentTitleWithoutChangingCompactHeader()
     {
@@ -219,6 +276,42 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
             "  1,234   人が視聴中  ");
 
         Assert.Equal("1,234 人が視聴中", displayText);
+    }
+
+    [Theory]
+    [InlineData(244, "12,345 人が視聴しています")]
+    [InlineData(330, "987,654 watching now")]
+    [InlineData(244, "9,999 人が視聴中")]
+    [InlineData(244, "LIVEへ")]
+    public void LiveViewerCountRendersTheWholeTextWithinTheTitleBand(double width, string label)
+    {
+        RunOnStaThread(() =>
+        {
+            var parts = YouTubeMiniPlayerChromeFactory.CreateTitleBand("動画タイトル", new Style(typeof(Button)));
+            var visibility = YouTubeMiniPlayerChromeFactory.GetTitleBandButtonVisibility(width, MiniPlayerSourceKind.YouTube, hasLiveViewerCount: true);
+            parts.SourceButton.Visibility = visibility.ShowSource ? Visibility.Visible : Visibility.Collapsed;
+            parts.TopmostButton.Visibility = visibility.ShowTopmost ? Visibility.Visible : Visibility.Collapsed;
+            parts.MinimizeButton.Visibility = visibility.ShowMinimize ? Visibility.Visible : Visibility.Collapsed;
+            parts.LiveViewerCountButton.Visibility = Visibility.Visible;
+            var text = parts.LiveViewerCountText;
+            text.Text = label;
+
+            parts.Root.Measure(new Size(width, double.PositiveInfinity));
+            parts.Root.Arrange(new Rect(0, 0, width, parts.Root.DesiredSize.Height));
+            var fullText = new FormattedText(label, CultureInfo.GetCultureInfo("ja-JP"), text.FlowDirection,
+                new Typeface(text.FontFamily, text.FontStyle, text.FontWeight, text.FontStretch),
+                text.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(text).PixelsPerDip);
+            Assert.True(text.ActualWidth + 1 >= fullText.Width, $"必要な表示幅 {fullText.Width:F1} DIP、実際は {text.ActualWidth:F1} DIP");
+
+            var button = parts.LiveViewerCountButton;
+            var rendered = text.TransformToAncestor(button).TransformBounds(new Rect(text.RenderSize));
+            Assert.InRange(rendered.Left, 0, button.ActualWidth);
+            Assert.InRange(rendered.Right, rendered.Left, button.ActualWidth + 0.1);
+            Assert.InRange(rendered.Width, fullText.Width * 0.75, fullText.Width + 1);
+            Assert.InRange(button.ActualWidth, 1, 108);
+            Assert.Equal(Visibility.Visible, parts.ChatButton.Visibility);
+            Assert.InRange(parts.CloseButton.TranslatePoint(new Point(parts.CloseButton.ActualWidth, 0), parts.Root).X, 0, width + 0.1);
+        });
     }
 
     [Theory]
@@ -662,6 +755,111 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
 
         Assert.Equal(100, position.X, precision: 3);
         Assert.Equal(100, position.Y, precision: 3);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WebViewCleanupPreservesResetAndFinalDisposalOrder(bool closing)
+    {
+        RunOnStaThread(() =>
+        {
+            var state = new YouTubeMiniPlayerState { Width = 480, Height = 270 };
+            var webView = new CleanupTrackingWebView();
+            var runtime = YouTubeMiniPlayerRuntimeFactory.Create(
+                state, new Style(typeof(Button)), "後始末の自動検証", webView, webView, null).Runtime;
+            var dragTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+            var qualityTimer = new OwnedDispatcherTimer(
+                DispatcherTimerOwner.MiniPlayerRuntime, DispatcherTimerTerminationPhase.RuntimeDispose)
+            {
+                Interval = TimeSpan.FromMinutes(1)
+            };
+            runtime.WebDragFollowTimer = dragTimer;
+            runtime.SizeBasedQualityUpdateTimer = qualityTimer;
+            dragTimer.Start();
+            qualityTimer.Start();
+
+            runtime.Registrations.WebMessageReceived = (_, _) => { };
+            runtime.Registrations.DocumentTitleChanged = (_, _) => { };
+            runtime.Registrations.ContainsFullScreenElementChanged = (_, _) => { };
+            var registrationReleases = 0;
+            runtime.Registrations.Transparency = new CleanupRegistration(() =>
+            {
+                registrationReleases++;
+                if (!closing)
+                {
+                    return;
+                }
+
+                Assert.False(runtime.IsDisposed);
+                Assert.Same(webView, runtime.WebView);
+                Assert.True(dragTimer.IsEnabled);
+                Assert.True(qualityTimer.IsEnabled);
+            });
+
+            var webViewDisposals = 0;
+            webView.OnDisposing = () =>
+            {
+                webViewDisposals++;
+                Assert.Equal(closing, runtime.IsDisposed);
+                Assert.Equal(closing ? 1 : 0, registrationReleases);
+                Assert.Null(runtime.Registrations.WebMessageReceived);
+                Assert.Null(runtime.Registrations.DocumentTitleChanged);
+                Assert.Null(runtime.Registrations.ContainsFullScreenElementChanged);
+                Assert.Null(runtime.WebView);
+                Assert.Empty(runtime.WebHost.Children);
+                Assert.NotNull(runtime.TaskbarWindow.Content);
+                Assert.Equal(!closing, dragTimer.IsEnabled);
+                Assert.False(qualityTimer.IsEnabled);
+                Assert.Equal(!closing, runtime.TitleBandPopup.Child is not null);
+                Assert.Equal(!closing, runtime.ToolbarPopup.Child is not null);
+            };
+
+            try
+            {
+                if (closing)
+                {
+                    YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+                    YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+                    Assert.Null(runtime.TaskbarWindow.Content);
+                }
+                else
+                {
+                    YouTubeMiniPlayerRuntimeLifecycleService.ResetWebView(runtime);
+                    Assert.False(runtime.IsDisposed);
+                    Assert.NotNull(runtime.TaskbarWindow.Content);
+                    Assert.NotNull(runtime.Registrations.Transparency);
+                }
+
+                Assert.Equal(1, webViewDisposals);
+                Assert.Equal(closing ? 1 : 0, registrationReleases);
+            }
+            finally
+            {
+                webView.OnDisposing = null;
+                YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+            }
+        });
+    }
+
+    private sealed class CleanupRegistration(Action release) : IDisposable
+    {
+        public void Dispose() => release();
+    }
+
+    private sealed class CleanupTrackingWebView : WebView2
+    {
+        public Action? OnDisposing { get; set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                OnDisposing?.Invoke();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 
     private static void RunOnStaThread(Action action)

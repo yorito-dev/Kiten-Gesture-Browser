@@ -10,6 +10,7 @@ internal sealed class YouTubeMiniPlayerArrangementSessionCoordinator
     private YouTubeMiniPlayerLinearPlacement _verticalPlacement =
         YouTubeMiniPlayerLinearPlacement.Second;
     private YouTubeMiniPlayerArrangeMode? _linearPlacementPopupMode;
+    private YouTubeMiniPlayerArrangeMode? _confirmedLinearPlacementMode;
 
     public YouTubeMiniPlayerLinearPlacement HorizontalPlacement => _horizontalPlacement;
 
@@ -18,10 +19,15 @@ internal sealed class YouTubeMiniPlayerArrangementSessionCoordinator
     public YouTubeMiniPlayerArrangeMode? LinearPlacementPopupMode => _linearPlacementPopupMode;
 
     public bool HasInitialArrangement => _initialArrangement.Count > 0;
+    public IReadOnlyList<YouTubeMiniPlayerArrangementSnapshot> PreviousArrangement { get; private set; } = [];
 
-    public void OpenLinearPlacementPopup(YouTubeMiniPlayerArrangeMode mode)
+    public void OpenLinearPlacementPopup(YouTubeMiniPlayerArrangeMode mode, bool hasPreview = false)
     {
         _linearPlacementPopupMode = mode;
+        if (!hasPreview || _confirmedLinearPlacementMode != mode)
+        {
+            _confirmedLinearPlacementMode = null;
+        }
     }
 
     public void CloseLinearPlacementPopup()
@@ -31,21 +37,27 @@ internal sealed class YouTubeMiniPlayerArrangementSessionCoordinator
 
     public bool TrySetLinearPlacement(
         YouTubeMiniPlayerArrangeMode mode,
-        YouTubeMiniPlayerLinearPlacement placement)
+        YouTubeMiniPlayerLinearPlacement placement, bool confirm = false)
     {
-        if (mode == YouTubeMiniPlayerArrangeMode.Horizontal)
+        if (!confirm && _confirmedLinearPlacementMode == mode)
         {
-            _horizontalPlacement = placement;
-            return true;
+            return false;
         }
 
-        if (mode == YouTubeMiniPlayerArrangeMode.Vertical)
+        switch (mode)
         {
-            _verticalPlacement = placement;
-            return true;
+            case YouTubeMiniPlayerArrangeMode.Horizontal:
+                _horizontalPlacement = placement;
+                break;
+            case YouTubeMiniPlayerArrangeMode.Vertical:
+                _verticalPlacement = placement;
+                break;
+            default:
+                return false;
         }
 
-        return false;
+        if (confirm) _confirmedLinearPlacementMode = mode;
+        return true;
     }
 
     public YouTubeMiniPlayerLinearPlacement GetLinearPlacement(YouTubeMiniPlayerArrangeMode mode)
@@ -85,6 +97,12 @@ internal sealed class YouTubeMiniPlayerArrangementSessionCoordinator
     {
         _initialArrangement.Clear();
     }
+
+    public void RecordPreviousArrangement(IReadOnlyList<YouTubeMiniPlayerArrangementSnapshot> targets)
+        => PreviousArrangement = targets;
+
+    public void ClearPreviousArrangement()
+        => PreviousArrangement = [];
 }
 
 internal readonly record struct YouTubeMiniPlayerArrangementSnapshot(
@@ -102,4 +120,7 @@ internal readonly record struct YouTubeLiveChatArrangementSnapshot(
     double Width,
     double Height,
     bool IsDocked,
-    YouTubeLiveChatDockSide DockSide);
+    YouTubeLiveChatDockSide DockSide)
+{
+    public bool RemoveSpacing { get; init; }
+}

@@ -29,6 +29,7 @@ public sealed class RecentItemsService : IAsyncDisposable
     private bool _loaded;
     private bool _dirty;
     private bool _disposed;
+    private bool _recordWebVisits;
 
     public RecentItemsService()
         : this(AppPaths.RecentItemsFile)
@@ -47,6 +48,42 @@ public sealed class RecentItemsService : IAsyncDisposable
     }
 
     public event EventHandler? ItemsChanged;
+
+    internal bool CanConfirmPersistedState()
+    {
+        if (!Monitor.TryEnter(_syncRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            return _flushLock.CurrentCount != 0 && !_dirty;
+        }
+        finally
+        {
+            Monitor.Exit(_syncRoot);
+        }
+    }
+
+    internal bool IsWebVisitRecordingEnabled
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return _recordWebVisits;
+            }
+        }
+    }
+
+    internal void ConfigureWebVisitRecording(bool enabled)
+    {
+        lock (_syncRoot)
+        {
+            _recordWebVisits = enabled;
+        }
+    }
 
     public IReadOnlyList<RecentItem> GetSnapshot()
     {
@@ -71,12 +108,12 @@ public sealed class RecentItemsService : IAsyncDisposable
         var changed = false;
         lock (_syncRoot)
         {
-            EnsureLoaded();
-            if (_disposed)
+            if (_disposed || (!_recordWebVisits && IsStandaloneWebItemKey(normalized.Key)))
             {
                 return;
             }
 
+            EnsureLoaded();
             if (_items.TryGetValue(normalized.Key, out var current))
             {
                 normalized.IsPinned = current.IsPinned;
@@ -180,6 +217,7 @@ public sealed class RecentItemsService : IAsyncDisposable
             EnsureLoaded();
             if (_disposed
                 || !_items.TryGetValue(expectedItem.Key, out var current)
+                || (!_recordWebVisits && IsStandaloneWebItemKey(current.Key))
                 || !HasSamePreviewContext(current, expectedItem)
                 || current.LastUsedAt != expectedItem.LastUsedAt
                 || string.Equals(current.ThumbnailPngBase64, thumbnailPngBase64, StringComparison.Ordinal))
@@ -221,6 +259,7 @@ public sealed class RecentItemsService : IAsyncDisposable
         {
             EnsureLoaded();
             if (_disposed || !_items.TryGetValue(expectedItem.Key, out var current)
+                || (!_recordWebVisits && IsStandaloneWebItemKey(current.Key))
                 || !HasSamePreviewContext(current, expectedItem))
             {
                 return false;

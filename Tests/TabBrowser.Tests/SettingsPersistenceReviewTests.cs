@@ -7,16 +7,38 @@ namespace TabBrowser.Tests;
 public sealed class SettingsPersistenceReviewTests
 {
     [Fact]
+    public void SystemSessionEndRequiresKnownSavedSettingsWithoutNewEdits()
+    {
+        using var files = new Files();
+        Assert.False(SettingsService.CanConfirmPersistedState(new AppSettings()));
+
+        var settings = files.Load();
+        Assert.True(SettingsService.CanConfirmPersistedState(settings));
+        settings.SearchEngine = "new-edit";
+        Assert.False(SettingsService.CanConfirmPersistedState(settings));
+
+        var save = SettingsService.CaptureSaveOperation(settings, files.Path);
+        Assert.False(SettingsService.CanConfirmPersistedState(settings));
+        save();
+        Assert.True(SettingsService.CanConfirmPersistedState(settings));
+
+        files.Save(new AppSettings { SearchEngine = "newer" });
+        using var locked = new FileStream(files.Path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var provisional = files.Load();
+        Assert.False(SettingsService.CanConfirmPersistedState(provisional));
+    }
+
+    [Fact]
     public void MissingPrimaryIsRecreatedWithUnchangedSettingsAsWellAsNewEdits()
     {
         using var files = new Files();
         files.Save(new AppSettings { SearchEngine = "kept" });
         var settings = files.Load();
         File.Delete(files.Path);
-        settings.EnableLinkHoverPreview = false;
+        settings.EnableLinkHoverPreview = true;
         files.Save(settings);
         Assert.Equal("kept", files.Load().SearchEngine);
-        Assert.False(files.Load().EnableLinkHoverPreview);
+        Assert.True(files.Load().EnableLinkHoverPreview);
     }
 
     [Fact]
@@ -29,7 +51,7 @@ public sealed class SettingsPersistenceReviewTests
         var result = SettingsService.CloneForEdit(b);
         a.SearchEngine = "other-window";
         files.Save(a);
-        result.EnableLinkHoverPreview = false;
+        result.EnableLinkHoverPreview = true;
         var merged = SettingsService.MergeEditingResult(beforeDialog, result, files.Path);
         files.Save(merged);
         Assert.Equal("other-window", merged.SearchEngine);
@@ -41,7 +63,7 @@ public sealed class SettingsPersistenceReviewTests
         files.Save(a);
         files.Save(b);
         Assert.Equal("newer-other-window", files.Load().SearchEngine);
-        Assert.False(files.Load().EnableLinkHoverPreview);
+        Assert.True(files.Load().EnableLinkHoverPreview);
     }
 
     [Theory]
@@ -74,11 +96,11 @@ public sealed class SettingsPersistenceReviewTests
         var oldSave = SettingsService.CaptureSaveOperation(a, files.Path);
         a.SearchEngine = "latest";
         var newSave = SettingsService.CaptureSaveOperation(a, files.Path);
-        b.EnableLinkHoverPreview = false;
+        b.EnableLinkHoverPreview = true;
         await Task.WhenAll(Task.Run(newSave), SettingsService.SaveToFileAsync(files.Path, b));
         oldSave();
         Assert.Equal("latest", files.Load().SearchEngine);
-        Assert.False(files.Load().EnableLinkHoverPreview);
+        Assert.True(files.Load().EnableLinkHoverPreview);
     }
 
     [Fact]
@@ -94,14 +116,14 @@ public sealed class SettingsPersistenceReviewTests
         {
             provisional = files.Load();
             Assert.Equal("old", provisional.SearchEngine);
-            provisional.EnableLinkHoverPreview = false;
+            provisional.EnableLinkHoverPreview = true;
             Assert.ThrowsAny<IOException>(() => files.Save(provisional));
         }
         Assert.Equal(primary, File.ReadAllBytes(files.Path));
         Assert.Equal(backup, File.ReadAllBytes(AtomicFileService.CreateBackupFilePath(files.Path)));
         files.Save(provisional);
         Assert.Equal("latest", files.Load().SearchEngine);
-        Assert.False(files.Load().EnableLinkHoverPreview);
+        Assert.True(files.Load().EnableLinkHoverPreview);
     }
 
     [Fact]

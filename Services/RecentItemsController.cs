@@ -147,7 +147,8 @@ public sealed class RecentItemsController
             return;
         }
 
-        if (!tab.IsNativeContentTab
+        if (_recentItems.IsWebVisitRecordingEnabled
+            && !tab.IsNativeContentTab
             && !IsBlankUrl(tab.Url))
         {
             _recentItems.Record(RecentItemFactory.FromWeb(
@@ -163,6 +164,7 @@ public sealed class RecentItemsController
     public void UpdateTabThumbnail(BrowserTab tab)
     {
         if (_isPrivateWindow
+            || !_recentItems.IsWebVisitRecordingEnabled
             || tab.IsNativeContentTab
             || IsBlankUrl(tab.Url)
             || tab.Thumbnail is null)

@@ -367,8 +367,10 @@ internal sealed class YouTubeMiniPlayerCommandController(
     {
         if (IsListOperationInProgress || IsLiveSeekInProgress) return;
         // 選択と実体を待機前に固定し、対象が消えても全件へ広げない。
-        var snapshot = targets.Distinct().Select(target =>
-            (target.Owner, target.State, Runtime: target.Owner.TryGetRuntime(target.State.Id, out var runtime) ? runtime : null)).ToArray();
+        var owners = _host.GetOwners().ToHashSet();
+        var snapshot = targets.Where(target => owners.Contains(target.Owner))
+            .Distinct().Select(target =>
+                (target.Owner, target.State, Runtime: target.Owner.TryGetRuntime(target.State.Id, out var runtime) ? runtime : null)).ToArray();
         if (snapshot.Length == 0)
         {
             _host.SetStatus("操作するミニプレイヤーが選択されていません");

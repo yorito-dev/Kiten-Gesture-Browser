@@ -1,7 +1,6 @@
 using System.Windows;
 using System.Windows.Interop;
 using TabBrowser.Models;
-using TabBrowser.Models.Workspaces;
 using TabBrowser.Services;
 using TabBrowser.Services.Workspaces;
 using TabBrowser.ViewModels;
@@ -23,42 +22,30 @@ public partial class WorkspaceOSWindow : Window
         WorkspaceService workspaceService,
         Guid? initialWorkspaceId,
         AppSettings settings,
-        Func<string, Task> openUrlAsync,
-        Func<IReadOnlyList<SessionTab>, Task<int>> openSessionTabsAsync,
-        Func<IReadOnlyList<SessionTab>, Task> openSessionTabsInNewWindowAsync,
-        Func<IReadOnlyList<YouTubeMiniPlayerWorkspaceState>> captureYouTubeMiniPlayers,
-        Func<Task<IReadOnlyList<YouTubeMiniPlayerWorkspaceState>>> captureCurrentYouTubeMiniPlayersAsync,
-        Func<YouTubeMiniPlayerSetItem, Task> openYouTubeMiniPlayerSetAsync,
-        Func<string, string, Task<System.Windows.Media.ImageSource?>> captureUrlThumbnailAsync,
-        Action<Guid> saveLastWorkspaceId,
-        Func<IReadOnlyList<CapturedTabSnapshot>> captureOpenTabs,
-        Func<CapturedTabSnapshot?> captureCurrentTab,
-        Func<Guid, Task> closeTabAsync,
+        WorkspaceTabPort tabs,
+        WorkspaceMiniPlayerPort miniPlayers,
+        WorkspaceWindowPort windows,
+        WorkspaceThumbnailPort thumbnails,
         Guid inputScopeId,
         Func<long?> tryBeginGestureInteraction,
         Func<long?> tryBeginRightWheelInteraction,
         Action<long> completeInteraction,
         Func<string?, string?, Task> executeGestureCommandAsync,
-        Action<FolderItem, Guid?> openFolderWindow,
-        Action<string> openShellFolderInTab,
         Action<string> openLocalVideoInMiniPlayer,
         EventHandler<QuickLookPaneLayoutChangedEventArgs> quickLookPaneLayoutChanged,
-        EventHandler<QuickLookTextDisplayChangedEventArgs> quickLookTextDisplayChanged,
-        Func<string?>? getDeferredRestoreMessage = null)
+        EventHandler<QuickLookTextDisplayChangedEventArgs> quickLookTextDisplayChanged)
     {
         InitializeComponent();
         InputScopeId = inputScopeId;
         _viewModel = new WorkspaceOSViewModel(
             workspaceService,
             initialWorkspaceId,
-            new WorkspaceTabPort(openUrlAsync, openSessionTabsAsync,
-                captureOpenTabs, captureCurrentTab, closeTabAsync, openShellFolderInTab, getDeferredRestoreMessage),
-            new WorkspaceMiniPlayerPort(captureYouTubeMiniPlayers,
-                captureCurrentYouTubeMiniPlayersAsync, openYouTubeMiniPlayerSetAsync),
-            new WorkspaceWindowPort(openSessionTabsInNewWindowAsync, openFolderWindow, saveLastWorkspaceId, getDeferredRestoreMessage),
-            new WorkspaceThumbnailPort(captureUrlThumbnailAsync));
+            tabs,
+            miniPlayers,
+            windows,
+            thumbnails);
         DataContext = _viewModel;
-        WorkspaceView.ConfigureShellFolderTabs(openShellFolderInTab);
+        WorkspaceView.ConfigureShellFolderTabs(tabs.OpenShellFolderInTab);
         WorkspaceView.ConfigureLocalVideoPlayer(openLocalVideoInMiniPlayer);
         WorkspaceView.ConfigureQuickLook(settings.QuickLook);
         WorkspaceView.QuickLookPaneLayoutChanged += quickLookPaneLayoutChanged;

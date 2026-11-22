@@ -111,6 +111,55 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
         return Task.CompletedTask;
     });
 
+    [Fact]
+    public void ArrangementMenuCanMoveAwayFromAFrameAndKeepsItsPositionUntilClosed() => RunInSta(async () =>
+    {
+        using var f = new PopupFixture();
+        var window = f.Elements.YouTubeMiniPlayerListWindow;
+        window.Left = 120;
+        window.Top = 100;
+        window.Opacity = 0;
+        var target = f.Elements.YouTubeMiniPlayerListPopupRoot;
+        var popup = f.Elements.YouTubeMiniPlayerArrangePopup;
+        var root = new Border { Width = 160, Height = 100, Opacity = 0 };
+        popup.PlacementTarget = target;
+        popup.Placement = PlacementMode.Right;
+        popup.HorizontalOffset = 12;
+        popup.Child = root;
+        window.ShowOrActivate();
+        await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        popup.IsOpen = true;
+        await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+
+        var start = root.PointToScreen(new Point());
+        var grip = new Vector(30, 12);
+        f.List.Host.CursorPoint = start + grip;
+        f.Controller.BeginArrangementMenuDrag();
+        var destination = target.PointToScreen(new Point(150, 120));
+        f.List.Host.CursorPoint = destination + grip;
+        f.Controller.MoveArrangementMenuDrag();
+        f.Controller.EndArrangementMenuDrag();
+        await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+
+        var rectangle = popup.PlacementRectangle;
+        var moved = root.PointToScreen(new Point());
+        Assert.True(popup.IsOpen);
+        Assert.Equal(PlacementMode.Relative, popup.Placement);
+        Assert.InRange(Math.Abs(moved.X - destination.X), 0, 2);
+        Assert.InRange(Math.Abs(moved.Y - destination.Y), 0, 2);
+        Assert.NotEqual(start, moved);
+
+        f.Controller.UpdateYouTubeMiniPlayerArrangePopupPlacement();
+        Assert.Equal(PlacementMode.Relative, popup.Placement);
+        Assert.Equal(rectangle, popup.PlacementRectangle);
+        Assert.DoesNotContain("cancel-arrangement:False", f.List.Host.Events);
+
+        popup.IsOpen = false;
+        f.Controller.UpdateYouTubeMiniPlayerArrangePopupPlacement();
+        Assert.True(popup.Placement is PlacementMode.Left or PlacementMode.Right);
+        Assert.True(popup.PlacementRectangle.IsEmpty);
+    });
+
     [Theory]
     [InlineData(2560, 800, PlacementMode.Left)]
     [InlineData(2560, 500, PlacementMode.Right)]
@@ -201,23 +250,25 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
     });
 
     [Theory]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(6)]
-    [InlineData(7)]
-    [InlineData(-1)]
-    public void FocusWithinSidePanelStaysOpenAndFocusInOwnerContentClosesIt(int popupIndex) => RunInSta(() =>
+    [InlineData(3, false)]
+    [InlineData(4, false)]
+    [InlineData(5, false)]
+    [InlineData(6, false)]
+    [InlineData(7, false)]
+    [InlineData(-1, false)]
+    [InlineData(-1, true)]
+    public void SidePanelFocusKeepsOnlyTheFocusedPanelOrAnEditingArrangement(int popupIndex, bool editMode) => RunInSta(() =>
     {
         using var f = new PopupFixture();
         f.OpenAll();
+        f.List.Host.IsArrangementEditMode = editMode;
         var focus = new TextBox();
         if (popupIndex >= 0) ((Border)f.Subpopups[popupIndex].Child).Child = focus;
         var args = new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, 100, null, focus);
         typeof(YouTubeMiniPlayerListPopupController)
             .GetMethod("YouTubeMiniPlayerListOwnerWindow_PreviewGotKeyboardFocus", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(f.Controller, [f.Owner, args]);
-        Assert.Equal(popupIndex is 4 or 6, f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
+        Assert.Equal(editMode || popupIndex is 4 or 6, f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
         Assert.Equal(popupIndex == 5, f.Elements.YouTubeMiniPlayerGlobalActionsPopup.IsOpen);
         Assert.Equal(popupIndex is 4 or 6, f.Elements.YouTubeMiniPlayerLinearPlacementPopup.IsOpen);
         Assert.Equal(popupIndex == 7, f.Elements.YouTubeMiniPlayerClosedHistoryPopup!.IsOpen);
@@ -258,8 +309,10 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
         Assert.True(f.Elements.YouTubeMiniPlayerListWindow.Left >= 1008);
     });
 
-    [Fact]
-    public void DisplayDropdownOutsideArrangeBoundsDoesNotCloseTheListOrArrangePopup() => RunInSta(() =>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DropdownInputKeepsArrangePopupOpenWhileOutsideClickClosesIt(bool areaSelector) => RunInSta(() =>
     {
         var selector = new ComboBox
         {
@@ -278,7 +331,7 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
             Height = 60
         });
         source.RootVisual = selector;
-        using var f = new PopupFixture(selector);
+        using var f = areaSelector ? new PopupFixture(areaSelector: selector) : new PopupFixture(displaySelector: selector);
         selector.ItemsSource = new[] { "現在の画面", "ディスプレイ 2" };
         f.OpenAll();
         selector.ApplyTemplate();
@@ -289,10 +342,33 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
             selector.IsDropDownOpen = true;
             Dispatcher.CurrentDispatcher.Invoke(static () => { }, DispatcherPriority.DataBind);
             Assert.True(dropdown.IsOpen, $"loaded={selector.IsLoaded}, visible={selector.IsVisible}, open={selector.IsDropDownOpen}, size={selector.ActualWidth}x{selector.ActualHeight}, child={dropdown.Child.IsVisible}");
+            var item = new ComboBoxItem { Content = "選択項目" };
+            ((Border)dropdown.Child).Child = item;
             f.Hits.Add(dropdown.Child);
             f.LeftClick();
             Assert.True(f.Elements.YouTubeMiniPlayerListWindow.IsOpen);
             Assert.True(f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
+
+            var focusArgs = new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, 101, null, item);
+            typeof(YouTubeMiniPlayerListPopupController)
+                .GetMethod("YouTubeMiniPlayerListOwnerWindow_PreviewGotKeyboardFocus", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(f.Controller, [f.Owner, focusArgs]);
+            Assert.True(f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
+
+            f.List.Host.Events.Clear();
+            var mouseArgs = new MouseButtonEventArgs(Mouse.PrimaryDevice, 102, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent,
+                Source = item
+            };
+            f.Controller.YouTubeMiniPlayerListPopupContent_PreviewMouseLeftButtonDown(f.Owner, mouseArgs);
+            Assert.DoesNotContain("cancel-hover", f.List.Host.Events);
+
+            f.Hits.Clear();
+            f.Hits.Add(f.Elements.YouTubeMiniPlayerListPopupRoot);
+            f.LeftClick(timestamp: 103);
+            Assert.False(f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
+            Assert.True(f.Elements.YouTubeMiniPlayerListWindow.IsOpen);
         }
         finally { selector.IsDropDownOpen = false; }
         return Task.CompletedTask;
@@ -488,17 +564,23 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
     });
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void ArrangementEditingOrEditableControlKeepsListOpen(bool editMode) => RunInSta(async () =>
+    [InlineData(MouseButton.Left)]
+    [InlineData(MouseButton.Right)]
+    [InlineData(MouseButton.Middle)]
+    public void OutsideClickKeepsArrangementMenuOnlyWhileEditing(MouseButton button) => RunInSta(() =>
     {
         using var f = new PopupFixture();
         f.OpenAll();
-        f.List.Host.IsArrangementEditMode = editMode;
-        f.List.Host.OverEditableControl = !editMode;
-        f.LeftClick();
+        f.List.Host.IsArrangementEditMode = true;
+        f.Click(button);
+        Assert.True(f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
+        Assert.False(f.Elements.YouTubeMiniPlayerGlobalActionsPopup.IsOpen);
+        Assert.False(f.Elements.YouTubeMiniPlayerLinearPlacementPopup.IsOpen);
+        f.List.Host.IsArrangementEditMode = false;
+        f.Click(button);
+        Assert.False(f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
         Assert.True(f.Elements.YouTubeMiniPlayerListWindow.IsOpen);
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     });
 
     [Fact]
@@ -527,13 +609,19 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
         await Task.CompletedTask;
     });
 
-    [Fact]
-    public void WindowInteractionClosesAuxiliaryPanelsWithoutClosingTheList() => RunInSta(() =>
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, true)]
+    public void WindowInteractionPreservesAnEditingArrangementOnlyWhenRequested(bool preserveEdit, bool editMode, bool remainsOpen) => RunInSta(() =>
     {
         using var f = new PopupFixture();
         f.OpenAll();
-        f.Controller.CloseAuxiliaryPopups();
-        Assert.All(f.Subpopups, popup => Assert.False(popup.IsOpen));
+        f.List.Host.IsArrangementEditMode = editMode;
+        f.Controller.CloseAuxiliaryPopups(preserveArrangementEdit: preserveEdit);
+        Assert.Equal(remainsOpen, f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
+        Assert.All(f.Subpopups.Where(popup => popup != f.Elements.YouTubeMiniPlayerArrangePopup), popup => Assert.False(popup.IsOpen));
         Assert.True(f.Elements.YouTubeMiniPlayerListWindow.IsOpen);
         return Task.CompletedTask;
     });
@@ -560,7 +648,7 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
     });
 
     [Fact]
-    public void IndependentWindowDeactivationKeepsEditingPreviewOnly() => RunInSta(() =>
+    public void IndependentWindowDeactivationKeepsEditingPreviewAndItsMenu() => RunInSta(() =>
     {
         using var f = new PopupFixture();
         f.OpenAll();
@@ -568,10 +656,14 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
         typeof(YouTubeMiniPlayerListPopupController).GetMethod("YouTubeMiniPlayerListOwnerWindow_Deactivated",
             BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(f.Controller, [f.Owner, EventArgs.Empty]);
         Assert.DoesNotContain("cancel-arrangement:False", f.List.Host.Events);
+        Assert.True(f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
+        Assert.False(f.Elements.YouTubeMiniPlayerGlobalActionsPopup.IsOpen);
+        Assert.False(f.Elements.YouTubeMiniPlayerLinearPlacementPopup.IsOpen);
         f.List.Host.IsArrangementEditMode = false;
         typeof(YouTubeMiniPlayerListPopupController).GetMethod("YouTubeMiniPlayerListOwnerWindow_Deactivated",
             BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(f.Controller, [f.Owner, EventArgs.Empty]);
         Assert.Contains("cancel-arrangement:False", f.List.Host.Events);
+        Assert.False(f.Elements.YouTubeMiniPlayerArrangePopup.IsOpen);
         return Task.CompletedTask;
     });
 
@@ -691,11 +783,11 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
             Elements.YouTubeMiniPlayerLinearPlacementPopup, Elements.YouTubeMiniPlayerClosedHistoryPopup!
         ];
 
-        internal PopupFixture(ComboBox? displaySelector = null, FrameworkElement? listContent = null)
+        internal PopupFixture(ComboBox? displaySelector = null, FrameworkElement? listContent = null, ComboBox? areaSelector = null)
         {
             Elements = new(new Grid(), listContent ?? new Border(), List.Elements.YouTubeMiniPlayerListWindow,
                 new Popup(), new Popup(), new Popup(), new Popup(), new Popup(), new Popup(), new Popup(), displaySelector,
-                new Button(), new Button(), List.Elements.YouTubeMiniPlayerClosedHistoryPopup, new Button());
+                new Button(), new Button(), List.Elements.YouTubeMiniPlayerClosedHistoryPopup, new Button(), areaSelector);
             foreach (var popup in Subpopups)
             {
                 popup.Child = new Border();
@@ -710,9 +802,9 @@ public sealed class YouTubeMiniPlayerListPopupControllerTests
             Elements.YouTubeMiniPlayerListWindow.IsOpen = true;
             foreach (var popup in Subpopups) popup.IsOpen = true;
         }
-        internal void LeftClick() => typeof(YouTubeMiniPlayerListPopupController)
+        internal void LeftClick(int timestamp = 100) => typeof(YouTubeMiniPlayerListPopupController)
             .GetMethod("ProcessLeftMouseDown", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(Controller, [100, new Point(50, 60)]);
+            .Invoke(Controller, [timestamp, new Point(50, 60)]);
         internal void Click(MouseButton button) => typeof(YouTubeMiniPlayerListPopupController)
             .GetMethod("ProcessMouseDown", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(Controller, [100, new Point(50, 60), button]);

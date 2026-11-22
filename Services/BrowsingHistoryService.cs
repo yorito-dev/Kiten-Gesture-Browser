@@ -17,6 +17,7 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
     private readonly Timer _flushTimer;
     private BrowsingHistorySettings _settings = new();
     private bool _disposed;
+    private int _pendingDeletes;
 
     public BrowsingHistoryService()
         : this(new BrowsingHistoryRepository())
@@ -34,6 +35,23 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
     }
 
     public event EventHandler? HistoryChanged;
+
+    internal bool CanConfirmPersistedState()
+    {
+        if (!Monitor.TryEnter(_syncRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            return _flushLock.CurrentCount != 0 && _pending.Count == 0 && Volatile.Read(ref _pendingDeletes) == 0;
+        }
+        finally
+        {
+            Monitor.Exit(_syncRoot);
+        }
+    }
 
     public void Configure(BrowsingHistorySettings? settings)
     {
@@ -94,7 +112,9 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
         BrowsingHistoryQuery query,
         CancellationToken cancellationToken = default)
     {
-        await FlushAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await FlushAsync();
+        cancellationToken.ThrowIfCancellationRequested();
         return await _repository.SearchAsync(query, cancellationToken);
     }
 
@@ -241,14 +261,22 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
 
     private async Task<int> DeleteAsync(Func<Task<int>> delete)
     {
-        await FlushAsync();
-        var deleted = await delete();
-        if (deleted > 0)
+        Interlocked.Increment(ref _pendingDeletes);
+        try
         {
-            HistoryChanged?.Invoke(this, EventArgs.Empty);
-        }
+            await FlushAsync();
+            var deleted = await delete();
+            if (deleted > 0)
+            {
+                HistoryChanged?.Invoke(this, EventArgs.Empty);
+            }
 
-        return deleted;
+            return deleted;
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingDeletes);
+        }
     }
 
     private void OnFlushTimer()

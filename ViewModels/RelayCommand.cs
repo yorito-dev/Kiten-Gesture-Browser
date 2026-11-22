@@ -1,4 +1,6 @@
+using System.Windows;
 using System.Windows.Input;
+using TabBrowser.Services;
 
 namespace TabBrowser.ViewModels;
 
@@ -35,12 +37,20 @@ public sealed class AsyncRelayCommand : ICommand
 {
     private readonly Func<object?, Task> _execute;
     private readonly Predicate<object?>? _canExecute;
+    private readonly Action<Exception> _recordFailure;
     private bool _isExecuting;
 
     public AsyncRelayCommand(Func<object?, Task> execute, Predicate<object?>? canExecute = null)
+        : this(execute, canExecute, static exception =>
+            (Application.Current as App)?.RecordUiOperationException("async-relay-command", exception, includeStackTrace: false))
+    {
+    }
+
+    internal AsyncRelayCommand(Func<object?, Task> execute, Predicate<object?>? canExecute, Action<Exception> recordFailure)
     {
         _execute = execute;
         _canExecute = canExecute;
+        _recordFailure = recordFailure;
     }
 
     public event EventHandler? CanExecuteChanged;
@@ -52,7 +62,18 @@ public sealed class AsyncRelayCommand : ICommand
 
     public async void Execute(object? parameter)
     {
-        await ExecuteAsync(parameter);
+        try
+        {
+            await ExecuteAsync(parameter);
+        }
+        catch (OperationCanceledException)
+        {
+            // キャンセルはコマンドの正常な終了として扱う。
+        }
+        catch (Exception exception) when (UiOperationExceptionBoundary.IsRecoverableOperationFailure(exception))
+        {
+            _recordFailure(exception);
+        }
     }
 
     internal async Task ExecuteAsync(object? parameter)

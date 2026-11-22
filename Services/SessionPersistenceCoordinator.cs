@@ -11,12 +11,10 @@ internal sealed class SessionPersistenceCoordinator
     private readonly object _gate = new();
     private readonly object _scheduleApplyGate = new();
     private readonly SemaphoreSlim _asyncFlushGate = new(1, 1);
-    private readonly SemaphoreSlim _synchronousFlushGate = new(1, 1);
     private readonly Func<DateTimeOffset> _now;
     private readonly Action<TimeSpan, Action> _schedule;
     private readonly Action _cancelSchedule;
     private readonly Func<Task<SessionPersistenceWorkItem?>> _captureLatestWorkItemAsync;
-    private readonly Func<SessionPersistenceWorkItem?> _captureLatestWorkItemSynchronously;
     private readonly Action<Exception> _scheduledSaveFailure;
     private readonly TimeSpan _debounceDelay;
     private readonly TimeSpan _maximumDeferThreshold;
@@ -25,20 +23,17 @@ internal sealed class SessionPersistenceCoordinator
     private bool _saveRunning;
     private bool _queuedDuringRun;
     private bool _flushRunning;
-    private bool _synchronousFlushRunning;
     private long _requestVersion;
     private long _lastPersistedRequestVersion;
     private long _scheduleGeneration;
     private long _flushEpoch;
     private Task _activeSaveTask = Task.CompletedTask;
-    private TaskCompletionSource? _synchronousFlushCompletion;
 
     public SessionPersistenceCoordinator(
         Func<DateTimeOffset> now,
         Action<TimeSpan, Action> schedule,
         Action cancelSchedule,
         Func<Task<SessionPersistenceWorkItem?>> captureLatestWorkItemAsync,
-        Func<SessionPersistenceWorkItem?> captureLatestWorkItemSynchronously,
         Action<Exception> scheduledSaveFailure,
         TimeSpan? debounceDelay = null,
         TimeSpan? maximumDeferThreshold = null)
@@ -48,8 +43,6 @@ internal sealed class SessionPersistenceCoordinator
         _cancelSchedule = cancelSchedule ?? throw new ArgumentNullException(nameof(cancelSchedule));
         _captureLatestWorkItemAsync = captureLatestWorkItemAsync
             ?? throw new ArgumentNullException(nameof(captureLatestWorkItemAsync));
-        _captureLatestWorkItemSynchronously = captureLatestWorkItemSynchronously
-            ?? throw new ArgumentNullException(nameof(captureLatestWorkItemSynchronously));
         _scheduledSaveFailure = scheduledSaveFailure
             ?? throw new ArgumentNullException(nameof(scheduledSaveFailure));
         _debounceDelay = debounceDelay ?? DefaultDebounceDelay;
@@ -107,73 +100,19 @@ internal sealed class SessionPersistenceCoordinator
         await _asyncFlushGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            while (true)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var start = BeginAsyncFlush();
-                if (start.SynchronousFlushTask is not null)
-                {
-                    await start.SynchronousFlushTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                CancelAppliedSchedule(start.ScheduleGeneration);
-                return await RunAsyncFlushAsync(
-                        start.Epoch,
-                        start.ActiveSaveTask!,
-                        cancellationToken,
-                        skipCaptureWhenAlreadyPersisted)
-                    .ConfigureAwait(false);
-            }
+            cancellationToken.ThrowIfCancellationRequested();
+            var start = BeginAsyncFlush();
+            CancelAppliedSchedule(start.ScheduleGeneration);
+            return await RunAsyncFlushAsync(
+                    start.Epoch,
+                    start.ActiveSaveTask,
+                    cancellationToken,
+                    skipCaptureWhenAlreadyPersisted)
+                .ConfigureAwait(false);
         }
         finally
         {
             _asyncFlushGate.Release();
-        }
-    }
-
-    public void FlushSynchronously()
-    {
-        _synchronousFlushGate.Wait();
-        var start = BeginSynchronousFlush();
-        ScheduledCallback? failedFlushCallback = null;
-        long capturedRequestVersion = -1;
-        try
-        {
-            CancelAppliedSchedule(start.ScheduleGeneration);
-            start.ActiveSaveTask.GetAwaiter().GetResult();
-
-            while (true)
-            {
-                capturedRequestVersion = GetRequestVersionForFinalSave(start.Epoch);
-                var workItem = _captureLatestWorkItemSynchronously();
-                if (workItem is not null)
-                {
-                    workItem.SaveSynchronously();
-                    MarkRequestVersionPersisted(capturedRequestVersion);
-                }
-
-                var completion = TryCompleteFlush(start.Epoch, capturedRequestVersion);
-                if (completion is FlushCompletion.Completed or FlushCompletion.Superseded)
-                {
-                    return;
-                }
-            }
-        }
-        catch
-        {
-            failedFlushCallback = EndFailedFlush(start.Epoch, capturedRequestVersion);
-            throw;
-        }
-        finally
-        {
-            EndSynchronousFlush(start.Epoch);
-            if (failedFlushCallback is { } callback)
-            {
-                ApplySchedule(callback);
-            }
-
-            _synchronousFlushGate.Release();
         }
     }
 
@@ -201,14 +140,14 @@ internal sealed class SessionPersistenceCoordinator
         }
     }
 
-    internal bool IsLatestRequestPersistedForTesting()
+    internal bool IsLatestRequestPersisted(bool requireSavedSnapshot = false)
     {
         lock (_gate)
         {
             return !_saveRunning
                 && !_flushRunning
-                && !_synchronousFlushRunning
-                && _lastPersistedRequestVersion == _requestVersion;
+                && _lastPersistedRequestVersion == _requestVersion
+                && (!requireSavedSnapshot || _lastPersistedRequestVersion > 0);
         }
     }
 
@@ -216,37 +155,12 @@ internal sealed class SessionPersistenceCoordinator
     {
         lock (_gate)
         {
-            if (_synchronousFlushRunning)
-            {
-                return new AsyncFlushStart(
-                    0,
-                    0,
-                    null,
-                    _synchronousFlushCompletion?.Task ?? Task.CompletedTask);
-            }
-
             var epoch = ++_flushEpoch;
             _flushRunning = true;
             var scheduleGeneration = ++_scheduleGeneration;
             _firstQueuedAt = null;
             _queuedDuringRun = false;
-            return new AsyncFlushStart(epoch, scheduleGeneration, _activeSaveTask, null);
-        }
-    }
-
-    private SynchronousFlushStart BeginSynchronousFlush()
-    {
-        lock (_gate)
-        {
-            var epoch = ++_flushEpoch;
-            _synchronousFlushRunning = true;
-            _synchronousFlushCompletion = new TaskCompletionSource(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-            _flushRunning = true;
-            var scheduleGeneration = ++_scheduleGeneration;
-            _firstQueuedAt = null;
-            _queuedDuringRun = false;
-            return new SynchronousFlushStart(epoch, scheduleGeneration, _activeSaveTask);
+            return new AsyncFlushStart(epoch, scheduleGeneration, _activeSaveTask);
         }
     }
 
@@ -321,7 +235,7 @@ internal sealed class SessionPersistenceCoordinator
     {
         lock (_gate)
         {
-            if (epoch != _flushEpoch || _synchronousFlushRunning)
+            if (epoch != _flushEpoch)
             {
                 requestVersion = -1;
                 return false;
@@ -329,19 +243,6 @@ internal sealed class SessionPersistenceCoordinator
 
             requestVersion = GetRequestVersionForFinalSaveLocked();
             return true;
-        }
-    }
-
-    private long GetRequestVersionForFinalSave(long epoch)
-    {
-        lock (_gate)
-        {
-            if (epoch != _flushEpoch || !_synchronousFlushRunning)
-            {
-                throw new InvalidOperationException("同期セッション保存の世代が無効です。");
-            }
-
-            return GetRequestVersionForFinalSaveLocked();
         }
     }
 
@@ -357,7 +258,7 @@ internal sealed class SessionPersistenceCoordinator
     {
         lock (_gate)
         {
-            if (epoch != _flushEpoch || _synchronousFlushRunning)
+            if (epoch != _flushEpoch)
             {
                 return null;
             }
@@ -384,7 +285,7 @@ internal sealed class SessionPersistenceCoordinator
     {
         lock (_gate)
         {
-            return epoch == _flushEpoch && !_synchronousFlushRunning;
+            return epoch == _flushEpoch;
         }
     }
 
@@ -429,24 +330,6 @@ internal sealed class SessionPersistenceCoordinator
             _queuedDuringRun = false;
             return null;
         }
-    }
-
-    private void EndSynchronousFlush(long epoch)
-    {
-        TaskCompletionSource? completion = null;
-        lock (_gate)
-        {
-            if (epoch != _flushEpoch || !_synchronousFlushRunning)
-            {
-                return;
-            }
-
-            _synchronousFlushRunning = false;
-            completion = _synchronousFlushCompletion;
-            _synchronousFlushCompletion = null;
-        }
-
-        completion?.TrySetResult();
     }
 
     private ScheduledCallback CreateScheduledCallbackLocked(DateTimeOffset now)
@@ -584,7 +467,6 @@ internal sealed class SessionPersistenceCoordinator
         lock (_gate)
         {
             if (epoch != _flushEpoch
-                || _synchronousFlushRunning
                 || _saveRunning
                 || _lastPersistedRequestVersion != _requestVersion)
             {
@@ -614,12 +496,6 @@ internal sealed class SessionPersistenceCoordinator
     }
 
     private readonly record struct AsyncFlushStart(
-        long Epoch,
-        long ScheduleGeneration,
-        Task? ActiveSaveTask,
-        Task? SynchronousFlushTask);
-
-    private readonly record struct SynchronousFlushStart(
         long Epoch,
         long ScheduleGeneration,
         Task ActiveSaveTask);

@@ -197,10 +197,12 @@
                         <CheckBox x:Name="EnableBrowsingHistoryCheckBox" Content="閲覧履歴を保存する" />
                         <TextBlock Margin="0,4,0,6" Foreground="#D1D5DB" Text="履歴に残さないサイト" />
                         <TextBox x:Name="BrowsingHistoryExcludedHostsBox" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsEnabled="{Binding IsChecked, ElementName=EnableBrowsingHistoryCheckBox}" />
-                        <TextBlock Margin="0,5,0,0" Foreground="#9CA3AF" FontSize="12" Text="ホスト名を改行またはカンマで区切ります。例: example.com" />
+                        <TextBlock Margin="0,5,0,0" Foreground="#9CA3AF" FontSize="12" TextWrapping="Wrap" Text="ホスト名を改行またはカンマで区切ります（例 example.com）。サブドメインも除外します。" />
                         <TextBlock Margin="0,10,0,6" Foreground="#D1D5DB" Text="履歴に残さないコンテナ" />
                         <StackPanel x:Name="BrowsingHistoryExcludedContainersPanel" IsEnabled="{Binding IsChecked, ElementName=EnableBrowsingHistoryCheckBox}" />
                         <TextBlock Margin="0,6,0,0" Foreground="#9CA3AF" FontSize="12" Text="無効化しても、すでに保存された履歴は削除しません。" />
+                        <CheckBox x:Name="RecordRecentWebVisitsCheckBox" Margin="0,12,0,0" Content="Web・YouTubeの閲覧を「最近使った項目」に記録する" />
+                        <TextBlock Margin="0,5,0,0" Foreground="#9CA3AF" FontSize="12" TextWrapping="Wrap" Text="閲覧履歴とは別の設定です。オフにしても、保存済みの項目やピン留めは残ります。" />
                     </StackPanel>
                 </Border>
 
@@ -225,7 +227,7 @@
                         <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="#D1D5DB" Text="一時停止までの秒数" />
                         <TextBox x:Name="CpuSaverDelayBox" Grid.Row="2" Grid.Column="1" Width="100" HorizontalAlignment="Left" />
                         <CheckBox x:Name="EnableInactiveTabMemorySaverCheckBox" Grid.Row="3" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#D1D5DB" Content="長時間使っていないタブをメモリに保持したまま休止する" />
-                        <CheckBox x:Name="EnableLinkHoverPreviewCheckBox" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#D1D5DB" Content="リンク先をマウスオーバーでポップアップ表示する" />
+                        <CheckBox x:Name="EnableLinkHoverPreviewCheckBox" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#D1D5DB" Content="リンク先をマウスオーバーでポップアップ表示する" ToolTip="有効にすると、リンクや新しいタブのブックマークにマウスを置いたときに通信する場合があります。" />
                     </Grid>
                 </Border>
 
@@ -332,7 +334,10 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10" FontWeight="SemiBold" Text="コンテナプロファイル" />
+                        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10">
+                            <TextBlock FontWeight="SemiBold" Text="コンテナプロファイル" />
+                            <TextBlock x:Name="ContainerProfileLoadErrorText" Margin="0,4,0,0" Style="{StaticResource DarkErrorTextStyle}" Visibility="Collapsed" />
+                        </StackPanel>
 
                         <ListBox x:Name="ContainerProfileList" Grid.Row="1" Grid.ColumnSpan="2" Height="128" Margin="0,0,0,10" Background="#0F1117" BorderBrush="#343842" BorderThickness="1" Foreground="#F3F4F6" SelectionChanged="ContainerProfileList_SelectionChanged">
                             <ListBox.ItemTemplate>

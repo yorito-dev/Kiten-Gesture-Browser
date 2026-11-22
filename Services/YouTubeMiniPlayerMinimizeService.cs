@@ -28,8 +28,8 @@ internal static class YouTubeMiniPlayerMinimizeService
         runtime.TitleBandPopup.IsOpen = false;
         runtime.Toolbar.Visibility = Visibility.Collapsed;
         runtime.TitleBand.Visibility = Visibility.Collapsed;
-        runtime.ToolbarHideTimer?.Stop();
-        runtime.TitleBandHideTimer?.Stop();
+        runtime.Overlay.ToolbarHideTimer?.Stop();
+        runtime.Overlay.TitleBandHideTimer?.Stop();
         if (runtime.State.IsMinimized)
         {
             if (runtime.TaskbarWindow.WindowState != WindowState.Minimized)

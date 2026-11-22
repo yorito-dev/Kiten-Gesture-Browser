@@ -45,6 +45,7 @@ internal interface IClosedTabLifecycleHost
     void QueueRestoredTabBridgeCompatibilityProbe(BrowserTab tab);
     void QueueBackgroundTabLoading();
     Task<bool> TrySuspendTabAsync(BrowserTab tab);
+    void RecordClosedTabSuspendOutcome(ClosedTabSuspendOutcome outcome);
     SessionWindowState CreateWindowSessionState();
     ClosedTabState CreateClosedTabState(SessionTabState tab, DateTimeOffset closedAt);
     void ShowRestoredWindow(SessionWindowState windowState);
@@ -62,6 +63,8 @@ internal sealed class ClosedTabLifecycleController(
     Func<DateTimeOffset>? utcNow = null,
     TabRuntimeCoordinator? runtimeCoordinator = null)
 {
+    private static readonly TimeSpan PreservedRuntimeSuspendTimeout = TimeSpan.FromSeconds(2);
+
     private readonly IClosedTabLifecycleHost _host = host;
     private readonly ClosedTabWindowHistoryStore _historyStore = historyStore;
     private readonly SplitViewService _splitViewService = splitViewService;
@@ -438,7 +441,7 @@ internal sealed class ClosedTabLifecycleController(
         catch (Exception) { return false; }
     }
 
-    public async Task SuspendPreservedClosedTabAsync(BrowserTab tab)
+    public async Task SuspendPreservedClosedTabAsync(BrowserTab tab, TimeSpan? timeout = null)
     {
         if (_host.Tabs.Contains(tab)
             || _runtimeCoordinator.GetOwnershipSnapshot(tab).State != TabRuntimeState.Detached)
@@ -446,7 +449,44 @@ internal sealed class ClosedTabLifecycleController(
             return;
         }
 
-        await _host.TrySuspendTabAsync(tab);
+        // 同じタブを復元して再び閉じた場合、前回の処理で新しい保持を破棄しない。
+        var closedTab = _closedTabRuntimeTabs.FirstOrDefault(entry => ReferenceEquals(entry.Value, tab)).Key;
+        bool suspended;
+        try
+        {
+            var suspension = _host.TrySuspendTabAsync(tab);
+            try
+            {
+                suspended = await suspension.WaitAsync(timeout ?? PreservedRuntimeSuspendTimeout);
+            }
+            catch (TimeoutException)
+            {
+                _host.RecordClosedTabSuspendOutcome(ClosedTabSuspendOutcome.Timeout);
+                if (DiscardUnsuspendedRuntime(closedTab, tab))
+                {
+                    _ = suspension.ContinueWith(
+                        static completed => { _ = completed.Exception; },
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted,
+                        TaskScheduler.Default);
+                    return;
+                }
+
+                // 復元済みなら、遅れて一時停止が完了したときに復元先で再開する。
+                suspended = await suspension;
+            }
+        }
+        catch
+        {
+            DiscardUnsuspendedRuntime(closedTab, tab);
+            throw;
+        }
+
+        if (!suspended && DiscardUnsuspendedRuntime(closedTab, tab))
+        {
+            return;
+        }
+
         var restoredOwner = getWindowControllers().FirstOrDefault(owner =>
             _runtimeCoordinator.CanUseInWindow(tab, owner._host.RuntimeWindowId, owner._host.Tabs.Contains(tab)));
         if (restoredOwner is not null)
@@ -507,6 +547,23 @@ internal sealed class ClosedTabLifecycleController(
                 owner.DisposePreservedRuntime(closedTab);
             }
         }
+    }
+
+    private bool DiscardUnsuspendedRuntime(ClosedTabState? closedTab, BrowserTab tab)
+    {
+        if (closedTab is null
+            || _historyStore.IsRestoringTab(closedTab)
+            || _host.Tabs.Contains(tab)
+            || _runtimeCoordinator.GetOwnershipSnapshot(tab).State != TabRuntimeState.Detached
+            || !_closedTabRuntimeTabs.TryGetValue(closedTab, out var retained)
+            || !ReferenceEquals(retained, tab))
+        {
+            return false;
+        }
+
+        DisposePreservedRuntime(closedTab);
+        _host.RecordClosedTabSuspendOutcome(ClosedTabSuspendOutcome.Discarded);
+        return true;
     }
 
     private void DisposePreservedRuntime(ClosedTabState closedTab)

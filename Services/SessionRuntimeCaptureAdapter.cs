@@ -138,8 +138,7 @@ internal sealed class SessionRuntimeCaptureAdapter
         var sessionService = owner.SessionService;
         return new SessionPersistenceWorkItem(
             snapshot,
-            () => Task.Run(() => sessionService.SaveAsync(snapshot)),
-            () => sessionService.Save(snapshot));
+            () => Task.Run(() => sessionService.SaveAsync(snapshot)));
     }
 
     public SessionData CreateSnapshot(IReadOnlyList<SessionRuntimeWindowSource> sources)

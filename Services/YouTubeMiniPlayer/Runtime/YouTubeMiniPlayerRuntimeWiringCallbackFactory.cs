@@ -4,76 +4,73 @@ using TabBrowser.Models;
 
 namespace TabBrowser.Services;
 
+internal sealed class YouTubeMiniPlayerRuntimePlaybackControls
+{
+    public required Action<Button, double?> SetSpeedResetContent { get; init; }
+    public required Action<Button, bool?> SetLoopContent { get; init; }
+    public required double SpeedStep { get; init; }
+}
+
 internal static class YouTubeMiniPlayerRuntimeWiringCallbackFactory
 {
     public static YouTubeMiniPlayerRuntimeWiringCallbacks Create(
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
-        Action<YouTubeMiniPlayerState> forcePopupNativePosition,
-        Action<Guid, bool> bringToFront,
+        YouTubeMiniPlayerPositionCallbacks positionCallbacks,
+        YouTubeMiniPlayerCommandCallbacks commandCallbacks,
+        YouTubeMiniPlayerOverlayVisibilityCallbacks overlayVisibilityCallbacks,
+        YouTubeMiniPlayerOverlayPlacementCallbacks overlayPlacementCallbacks,
+        YouTubeMiniPlayerRuntimePlaybackControls playbackControls,
         Action<FrameworkElement, YouTubeMiniPlayerState> attachDrag,
-        Action<YouTubeMiniPlayerState> toggleMinimized,
-        Action<YouTubeMiniPlayerState, bool> setMinimized,
-        Action<YouTubeMiniPlayerState> activateSourceTab,
-        Action<Guid> close,
-        Action<YouTubeMiniPlayerState, bool> setTitleBandVisibility,
-        Action<YouTubeMiniPlayerRuntime> updateTitleBandPlacement,
-        Action<YouTubeMiniPlayerRuntime> queueOverlayPositionRefresh,
-        Func<Point> getHostOrigin,
-        Action<Button, double?> setSpeedResetContent,
-        Action<Button, bool?> setLoopContent,
         Action<string> setStatus,
-        Action queueSave,
-        Action<YouTubeMiniPlayerState, bool> setToolbarVisibility,
-        Action<YouTubeMiniPlayerRuntime> updateToolbarPlacement,
-        double speedStep)
+        Action queueSave)
     {
         return new YouTubeMiniPlayerRuntimeWiringCallbacks(
-            forcePopupNativePosition,
-            bringToFront,
+            positionCallbacks.ForceNativePosition,
+            commandCallbacks.BringToFront,
             attachDrag,
-            toggleMinimized,
-            setMinimized,
-            activateSourceTab,
-            close,
-            setTitleBandVisibility,
-            updateTitleBandPlacement,
-            queueOverlayPositionRefresh,
-            getHostOrigin,
-            setSpeedResetContent,
-            setLoopContent,
+            commandCallbacks.ToggleMinimized,
+            commandCallbacks.SetMinimized,
+            commandCallbacks.ActivateSourceTab,
+            commandCallbacks.Close,
+            overlayVisibilityCallbacks.SetTitleBandVisibility,
+            overlayPlacementCallbacks.UpdateTitleBandPlacement,
+            positionCallbacks.QueueNativePositionRefresh,
+            positionCallbacks.GetHostOrigin,
+            playbackControls.SetSpeedResetContent,
+            playbackControls.SetLoopContent,
             YouTubeMiniPlayerPlaybackCommandService.CreateChangeSpeedHandler(
                 runtimes,
                 setStatus,
-                setSpeedResetContent,
-                setLoopContent,
+                playbackControls.SetSpeedResetContent,
+                playbackControls.SetLoopContent,
                 queueSave),
             YouTubeMiniPlayerPlaybackCommandService.CreateSetSpeedHandler(
                 runtimes,
                 setStatus,
-                setSpeedResetContent,
-                setLoopContent,
+                playbackControls.SetSpeedResetContent,
+                playbackControls.SetLoopContent,
                 queueSave),
             YouTubeMiniPlayerPlaybackCommandService.CreateToggleLoopHandler(
                 runtimes,
                 setStatus,
-                setSpeedResetContent,
-                setLoopContent,
+                playbackControls.SetSpeedResetContent,
+                playbackControls.SetLoopContent,
                 queueSave),
             YouTubeMiniPlayerPlaybackCommandService.CreateRefreshDisplayHandler(
                 runtimes,
                 setStatus,
-                setSpeedResetContent,
-                setLoopContent),
+                playbackControls.SetSpeedResetContent,
+                playbackControls.SetLoopContent),
             YouTubeMiniPlayerPlaybackCommandService.CreateAbRepeatHandler(
                 runtimes,
                 setStatus,
                 queueSave),
-            setToolbarVisibility,
-            updateToolbarPlacement,
+            overlayVisibilityCallbacks.SetToolbarVisibility,
+            overlayPlacementCallbacks.UpdateToolbarPlacement,
             YouTubeMiniPlayerInputService.IsTitleBandHotZone,
             YouTubeMiniPlayerInputService.IsToolbarHotZone,
             setStatus,
             queueSave,
-            speedStep);
+            playbackControls.SpeedStep);
     }
 }

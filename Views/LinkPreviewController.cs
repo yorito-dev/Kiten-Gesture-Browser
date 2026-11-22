@@ -54,6 +54,7 @@ internal sealed class LinkPreviewController : IDisposable
     private readonly FiveChLiveReadabilityService _fiveChLiveReadabilityService;
     private readonly ReadabilityController _readabilityController;
     private readonly LinkPreviewInteractionCoordinator _linkPreviewInteractionCoordinator = new();
+    private CancellationTokenSource? _thumbnailCaptureCancellation;
     private bool _disposed;
 
     internal LinkPreviewController(
@@ -156,6 +157,7 @@ internal sealed class LinkPreviewController : IDisposable
         if (cancellationToken.IsCancellationRequested
             || _host.IsClosingWindow
             || _disposed
+            || !_host.IsLinkHoverPreviewEnabled
             || !_linkPreviewInteractionCoordinator.TryCapturePending(out var pending)
             || _host.ResolveVisibleSource(pending.SourceTabId) is not { } tab)
         {
@@ -164,6 +166,7 @@ internal sealed class LinkPreviewController : IDisposable
 
         var url = pending.Url;
         var title = pending.Title;
+        CancelThumbnailCapture();
         var requestVersion = _linkPreviewInteractionCoordinator.BeginDisplay();
 
         ShowLinkPreviewShell(tab, title, url, new Point(pending.ClientX, pending.ClientY));
@@ -173,13 +176,26 @@ internal sealed class LinkPreviewController : IDisposable
             return;
         }
 
-        var thumbnail = await _host.CaptureThumbnailAsync(url, title, cancellationToken);
-        if (cancellationToken.IsCancellationRequested)
+        using var capture = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _thumbnailCaptureCancellation = capture;
+        try
         {
-            return;
+            var thumbnail = await _host.CaptureThumbnailAsync(url, title, capture.Token);
+            if (!capture.IsCancellationRequested)
+            {
+                ApplyLinkPreviewThumbnail(requestVersion, url, thumbnail);
+            }
         }
-
-        ApplyLinkPreviewThumbnail(requestVersion, url, thumbnail);
+        catch (OperationCanceledException) when (capture.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_thumbnailCaptureCancellation, capture))
+            {
+                _thumbnailCaptureCancellation = null;
+            }
+        }
     }
 
     private void ShowLinkPreviewShell(LinkPreviewSource tab, string title, string url, Point clientPoint)
@@ -266,6 +282,7 @@ internal sealed class LinkPreviewController : IDisposable
     {
         _linkPreviewHoverTimer.Stop();
         _linkPreviewInteractionCoordinator.ClearPendingAndInvalidate();
+        CancelThumbnailCapture();
         _elements.Popup.IsOpen = false;
         _elements.Image.Source = null;
         _elements.Image.Visibility = Visibility.Collapsed;
@@ -275,6 +292,13 @@ internal sealed class LinkPreviewController : IDisposable
         {
             _host.StopPreviewPlayback();
         }
+    }
+
+    private void CancelThumbnailCapture()
+    {
+        var capture = _thumbnailCaptureCancellation;
+        _thumbnailCaptureCancellation = null;
+        capture?.Cancel();
     }
 
     internal void DismissLinkPreview()

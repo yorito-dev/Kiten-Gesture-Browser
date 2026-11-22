@@ -1,9 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using TabBrowser.Models;
 using TabBrowser.Views;
@@ -16,78 +11,62 @@ internal sealed record YouTubeMiniPlayerRuntimeCompositionCallbacks(
     Func<YouTubeMiniPlayerState, LocalVideoPlayerView> CreateLocalVideoView,
     YouTubeMiniPlayerRuntimeWiringCallbacks WiringCallbacks);
 
+internal sealed class YouTubeMiniPlayerRuntimePlaceholderCallbacks
+{
+    public required Style ButtonStyle { get; init; }
+    public required Func<YouTubeMiniPlayerState, Uri, Task> LoadRuntimeAsync { get; init; }
+    public required Func<Guid, long?> TryBeginGestureInteraction { get; init; }
+    public required Action<long> CompleteGestureInteraction { get; init; }
+}
+
 internal static class YouTubeMiniPlayerRuntimeCompositionCallbackFactory
 {
     public static YouTubeMiniPlayerRuntimeCompositionCallbacks Create(
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
-        Style buttonStyle,
-        Action queueSave,
-        Func<YouTubeMiniPlayerState, Task<long?>> applyWatchPageModeAsync,
-        Func<YouTubeMiniPlayerState, long, Task> applySavedStateAsync,
-        Func<YouTubeMiniPlayerState, Uri, Task> loadRuntimeAsync,
-        Action<string> setStatus,
-        Func<Guid, long?> tryBeginGestureInteraction,
-        Action<long> completeGestureInteraction,
+        YouTubeMiniPlayerRuntimePlaceholderCallbacks placeholderCallbacks,
+        YouTubeMiniPlayerRuntimeWebViewCallbacks webViewCallbacks,
         YouTubeMiniPlayerPositionCallbacks positionCallbacks,
         YouTubeMiniPlayerCommandCallbacks commandCallbacks,
         YouTubeMiniPlayerOverlayVisibilityCallbacks overlayVisibilityCallbacks,
         YouTubeMiniPlayerOverlayPlacementCallbacks overlayPlacementCallbacks,
-        Action<Button, double?> setSpeedResetContent,
-        Action<Button, bool?> setLoopContent,
+        YouTubeMiniPlayerRuntimePlaybackControls playbackControls,
         Func<YouTubeMiniPlayerState, LocalVideoPlayerView> createLocalVideoView,
-        Action<FrameworkElement, YouTubeMiniPlayerState> attachDrag,
-        double speedStep,
-        Action<YouTubeMiniPlayerState, string> requestAutoRecovery,
-        Action<YouTubeMiniPlayerState, CoreWebView2ProcessFailedEventArgs> reportProcessFailure,
-        Action<YouTubeMiniPlayerState> beginLiveChatTransition,
-        Func<YouTubeMiniPlayerState, YouTubeLiveChatAvailabilityResult, Task> applyLiveChatAvailabilityAsync,
-        Action<YouTubeMiniPlayerRuntime> recordBrowsingHistory,
-        Action<YouTubeMiniPlayerState, bool> queueInactiveSuspension,
-        Func<bool>? isClosing = null)
+        Action<FrameworkElement, YouTubeMiniPlayerState> attachDrag)
     {
         return new YouTubeMiniPlayerRuntimeCompositionCallbacks(
             state => YouTubeMiniPlayerRuntimeContentFactory.CreateWebView(
                 state,
                 runtimes,
-                queueSave,
-                applyWatchPageModeAsync,
-                applySavedStateAsync,
-                setStatus,
-                requestAutoRecovery,
-                reportProcessFailure,
-                beginLiveChatTransition,
-                applyLiveChatAvailabilityAsync,
-                recordBrowsingHistory,
-                queueInactiveSuspension,
-                isClosing),
+                webViewCallbacks.QueueSave,
+                webViewCallbacks.ApplyWatchPageModeAsync,
+                webViewCallbacks.ApplySavedStateAsync,
+                webViewCallbacks.SetStatus,
+                webViewCallbacks.OpenLinkInTab,
+                webViewCallbacks.RequestAutoRecovery,
+                webViewCallbacks.ReportProcessFailure,
+                webViewCallbacks.BeginLiveChatTransition,
+                webViewCallbacks.ApplyLiveChatAvailabilityAsync,
+                webViewCallbacks.RecordBrowsingHistory,
+                webViewCallbacks.QueueInactiveSuspension,
+                webViewCallbacks.IsClosing),
             state => YouTubeMiniPlayerRuntimeContentFactory.CreatePlaceholder(
                 state,
-                buttonStyle,
-                loadRuntimeAsync,
-                setStatus,
-                () => tryBeginGestureInteraction(state.Id),
-                completeGestureInteraction,
+                placeholderCallbacks.ButtonStyle,
+                placeholderCallbacks.LoadRuntimeAsync,
+                webViewCallbacks.SetStatus,
+                () => placeholderCallbacks.TryBeginGestureInteraction(state.Id),
+                placeholderCallbacks.CompleteGestureInteraction,
                 () => commandCallbacks.Close(state.Id)),
             createLocalVideoView,
             YouTubeMiniPlayerRuntimeWiringCallbackFactory.Create(
                 runtimes,
-                positionCallbacks.ForceNativePosition,
-                commandCallbacks.BringToFront,
+                positionCallbacks,
+                commandCallbacks,
+                overlayVisibilityCallbacks,
+                overlayPlacementCallbacks,
+                playbackControls,
                 attachDrag,
-                commandCallbacks.ToggleMinimized,
-                commandCallbacks.SetMinimized,
-                commandCallbacks.ActivateSourceTab,
-                commandCallbacks.Close,
-                overlayVisibilityCallbacks.SetTitleBandVisibility,
-                overlayPlacementCallbacks.UpdateTitleBandPlacement,
-                positionCallbacks.QueueNativePositionRefresh,
-                positionCallbacks.GetHostOrigin,
-                setSpeedResetContent,
-                setLoopContent,
-                setStatus,
-                queueSave,
-                overlayVisibilityCallbacks.SetToolbarVisibility,
-                overlayPlacementCallbacks.UpdateToolbarPlacement,
-                speedStep));
+                setStatus: webViewCallbacks.SetStatus,
+                queueSave: webViewCallbacks.QueueSave));
     }
 }

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -10,47 +9,6 @@ namespace TabBrowser;
 
 public partial class MainWindow : ITabMemoryEvaluationHost
 {
-    private const string TabMemoryProtectionScript = """
-        (() => {
-            if (window.__kitenTabMemoryGuardInstalled) {
-                return;
-            }
-            window.__kitenTabMemoryGuardInstalled = true;
-            window.__kitenTabInputDirty = false;
-            const markDirty = event => {
-                const target = event && event.target;
-                if (target && target.matches && target.matches('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) {
-                    window.__kitenTabInputDirty = true;
-                }
-            };
-            document.addEventListener('input', markDirty, true);
-            document.addEventListener('change', markDirty, true);
-        })();
-        """;
-
-    private const string TabMemoryPageStateScript = """
-        (() => {
-            const mediaPlaying = Array.from(document.querySelectorAll('audio, video'))
-                .some(media => !media.paused && !media.ended);
-            const fileSelected = Array.from(document.querySelectorAll('input[type="file"]'))
-                .some(input => input.files && input.files.length > 0);
-            const passwordField = document.querySelector('input[type="password"]') !== null;
-            const active = document.activeElement;
-            const activeEditor = !!(active && active.matches
-                && active.matches('input, textarea, select, [contenteditable="true"], [contenteditable=""]'));
-            return {
-                blocked: window.__kitenTabInputDirty === true || mediaPlaying || fileSelected || passwordField || activeEditor,
-                scrollX: Number.isFinite(window.scrollX) ? window.scrollX : 0,
-                scrollY: Number.isFinite(window.scrollY) ? window.scrollY : 0
-            };
-        })();
-        """;
-
-    private static string BuildTabMemoryProtectionScript()
-    {
-        return TabMemoryProtectionScript;
-    }
-
     private void RestartTabMemoryManagementTimer()
     {
         _tabMemoryManagementTimer.Stop();
@@ -102,7 +60,8 @@ public partial class MainWindow : ITabMemoryEvaluationHost
     bool ITabMemoryEvaluationHost.IsVisibleSplitTab(BrowserTab tab)
         => SplitViewHost.Visibility == Visibility.Visible && _splitViewService.Contains(tab);
     IReadOnlySet<Guid> ITabMemoryEvaluationHost.GetGlobalHotTabIds() => GetGlobalHotTabIds();
-    Task<bool> ITabMemoryEvaluationHost.TrySuspendTabAsync(BrowserTab tab) => TrySuspendTabAsync(tab);
+    Task<bool> ITabMemoryEvaluationHost.TrySuspendTabAsync(BrowserTab tab)
+        => TrySuspendTabAsync(tab, WebViewSuspendRoute.MemoryPressure);
     bool ITabMemoryEvaluationHost.ResumeTabIfSuspended(BrowserTab tab) => ResumeTabIfSuspended(tab);
     IList<BrowserTab> ITabMemoryEvaluationWindow.Tabs => _tabs;
     bool ITabMemoryEvaluationWindow.IsRightWheelTabCyclingActive() => IsRightWheelTabCyclingActive();
@@ -126,110 +85,6 @@ public partial class MainWindow : ITabMemoryEvaluationHost
     {
         return _downloadService.Items.Any(static item => item.State is
             DownloadItemState.Pending or DownloadItemState.InProgress or DownloadItemState.Paused);
-    }
-
-    private async Task<bool> TryReleaseInactiveTabMemoryAsync(BrowserTab tab)
-    {
-        if (!IsTabMemoryReleaseStillSafe(tab))
-        {
-            _tabMemoryManagementService.RecordReleaseSkip();
-            return false;
-        }
-
-        if (tab.Thumbnail is null)
-        {
-            await CaptureTabThumbnailAsync(tab, isBackgroundWarmup: true);
-        }
-
-        if (!IsTabMemoryReleaseStillSafe(tab))
-        {
-            _tabMemoryManagementService.RecordReleaseSkip();
-            return false;
-        }
-
-        ResumeTabIfSuspended(tab);
-        var currentUrl = GetCurrentPageUrl(tab) ?? tab.Url;
-        if (!string.IsNullOrWhiteSpace(currentUrl) && YouTubeUrlService.IsYouTubeUrl(currentUrl))
-        {
-            await CaptureYouTubePlaybackStateAsync(tab);
-        }
-
-        var pageState = await TryCaptureTabMemoryPageStateAsync(tab);
-        if (pageState is null || pageState.Blocked || !IsTabMemoryReleaseStillSafe(tab))
-        {
-            _tabMemoryManagementService.RecordReleaseSkip();
-            return false;
-        }
-
-        var restoreUrl = GetCurrentPageUrl(tab) ?? tab.Url;
-        if (string.IsNullOrWhiteSpace(restoreUrl) || IsBlankUrl(restoreUrl))
-        {
-            _tabMemoryManagementService.RecordReleaseSkip();
-            return false;
-        }
-
-        tab.MemoryRestoreUrl = restoreUrl;
-        tab.MemoryRestoreScrollX = pageState.ScrollX;
-        tab.MemoryRestoreScrollY = pageState.ScrollY;
-        tab.PreferSavedNavigationHistory = true;
-        tab.IsPlayingAudio = false;
-        _ = s_tabRuntimeCoordinator.SetMemoryReleased(tab, true);
-        ReleaseTabRuntimeResources(tab);
-        _tabMemoryManagementService.RecordRelease();
-        QueueWorkspaceOpenTabsRefresh();
-        return true;
-    }
-
-    private bool IsTabMemoryReleaseStillSafe(BrowserTab tab)
-    {
-        return _settings.EnableInactiveTabMemorySaver
-            && !_isClosingWindow
-            && _tabs.Contains(tab)
-            && !ReferenceEquals(ActiveTab, tab)
-            && !tab.IsNativeContentTab
-            && !tab.IsPinned
-            && !tab.IsPlayingAudio
-            && !tab.IsLoading
-            && !_webViewLifecycleService.IsInitializing(tab)
-            && !IsRightWheelTabCyclingActive()
-            && _webViewLifecycleService.HasLoadedRuntime(tab)
-            && !(SplitViewHost.Visibility == Visibility.Visible && _splitViewService.Contains(tab))
-            && !GetGlobalHotTabIds().Contains(tab.Id)
-            && !HasActiveDownloadForMemoryManagement();
-    }
-
-    private static async Task<TabMemoryPageState?> TryCaptureTabMemoryPageStateAsync(BrowserTab tab)
-    {
-        if (GetTabWebView(tab)?.CoreWebView2 is not { } core)
-        {
-            return null;
-        }
-
-        try
-        {
-            var json = await core.ExecuteScriptAsync(TabMemoryPageStateScript);
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            var root = document.RootElement;
-            if (!root.TryGetProperty("blocked", out var blockedElement)
-                || blockedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-            {
-                return null;
-            }
-
-            return new TabMemoryPageState(
-                blockedElement.GetBoolean(),
-                TryGetFiniteDouble(root, "scrollX"),
-                TryGetFiniteDouble(root, "scrollY"));
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private void QueueMemoryReleasedTabRestore(BrowserTab tab)
@@ -337,15 +192,4 @@ public partial class MainWindow : ITabMemoryEvaluationHost
         ShowPlaceholder(grid);
         _displayedTab = null;
     }
-
-    private static double TryGetFiniteDouble(JsonElement root, string propertyName)
-    {
-        return root.TryGetProperty(propertyName, out var value)
-            && value.TryGetDouble(out var number)
-            && double.IsFinite(number)
-                ? number
-                : 0;
-    }
-
-    private sealed record TabMemoryPageState(bool Blocked, double ScrollX, double ScrollY);
 }

@@ -22,7 +22,7 @@ internal interface IInactiveTabWorkHost
     bool? GetCurrentPlaybackPaused(BrowserTab tab);
     bool CanSuspendInactiveTab(BrowserTab tab, BrowserTab activeTab, bool isVisibleSplitTab);
     void ClearLoading(BrowserTab tab);
-    Task<bool> TrySuspendTabAsync(BrowserTab tab);
+    Task<bool> TrySuspendTabAsync(BrowserTab tab, WebViewSuspendRoute route);
     bool ResumeTabIfSuspended(BrowserTab tab);
     void RunSupervised(string operation, Func<CancellationToken, Task> action);
     void StopFocusedViewingTimer();
@@ -252,7 +252,7 @@ internal sealed class InactiveTabWorkController
             return;
         }
 
-        var suspended = await _host.TrySuspendTabAsync(tab);
+        var suspended = await _host.TrySuspendTabAsync(tab, WebViewSuspendRoute.InactiveYouTube);
         if (cancellationToken.IsCancellationRequested)
         {
             return;
@@ -366,7 +366,7 @@ internal sealed class InactiveTabWorkController
                 return;
             }
 
-            var suspended = await _host.TrySuspendTabAsync(tab);
+            var suspended = await _host.TrySuspendTabAsync(tab, WebViewSuspendRoute.FocusedViewing);
             if (cancellationToken.IsCancellationRequested)
             {
                 return;

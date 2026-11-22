@@ -24,6 +24,24 @@ internal sealed class BookmarkStateStore(IBookmarkStore persistence)
 
     public event EventHandler<BookmarkStateChangedEventArgs>? Changed;
 
+    internal bool CanConfirmPersistedState()
+    {
+        if (!Monitor.TryEnter(_stateLock))
+        {
+            return false;
+        }
+
+        try
+        {
+            return _saveGate.CurrentCount != 0 && !_hasPendingChanges
+                && _loadResult is not { CanPersistChanges: false };
+        }
+        finally
+        {
+            Monitor.Exit(_stateLock);
+        }
+    }
+
     public async Task FlushAsync()
     {
         // 更新と同じ門で進行中の保存を待ち、失敗後の最新状態だけを再保存する。

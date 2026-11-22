@@ -282,15 +282,16 @@ public sealed class BookmarkController : IDisposable
         }
     }
 
-    internal async Task ApplyManagerChangesAsync(BookmarkChangeSet changeSet)
+    internal async Task<BookmarkMutationResult> ApplyManagerChangesAsync(BookmarkChangeSet changeSet)
     {
         if (!EnsureWritable())
         {
-            return;
+            return new BookmarkMutationResult(Applied: false, Persisted: false, HasPendingChanges: false);
         }
 
         var result = await _stateStore.UpdateAsync(changeSet.ApplyTo);
         ReportMutationResult(result, "ブックマークを更新しました");
+        return result;
     }
 
     public void Dispose()

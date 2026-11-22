@@ -296,8 +296,7 @@ public sealed class TabShelfViewModel : INotifyPropertyChanged
             return;
         }
 
-        await _tabs.CloseTabAsync(snapshot.TabId);
-        RefreshTabs();
+        await CloseAndRefreshTabAsync(snapshot.TabId);
     }
 
     private async Task CloseItemAsync(object? parameter)
@@ -309,8 +308,19 @@ public sealed class TabShelfViewModel : INotifyPropertyChanged
             return;
         }
 
-        await _tabs.CloseTabAsync(item.TabId);
-        RefreshTabs();
+        await CloseAndRefreshTabAsync(item.TabId);
+    }
+
+    private async Task CloseAndRefreshTabAsync(Guid tabId)
+    {
+        try
+        {
+            await _tabs.CloseTabAsync(tabId);
+        }
+        finally
+        {
+            RefreshTabs();
+        }
     }
 
     private Task<bool> SaveSnapshotsAsync(

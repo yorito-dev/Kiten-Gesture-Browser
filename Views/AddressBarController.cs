@@ -400,4 +400,20 @@ internal sealed class AddressBarController : IDisposable
         CloseAddressSuggestions();
     }
 
+    internal void AcceptCurrentAddressText()
+        => _addressBarInteractionCoordinator.BeginEdit(_elements.AddressBox.Text);
+
+    internal void SetAddressTextForNavigation(string text)
+    {
+        var currentText = _elements.AddressBox.Text;
+        if (string.Equals(currentText, text, StringComparison.Ordinal)
+            || (_elements.AddressBox.IsKeyboardFocusWithin && _addressBarInteractionCoordinator.HasEditChanged(currentText)))
+        {
+            return;
+        }
+
+        SetAddressText(text);
+        AcceptCurrentAddressText();
+    }
+
 }

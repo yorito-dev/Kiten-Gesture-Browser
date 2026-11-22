@@ -139,7 +139,7 @@ internal sealed class SessionRestorationController(
             {
                 skippedTabCount++;
                 RecordWarning();
-                host.AppendSessionDiagnostic("tab-restore-failed", ex, $"tab={tabState.Id};url={tabState.Url}");
+                host.AppendSessionDiagnostic("tab-restore-failed", ex, $"tab={tabState.Id};url={DiagnosticLogWriter.SummarizeDiagnosticUrl(tabState.Url)}");
             }
         }
 
@@ -157,7 +157,7 @@ internal sealed class SessionRestorationController(
             {
                 skippedTabCount++;
                 RecordWarning();
-                host.AppendSessionDiagnostic("tab-registration-failed", ex, $"tab={tab.Id};url={tab.Url}");
+                host.AppendSessionDiagnostic("tab-registration-failed", ex, $"tab={tab.Id};url={DiagnosticLogWriter.SummarizeDiagnosticUrl(tab.Url)}");
             }
         }
 

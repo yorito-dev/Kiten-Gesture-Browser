@@ -52,7 +52,7 @@ public sealed class KitenDataMaintenanceServiceTests
         Assert.Equal("保存時", settings.SearchEngine);
         var bookmarks = new BookmarkService(Path.Combine(environment.DataRoot, "bookmarks.json")).LoadData();
         Assert.Equal("保存時", Assert.Single(bookmarks.Bookmarks).Title);
-        var profiles = new ContainerProfileStore(Path.Combine(environment.DataRoot, "container-profiles.json")).Load();
+        var profiles = new ContainerProfileStore(Path.Combine(environment.DataRoot, "container-profiles.json")).Load().Profiles;
         Assert.Contains(profiles, profile => profile.Id == original.ContainerId && profile.Name == "保存時");
         var repository = new SQLiteWorkspaceRepository(Path.Combine(environment.DataRoot, "workspace.db"));
         var workspace = Assert.Single(await repository.GetWorkspacesAsync());

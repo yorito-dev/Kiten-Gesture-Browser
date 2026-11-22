@@ -5,6 +5,23 @@ using TabBrowser.Models;
 
 namespace TabBrowser.Services;
 
+public enum ContainerProfileLoadStatus
+{
+    Missing,
+    Loaded,
+    RecoveredFromBackup,
+    Failed
+}
+
+public sealed record ContainerProfileLoadResult(ContainerProfileLoadStatus Status, List<ContainerProfile> Profiles)
+{
+    // バックアップには主ファイルの最新の追加・削除が反映されていない場合がある。
+    internal bool IsAuthoritative => Status is ContainerProfileLoadStatus.Missing or ContainerProfileLoadStatus.Loaded;
+
+    internal ContainerProfile? FindProfile(string id)
+        => Profiles.FirstOrDefault(profile => string.Equals(profile.Id, id, StringComparison.OrdinalIgnoreCase));
+}
+
 public sealed class ContainerProfileStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -15,6 +32,7 @@ public sealed class ContainerProfileStore
     };
 
     private readonly string _storeFile;
+    private readonly string _backupFile;
 
     public ContainerProfileStore()
         : this(AppPaths.ContainerProfilesFile)
@@ -24,35 +42,62 @@ public sealed class ContainerProfileStore
     public ContainerProfileStore(string storeFile)
     {
         _storeFile = storeFile;
+        _backupFile = AtomicFileService.CreateBackupFilePath(storeFile);
     }
 
-    public List<ContainerProfile> Load()
+    public ContainerProfileLoadResult Load()
     {
-        try
+        var primary = ReadFile(_storeFile);
+        if (primary.Status == ContainerProfileLoadStatus.Loaded)
         {
-            if (!File.Exists(_storeFile))
-            {
-                return Normalize(null);
-            }
+            return primary;
+        }
 
-            using var stream = File.OpenRead(_storeFile);
-            var profiles = JsonSerializer.Deserialize<List<ContainerProfile>>(stream, JsonOptions);
-            return Normalize(profiles);
-        }
-        catch
+        var backup = ReadFile(_backupFile);
+        if (backup.Status == ContainerProfileLoadStatus.Loaded)
         {
-            return Normalize(null);
+            return backup with { Status = ContainerProfileLoadStatus.RecoveredFromBackup };
         }
+
+        return primary.Status == ContainerProfileLoadStatus.Missing && backup.Status == ContainerProfileLoadStatus.Missing
+            ? new ContainerProfileLoadResult(ContainerProfileLoadStatus.Missing, Normalize(null))
+            : new ContainerProfileLoadResult(ContainerProfileLoadStatus.Failed, []);
     }
 
-    public void Save(IEnumerable<ContainerProfile> profiles)
+    public bool Save(IEnumerable<ContainerProfile> profiles)
     {
-        AtomicFileService.EnsureDirectory(_storeFile);
+        // 編集中に読めなくなった場合も、主ファイルと復旧用のバックアップを保持する。
+        if (!Load().IsAuthoritative)
+        {
+            return false;
+        }
+
         var normalized = Normalize(profiles);
         AtomicFileService.Write(
             _storeFile,
-            AtomicFileService.CreateBackupFilePath(_storeFile),
+            _backupFile,
             stream => JsonSerializer.Serialize(stream, normalized, JsonOptions));
+        return true;
+    }
+
+    private static ContainerProfileLoadResult ReadFile(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            var profiles = JsonSerializer.Deserialize<List<ContainerProfile>>(stream, JsonOptions);
+            return profiles is not null && !profiles.Any(static profile => profile is null)
+                ? new ContainerProfileLoadResult(ContainerProfileLoadStatus.Loaded, Normalize(profiles))
+                : new ContainerProfileLoadResult(ContainerProfileLoadStatus.Failed, []);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return new ContainerProfileLoadResult(ContainerProfileLoadStatus.Missing, []);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return new ContainerProfileLoadResult(ContainerProfileLoadStatus.Failed, []);
+        }
     }
 
     private static List<ContainerProfile> Normalize(IEnumerable<ContainerProfile>? profiles)

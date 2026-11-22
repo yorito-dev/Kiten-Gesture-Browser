@@ -140,12 +140,12 @@ internal sealed class TabActivationController
             _splitViewService.TrySetActivePane(selectedSplitPane);
         }
 
-        _host.SetAddressText(_host.IsNewTabUrl(tab.Url)
+        _host.SetAddressText(_host.IsNewTabUrl(tab.AddressUrl)
             ? string.Empty
-            : tab.Url ?? string.Empty);
+            : tab.AddressUrl ?? string.Empty);
         _host.SetLastActiveBrowserTabId(tab.Id);
 
-        if (_host.IsBlankUrl(tab.Url))
+        if (_host.IsBlankUrl(tab.Url) && tab.AddressNavigation.RequestUrl is null)
         {
             _host.ShowBlankView();
             _host.UpdateToolbarState();

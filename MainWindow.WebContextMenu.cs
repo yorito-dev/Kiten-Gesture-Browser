@@ -224,7 +224,16 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
             return false;
         }
 
-        var clientPoint = webView.PointFromScreen(new Point(screenPoint.X, screenPoint.Y));
+        Point clientPoint;
+        try
+        {
+            clientPoint = webView.PointFromScreen(new Point(screenPoint.X, screenPoint.Y));
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+
         if (clientPoint.X < 0
             || clientPoint.Y < 0
             || clientPoint.X > webView.ActualWidth
@@ -274,7 +283,17 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
             return;
         }
 
-        var clientPoint = webView.PointFromScreen(new Point(screenPoint.X, screenPoint.Y));
+        Point clientPoint;
+        try
+        {
+            clientPoint = webView.PointFromScreen(new Point(screenPoint.X, screenPoint.Y));
+        }
+        catch (InvalidOperationException)
+        {
+            s_inputInteractionHub.TryComplete(interactionId);
+            return;
+        }
+
         var gesturePoint = new Point(clientPoint.X / zoomFactor, clientPoint.Y / zoomFactor);
         _ = FinishPageContextMenuGestureAsync(sourceTab, gesturePoint, interactionId);
     }
@@ -630,6 +649,9 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
     }
 
     private void CopyContextLink(LinkCopyFormat format, string? linkUri, string? linkText, string successMessage)
+        => _windowTaskSupervisor.TryRun("copy-context-link", _ => CopyContextLinkAsync(format, linkUri, linkText, successMessage));
+
+    private async Task CopyContextLinkAsync(LinkCopyFormat format, string? linkUri, string? linkText, string successMessage)
     {
         if (!IsSplitViewLinkUrl(linkUri))
         {
@@ -638,15 +660,21 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
         }
 
         var target = new LinkCopyTarget(NormalizeYouTubeShortsUrl(linkUri!), linkText);
-        SetLinkCopyStatus(_linkCopyService.Copy(target, format, successMessage));
+        SetLinkCopyStatus(await _linkCopyService.CopyAsync(target, format, successMessage));
     }
 
     private void CopySelectedText(string? selectedText)
+        => _windowTaskSupervisor.TryRun("copy-selected-text", _ => CopySelectedTextAsync(selectedText));
+
+    private async Task CopySelectedTextAsync(string? selectedText)
     {
-        SetLinkCopyStatus(_linkCopyService.CopyText(selectedText, "選択範囲をコピーしました"));
+        SetLinkCopyStatus(await _linkCopyService.CopyTextAsync(selectedText, "選択範囲をコピーしました"));
     }
 
     private void CopyContextPageUrl(BrowserTab sourceTab, string? pageUri)
+        => _windowTaskSupervisor.TryRun("copy-context-page-url", _ => CopyContextPageUrlAsync(sourceTab, pageUri));
+
+    private async Task CopyContextPageUrlAsync(BrowserTab sourceTab, string? pageUri)
     {
         if (!CanUseContextPageUrl(pageUri))
         {
@@ -656,7 +684,7 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
 
         var normalizedPageUri = NormalizeYouTubeShortsUrl(pageUri!);
         var target = new LinkCopyTarget(normalizedPageUri, GetCurrentPageTitle(sourceTab, normalizedPageUri));
-        SetLinkCopyStatus(_linkCopyService.Copy(target, LinkCopyFormat.Url, "URLをコピーしました"));
+        SetLinkCopyStatus(await _linkCopyService.CopyAsync(target, LinkCopyFormat.Url, "URLをコピーしました"));
     }
 
     private void OpenLinkInNewWindow(BrowserTab sourceTab, string linkUri, string? linkText)

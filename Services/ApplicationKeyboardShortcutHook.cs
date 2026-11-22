@@ -31,15 +31,18 @@ internal sealed class ApplicationKeyboardShortcutHook : IDisposable
     private const int WmSystemKeyDown = 0x0104;
     private const int WmSystemKeyUp = 0x0105;
     private const int VirtualKeyF8 = 0x77;
+    private const int VirtualKeyF9 = 0x78;
     private const int VirtualKeyK = 0x4B;
     private const int VirtualKeyControl = 0x11;
     private const int VirtualKeyShift = 0x10;
     private const int VirtualKeyMenu = 0x12;
+    private const int InjectedFlag = 0x10;
 
     private readonly Func<IEnumerable<IApplicationKeyboardShortcutWindow>> _windows;
     private readonly IKeyboardShortcutHookNative _native;
     private readonly Func<int, bool, bool, bool, bool?, bool> _handleF8;
     private readonly Func<string?> _takeF8Failure;
+    private readonly Action<uint>? _recordProbeDelay;
     private readonly LowLevelKeyboardProc _callback;
     private IntPtr _hookHandle;
     private bool _started;
@@ -50,13 +53,15 @@ internal sealed class ApplicationKeyboardShortcutHook : IDisposable
         Func<IEnumerable<IApplicationKeyboardShortcutWindow>> windows,
         IKeyboardShortcutHookNative? native = null,
         Func<int, bool, bool, bool, bool?, bool>? handleF8 = null,
-        Func<string?>? takeF8Failure = null)
+        Func<string?>? takeF8Failure = null,
+        Action<uint>? recordProbeDelay = null)
     {
         _windows = windows;
         _native = native ?? new Win32KeyboardShortcutHookNative();
         _handleF8 = handleF8 ?? ((key, down, modifiers, injected, wasDown)
             => YouTubeMiniPlayerTransparencyController.Shared.HandleKey(key, down, modifiers, injected, wasDown));
         _takeF8Failure = takeF8Failure ?? (() => YouTubeMiniPlayerTransparencyController.Shared.TakeFailure());
+        _recordProbeDelay = recordProbeDelay;
         _callback = Callback;
     }
 
@@ -109,14 +114,27 @@ internal sealed class ApplicationKeyboardShortcutHook : IDisposable
 
     private IntPtr Callback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (!_disposed && nCode >= 0 && lParam != IntPtr.Zero)
+        try
         {
-            var message = wParam.ToInt32();
-            if (message is WmKeyDown or WmKeyUp or WmSystemKeyDown or WmSystemKeyUp)
+            if (!_disposed && nCode >= 0 && lParam != IntPtr.Zero)
             {
-                var data = Marshal.PtrToStructure<LowLevelKeyboardHookData>(lParam);
-                if (HandleKey(message, data.VirtualKeyCode, data.Flags)) return new IntPtr(1);
+                var message = wParam.ToInt32();
+                if (message is WmKeyDown or WmKeyUp or WmSystemKeyDown or WmSystemKeyUp)
+                {
+                    var data = Marshal.PtrToStructure<LowLevelKeyboardHookData>(lParam);
+                    if (_recordProbeDelay is not null && message == WmKeyDown
+                        && data.VirtualKeyCode == VirtualKeyF9 && (data.Flags & InjectedFlag) != 0)
+                    {
+                        // OSの入力時刻と、.NET 10のWindows起動後ミリ秒を同じ32ビット幅で比較する。
+                        _recordProbeDelay(unchecked((uint)(Environment.TickCount - data.Time)));
+                    }
+                    if (HandleKey(message, data.VirtualKeyCode, data.Flags)) return new IntPtr(1);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"キーボードフック: {ex.GetType().Name}");
         }
 
         return _native.CallNext(_hookHandle, nCode, wParam, lParam);
@@ -131,7 +149,7 @@ internal sealed class ApplicationKeyboardShortcutHook : IDisposable
             if (window is not null && _handleF8(virtualKey, isDown,
                     _native.IsKeyDown(VirtualKeyControl) || _native.IsKeyDown(VirtualKeyShift)
                         || _native.IsKeyDown(VirtualKeyMenu),
-                    (flags & 0x10) != 0, _native.IsKeyDown(VirtualKeyF8)))
+                    (flags & InjectedFlag) != 0, _native.IsKeyDown(VirtualKeyF8)))
             {
                 if (_takeF8Failure() is { } failure)
                     window.ReportKeyboardShortcutFailure(failure);

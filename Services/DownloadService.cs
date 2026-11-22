@@ -55,6 +55,9 @@ public sealed class DownloadService
 
     public bool HasActiveExternalDownloads => _externalProcesses.Count > 0;
 
+    internal bool IsHistoryPersisted => Volatile.Read(ref _persistedHistorySaveVersion)
+        >= Volatile.Read(ref _historySaveVersion);
+
     public void ApplyHistoryRetentionLimit(int limit)
     {
         _historyRetentionLimit = Math.Clamp(limit, 0, DownloadSettingsProfile.MaximumHistoryRetentionLimit);

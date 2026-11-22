@@ -115,11 +115,9 @@ public sealed class LocalVideoMiniPlayerCloseTests
             var parts = YouTubeMiniPlayerRuntimeFactory.Create(
                 state, new Style(typeof(Button)), state.Title, view, null, view);
             controller.Register(state, parts.Runtime);
-            var wiring = YouTubeMiniPlayerRuntimeWiringCallbackFactory.Create(
-                controller.Runtimes, _ => { }, (_, _) => { }, (_, _) => { }, _ => { },
-                (_, _) => { }, _ => { }, id => Assert.True(controller.TryClose(id)),
-                (_, _) => { }, _ => { }, _ => { }, () => new Point(), (_, _) => { },
-                (_, _) => { }, _ => { }, () => { }, (_, _) => { }, _ => { }, 0.25);
+            var wiring = YouTubeMiniPlayerRuntimeWiringTests.CreateWiring(
+                controller.Runtimes,
+                close: id => Assert.True(controller.TryClose(id)));
             YouTubeMiniPlayerRuntimeWiringService.Attach(state, parts, controller.Runtimes, wiring);
             try
             {

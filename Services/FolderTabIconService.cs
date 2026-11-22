@@ -29,6 +29,22 @@ internal sealed class FolderTabIconService
     private static readonly Dictionary<string, CacheEntry> Cache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly LinkedList<string> CacheLru = [];
     private static readonly SemaphoreSlim LoadGate = new(MaximumConcurrentLoads);
+    private static readonly SemaphoreSlim TypeIconLoadGate = new(1);
+    private static readonly TimeSpan VisualWaitTimeout = TimeSpan.FromSeconds(1);
+    private readonly SemaphoreSlim _visualLoadGate;
+    private readonly Func<string, CancellationToken, Task<FolderTabVisual>> _loadPathVisualAsync;
+
+    public FolderTabIconService() : this(LoadGate, LoadPathVisualAsync)
+    {
+    }
+
+    internal FolderTabIconService(
+        SemaphoreSlim visualLoadGate,
+        Func<string, CancellationToken, Task<FolderTabVisual>> loadPathVisualAsync)
+    {
+        _visualLoadGate = visualLoadGate;
+        _loadPathVisualAsync = loadPathVisualAsync;
+    }
 
     public async Task<ImageSource?> GetIconAsync(string path, CancellationToken cancellationToken)
     {
@@ -48,26 +64,37 @@ internal sealed class FolderTabIconService
             return cached;
         }
 
-        await LoadGate.WaitAsync(cancellationToken);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(VisualWaitTimeout);
+        var load = LoadVisualAsync(path, deadline.Token);
         try
         {
-            if (TryGetCachedVisual(path, out cached))
+            return await load.WaitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            // 呼出側が先に戻っても、実行中のShell呼出しは完了まで枠を保持する。
+            _ = load.ContinueWith(
+                static completed => { _ = completed.Exception; },
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            cancellationToken.ThrowIfCancellationRequested();
+            return FolderTabVisual.Empty;
+        }
+    }
+
+    private async Task<FolderTabVisual> LoadVisualAsync(string path, CancellationToken cancellationToken)
+    {
+        await _visualLoadGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (TryGetCachedVisual(path, out var cached))
             {
                 return cached;
             }
 
-            var thumbnail = WorkspaceShellItemService.IsMediaPath(path)
-                ? await WorkspaceShellItemService.GetMediaThumbnailImageAsync(
-                    path,
-                    ThumbnailWidth,
-                    ThumbnailHeight,
-                    cancellationToken)
-                : null;
-            var visual = thumbnail is not null
-                ? new FolderTabVisual(thumbnail, true)
-                : new FolderTabVisual(
-                    await Task.Run(() => LoadShellIcon(path), CancellationToken.None),
-                    false);
+            var visual = await _loadPathVisualAsync(path, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (visual.Image is not null)
             {
@@ -78,8 +105,22 @@ internal sealed class FolderTabIconService
         }
         finally
         {
-            LoadGate.Release();
+            _visualLoadGate.Release();
         }
+    }
+
+    private static async Task<FolderTabVisual> LoadPathVisualAsync(string path, CancellationToken cancellationToken)
+    {
+        var thumbnail = WorkspaceShellItemService.IsMediaPath(path)
+            ? await WorkspaceShellItemService.GetMediaThumbnailImageAsync(
+                path,
+                ThumbnailWidth,
+                ThumbnailHeight,
+                cancellationToken)
+            : null;
+        return thumbnail is not null
+            ? new FolderTabVisual(thumbnail, true)
+            : new FolderTabVisual(await Task.Run(() => LoadShellIcon(path), cancellationToken), false);
     }
 
     public async Task<ImageSource?> GetTypeIconAsync(
@@ -99,7 +140,7 @@ internal sealed class FolderTabIconService
             return cached.Image;
         }
 
-        await LoadGate.WaitAsync(cancellationToken);
+        await TypeIconLoadGate.WaitAsync(cancellationToken);
         try
         {
             if (TryGetCachedVisual(cacheKey, out cached))
@@ -120,7 +161,7 @@ internal sealed class FolderTabIconService
         }
         finally
         {
-            LoadGate.Release();
+            TypeIconLoadGate.Release();
         }
     }
 
@@ -178,8 +219,9 @@ internal sealed class FolderTabIconService
     private static ImageSource? LoadShellTypeIcon(string path, bool isDirectory)
     {
         var attributes = isDirectory ? FileAttributeDirectory : FileAttributeNormal;
+        var typeName = isDirectory ? "folder" : $"file{Path.GetExtension(path)}";
         var result = SHGetFileInfo(
-            path,
+            typeName,
             attributes,
             out var fileInfo,
             (uint)Marshal.SizeOf<ShellFileInfo>(),

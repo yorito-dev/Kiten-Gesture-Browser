@@ -11,19 +11,42 @@ public sealed class AuxiliaryWebViewContractTests
         var source = Read("Views/UrlThumbnailCaptureController.cs");
         Assert.Equal(2, source.Split("await EnsurePreviewCoreAsync(webView, environment);").Length - 1);
         Assert.Equal(2, source.Split("await NavigateAsync(webView, url, cancellationToken);").Length - 1);
-        Assert.Contains("AttachRestrictions(webView.CoreWebView2);", source);
+        Assert.Contains("UpdatePrivatePreviewRestrictions(ref _restrictedCore, webView.CoreWebView2);", source);
+        var reset = source[source.IndexOf("internal void ResetWebView", StringComparison.Ordinal)..];
+        Assert.True(reset.IndexOf("UpdatePrivatePreviewRestrictions(ref _restrictedCore, null);", StringComparison.Ordinal)
+            < reset.IndexOf("webView.Dispose();", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BookmarkPreviewUsesTheSharedDenialsBeforeNavigationAndDetachesOnDisposal()
+    {
+        var bookmark = Read("Views/BookmarkPreviewController.cs");
+        Assert.Contains("UpdatePrivatePreviewRestrictions(ref _restrictedCore, core);", bookmark);
+        Assert.True(bookmark.IndexOf("ConfigureBookmarkPreviewWebView(core);", StringComparison.Ordinal)
+            < bookmark.IndexOf("core.Navigate(target);", StringComparison.Ordinal));
+        var close = bookmark[bookmark.IndexOf("internal void CloseBookmarkPreview", StringComparison.Ordinal)..];
+        Assert.True(close.IndexOf("UpdatePrivatePreviewRestrictions(ref _restrictedCore, null);", StringComparison.Ordinal)
+            < close.IndexOf("_bookmarkPreviewWebView?.Dispose();", StringComparison.Ordinal));
+
+        var source = Read("Services/WebViewLifecycleService.cs");
         foreach (var pair in new[] { ("DownloadStarting", "RejectDownload"), ("NewWindowRequested", "RejectNewWindow"),
                      ("PermissionRequested", "RejectPermission"), ("LaunchingExternalUriScheme", "RejectExternalUri") })
         {
             Assert.Contains($"core.{pair.Item1} += {pair.Item2};", source);
-            Assert.Contains($"core.{pair.Item1} -= {pair.Item2};", source);
+            Assert.Contains($"previous.{pair.Item1} -= {pair.Item2};", source);
         }
-        var reject = source[source.IndexOf("private static void RejectDownload", StringComparison.Ordinal)..source.IndexOf("private static void RejectNewWindow", StringComparison.Ordinal)];
-        Assert.Contains("e.Cancel = true;", reject);
-        Assert.Contains("e.Handled = true;", reject);
-        Assert.DoesNotContain("if (", reject); // 添付の直接応答・リダイレクトをURL条件で取りこぼさない。
-        var reset = source[source.IndexOf("internal void ResetWebView", StringComparison.Ordinal)..];
-        Assert.True(reset.IndexOf("DetachRestrictions();", StringComparison.Ordinal) < reset.IndexOf("webView.Dispose();", StringComparison.Ordinal));
+        var download = source[source.IndexOf("private static void RejectDownload", StringComparison.Ordinal)..source.IndexOf("private static void RejectNewWindow", StringComparison.Ordinal)];
+        Assert.Contains("e.Cancel = true;", download);
+        Assert.Contains("e.Handled = true;", download);
+        Assert.DoesNotContain("if (", download); // 添付の直接応答・リダイレクトをURL条件で取りこぼさない。
+        var newWindow = source[source.IndexOf("private static void RejectNewWindow", StringComparison.Ordinal)..source.IndexOf("private static void RejectPermission", StringComparison.Ordinal)];
+        Assert.Contains("e.Handled = true;", newWindow);
+        var permission = source[source.IndexOf("private static void RejectPermission", StringComparison.Ordinal)..source.IndexOf("private static void RejectExternalUri", StringComparison.Ordinal)];
+        Assert.Contains("e.State = CoreWebView2PermissionState.Deny;", permission);
+        Assert.Contains("e.SavesInProfile = false;", permission);
+        Assert.Contains("e.Handled = true;", permission);
+        var externalUri = source[source.IndexOf("private static void RejectExternalUri", StringComparison.Ordinal)..source.IndexOf("public static string FormatNavigationError", StringComparison.Ordinal)];
+        Assert.Contains("e.Cancel = true;", externalUri);
     }
 
     [Fact]

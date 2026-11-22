@@ -59,8 +59,11 @@ public partial class MainWindow : IStartupWindowRestoreHost, IStartupTabActivati
     private void QueuePerformanceDiagnosticLogLine(IReadOnlyList<string> fields)
         => _performanceDiagnosticLogController.Queue(fields);
 
+    internal void RecordKeyboardHookProbeDelay(uint milliseconds)
+        => _performanceDiagnosticLogController.RecordKeyboardHookProbeDelay(milliseconds);
+
     private void FlushPerformanceDiagnosticLogLines()
-        => _performanceDiagnosticLogController.Flush();
+        => _performanceDiagnosticLogController.FlushForShutdown();
 
     bool IStartupWindowRestoreHost.IsClosingWindow => _isClosingWindow;
 

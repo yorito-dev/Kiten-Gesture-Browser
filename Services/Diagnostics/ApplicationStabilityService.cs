@@ -71,7 +71,7 @@ public sealed class ApplicationStabilityService
         }
     }
 
-    public void RecordException(string source, Exception exception, bool isTerminating)
+    public void RecordException(string source, Exception exception, bool isTerminating, bool includeStackTrace = true)
     {
         ArgumentNullException.ThrowIfNull(exception);
         var normalizedSource = NormalizeSource(source);
@@ -102,8 +102,11 @@ public sealed class ApplicationStabilityService
                         writer.WriteLine($"exception_type={exception.GetType().FullName}");
                         writer.WriteLine($"hresult={exception.HResult}");
                         writer.WriteLine($"inner_types={FormatInnerExceptionTypes(exception)}");
-                        writer.WriteLine("stack_trace=");
-                        writer.Write(Truncate(exception.StackTrace ?? "利用できません", MaximumStackTraceLength));
+                        if (includeStackTrace)
+                        {
+                            writer.WriteLine("stack_trace=");
+                            writer.Write(Truncate(exception.StackTrace ?? "利用できません", MaximumStackTraceLength));
+                        }
                     });
             }
             catch (Exception writeException) when (writeException is not OutOfMemoryException

@@ -164,9 +164,9 @@ public partial class MainWindow : IPageToolsHost
 
         SetAddressText(GetTabHostedContent(target) is Views.FolderTabView folder
             ? folder.CurrentPath
-            : IsNewTabUrl(target.Url)
+            : IsNewTabUrl(target.AddressUrl)
                 ? string.Empty
-                : GetCurrentPageUrl(target) ?? target.Url ?? string.Empty);
+                : target.AddressUrl ?? string.Empty);
         AddressBox.Focus();
         AddressBox.SelectAll();
         return true;

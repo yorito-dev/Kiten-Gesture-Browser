@@ -21,6 +21,7 @@ public sealed class SettingsDialogPersistenceTests
         {
             var initial = new AppSettings
             {
+                EnableLinkHoverPreview = true,
                 PageZoomPreferences = [new() { Origin = "https://zoom.example", ZoomFactor = 1.5 }],
                 FolderTabSortMode = FolderTabSortMode.LastWriteTime,
                 FolderTabSortDirection = FolderTabSortDirection.Descending,

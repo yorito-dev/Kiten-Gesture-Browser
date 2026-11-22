@@ -31,7 +31,7 @@ internal interface IYouTubeMiniPlayerArrangementOwner
 
 internal interface IYouTubeMiniPlayerArrangementChat
 {
-    void Apply(Rect bounds, bool isDocked, YouTubeLiveChatDockSide dockSide);
+    void Apply(Rect bounds, bool isDocked, YouTubeLiveChatDockSide dockSide, bool removeSpacing);
     void Synchronize();
 }
 
@@ -50,13 +50,16 @@ internal interface IYouTubeMiniPlayerArrangementHost
     IReadOnlyList<IYouTubeMiniPlayerArrangementItem> CaptureItems();
     IReadOnlyList<Guid> GetSelectedIds();
     bool IncludeMinimized { get; }
+    bool RemoveSpacing => false;
     Rect GetWorkArea();
+    YouTubeMiniPlayerArrangementAreaRequest? CapturePlacementArea(IReadOnlyList<Guid> targetIds, YouTubeMiniPlayerArrangeMode mode) => null;
     void EnsureListOpen();
     IYouTubeMiniPlayerArrangementPreview? Preview { get; set; }
     IYouTubeMiniPlayerArrangementPreview CreatePreview(YouTubeMiniPlayerArrangementPlan plan, IReadOnlyList<YouTubeMiniPlayerArrangementPreviewItem> items);
     void ShowPreviewBar(bool canEdit, string text);
     void HidePreviewBar(bool clearText);
-    void SetStatus(string message);
+    void SetArrangeMenuFailure(string? text);
+    void SetStatus(string message, bool offerRestorePreviousArrangement = false);
     Task RefreshListAsync();
 }
 
@@ -68,11 +71,17 @@ internal sealed record YouTubeMiniPlayerArrangementPlan(
     IReadOnlyList<IYouTubeMiniPlayerArrangementItem> Targets,
     IReadOnlyList<YouTubeMiniPlayerArrangementResult> Layout,
     IReadOnlySet<Guid> FocusIds,
-    IReadOnlyList<YouTubeMiniPlayerArrangementBaseline> Baselines);
+    IReadOnlyList<YouTubeMiniPlayerArrangementBaseline> Baselines)
+{
+    public YouTubeMiniPlayerArrangementAreaRequest? AreaRequest { get; init; }
+    public Rect? PlacementArea { get; init; }
+    public bool RemoveSpacing { get; init; }
+}
 
 internal sealed record YouTubeMiniPlayerArrangementBaseline(
     IYouTubeMiniPlayerArrangementOwner Owner,
-    YouTubeMiniPlayerArrangementPreviewValidationItem Snapshot);
+    YouTubeMiniPlayerArrangementPreviewValidationItem Snapshot,
+    Size? MinimumSize = null);
 
 // 配置の手順を所有する。実Windowと編集枠はhost／preview、元配置は既存sessionが所有する。
 // 途中失敗時の適用済み状態と、保存・一覧更新の順序は既存動作を維持する。
@@ -93,6 +102,7 @@ internal sealed class YouTubeMiniPlayerArrangementController(
         }
 
         host.EnsureListOpen();
+        host.SetArrangeMenuFailure(null);
         var plan = CreatePlan(mode, session.GetLinearPlacement(mode));
         if (plan is null)
         {
@@ -131,26 +141,46 @@ internal sealed class YouTubeMiniPlayerArrangementController(
         var allItems = host.CaptureItems();
         var selectedIds = host.GetSelectedIds();
         var includeMinimized = host.IncludeMinimized;
+        var removeSpacing = host.RemoveSpacing;
         var workArea = host.GetWorkArea();
         var candidates = allItems.Select(item => item.ArrangementOwner.CreateCandidate(item.State)).ToList();
+        var targetIds = YouTubeMiniPlayerArrangementPlanningService.GetTargets(candidates, selectedIds, includeMinimized)
+            .Select(candidate => candidate.Id).ToList();
+        var areaRequest = host.CapturePlacementArea(targetIds, mode);
         var result = YouTubeMiniPlayerArrangementPlanningService.CreatePlan(
-            mode, workArea, candidates, selectedIds, includeMinimized, placement);
+            mode, workArea, candidates, selectedIds, includeMinimized, placement, areaRequest: areaRequest, removeSpacing: removeSpacing);
         if (result.FailureReason != YouTubeMiniPlayerArrangementPlanningFailureReason.None)
         {
-            host.SetStatus(result.FailureReason switch
+            var message = result.FailureReason switch
             {
                 YouTubeMiniPlayerArrangementPlanningFailureReason.NoEligibleTargets => "整列できるYouTubeミニプレイヤーがありません",
+                YouTubeMiniPlayerArrangementPlanningFailureReason.AreaUnavailable when areaRequest?.Mode == YouTubeMiniPlayerArrangementAreaMode.SelectedRegion
+                    => "ディスプレイの配置が変わりました。「範囲を指定」から指定し直してください",
+                YouTubeMiniPlayerArrangementPlanningFailureReason.AreaUnavailable => "配置先の画面・空き領域を確認できません。ディスプレイを選び直してください",
+                YouTubeMiniPlayerArrangementPlanningFailureReason.RegionNotSelected => "「範囲を指定」で配置する場所を囲んでください",
+                _ when areaRequest?.Mode == YouTubeMiniPlayerArrangementAreaMode.FreeSpace => "全件を配置できる空きスペースがありません。対象を減らすか範囲を指定してください",
+                _ when areaRequest?.Mode == YouTubeMiniPlayerArrangementAreaMode.SelectedRegion => "指定した範囲に収まりません。範囲を広げるか対象を減らしてください",
+                _ when removeSpacing => "全件がディスプレイの作業領域に収まりません。対象を減らすか配置を変更してください",
                 YouTubeMiniPlayerArrangementPlanningFailureReason.NoLayout when mode == YouTubeMiniPlayerArrangeMode.Focus => "選択した動画を大きく配置できる空き領域がありません",
                 _ => "配置できる空き領域がありません"
-            });
+            };
+            if (result.FailureReason == YouTubeMiniPlayerArrangementPlanningFailureReason.NoLayout
+                && (removeSpacing || areaRequest?.Mode is YouTubeMiniPlayerArrangementAreaMode.FreeSpace or YouTubeMiniPlayerArrangementAreaMode.SelectedRegion))
+            {
+                host.SetArrangeMenuFailure($"配置不可：{GetModeText(mode, placement)}\n{message}");
+            }
+            host.SetStatus(message);
             return null;
         }
 
         var itemsById = allItems.ToDictionary(static item => item.State.Id);
         var targets = result.TargetIds.Select(id => itemsById[id]).ToList();
+        var candidatesById = candidates.ToDictionary(static item => item.Id);
         var baselines = targets.Select(item => new YouTubeMiniPlayerArrangementBaseline(
-            item.ArrangementOwner, item.ArrangementOwner.CaptureValidation(item.State.Id, requireRuntime: true))).ToList();
-        return new(mode, placement, workArea, allItems, targets, result.Layout, result.FocusIds, baselines);
+            item.ArrangementOwner, item.ArrangementOwner.CaptureValidation(item.State.Id, requireRuntime: true),
+            YouTubeMiniPlayerArrangementAreaService.GetRequiredMinimum(candidatesById[item.State.Id]))).ToList();
+        return new(mode, placement, workArea, allItems, targets, result.Layout, result.FocusIds, baselines)
+        { AreaRequest = areaRequest, PlacementArea = result.PlacementArea, RemoveSpacing = removeSpacing };
     }
 
     public async Task ApplyPreviewAsync()
@@ -170,10 +200,39 @@ internal sealed class YouTubeMiniPlayerArrangementController(
         var adjustedBounds = preview.GetPlayerBounds();
         var layout = plan.Layout.Select(result => adjustedBounds.TryGetValue(result.Id, out var bounds)
             ? result with { Bounds = bounds } : result).ToList();
+        if (plan.RemoveSpacing || plan.AreaRequest is { Mode: not YouTubeMiniPlayerArrangementAreaMode.Display })
+        {
+            var current = host.CapturePlacementArea(plan.Targets.Select(item => item.State.Id).ToList(), plan.Mode);
+            if ((plan.AreaRequest is { } area && !YouTubeMiniPlayerArrangementAreaService.IsSameDestination(area, current))
+                || plan.PlacementArea is not { } placementArea)
+            {
+                CancelPreview(false);
+                host.SetStatus("配置先が変わりました。整列を選び直してください");
+                return;
+            }
+
+            var minimumSizes = plan.Targets.Select(item => item.ArrangementOwner.CreateCandidate(item.State))
+                .ToDictionary(candidate => candidate.Id, YouTubeMiniPlayerArrangementAreaService.GetRequiredMinimum);
+            if (!YouTubeMiniPlayerArrangementAreaService.Fits(layout, placementArea,
+                current?.PlacementExclusions ?? [], plan.Mode == YouTubeMiniPlayerArrangeMode.Random, minimumSizes))
+            {
+                if (adjustedBounds.Count > 0)
+                {
+                    const string message = "調整した枠を適用できません。枠の重なり・位置・大きさを確認するか「配置案に戻す」を押してください";
+                    host.SetArrangeMenuFailure(message);
+                    host.SetStatus(message);
+                    return;
+                }
+                CancelPreview(false);
+                host.SetStatus("配置先が変化したか、枠内に収まりません。整列を選び直して予告を確認してください");
+                return;
+            }
+        }
+        host.SetArrangeMenuFailure(null);
         ClosePreview();
-        session.RecordInitialArrangement(
-            plan.AllItems.Select(item => item.ArrangementOwner.CaptureArrangement(item.State)).ToList(),
-            plan.Targets.Select(item => item.ArrangementOwner.CaptureArrangement(item.State)).ToList());
+        var allSnapshots = plan.AllItems.Select(item => item.ArrangementOwner.CaptureArrangement(item.State)).ToList();
+        var targetSnapshots = plan.Targets.Select(item => item.ArrangementOwner.CaptureArrangement(item.State)).ToList();
+        session.RecordInitialArrangement(allSnapshots, targetSnapshots);
         var itemsById = plan.Targets.ToDictionary(static item => item.State.Id);
         var updatedAt = _utcNow();
         foreach (var result in layout)
@@ -195,15 +254,18 @@ internal sealed class YouTubeMiniPlayerArrangementController(
                 continue;
             }
             item.State.IsLiveChatWindowDocked = true;
-            item.State.LiveChatWindowDockSide = YouTubeLiveChatDockSide.Right;
+            var dockSide = result.ChatDockSide ?? YouTubeLiveChatDockSide.Right;
+            item.State.LiveChatWindowDockSide = dockSide;
             item.State.UpdatedAt = _utcNow();
-            chat.Apply(bounds, true, YouTubeLiveChatDockSide.Right);
+            chat.Apply(bounds, true, dockSide, plan.RemoveSpacing);
         }
-        host.SetStatus($"YouTubeミニプレイヤーを{GetModeText(plan.Mode, plan.LinearPlacement)}で整列しました（{plan.Targets.Count}件）");
+        session.RecordPreviousArrangement(targetSnapshots);
+        host.SetStatus($"YouTubeミニプレイヤーを{GetModeText(plan.Mode, plan.LinearPlacement)}で整列しました（{plan.Targets.Count}件）",
+            offerRestorePreviousArrangement: true);
         await host.RefreshListAsync();
         if (plan.Mode == YouTubeMiniPlayerArrangeMode.Random)
         {
-            await RandomizePlaybackPositionsAsync(plan.Targets);
+            await RandomizePlaybackPositionsAsync(plan.Targets, targetSnapshots);
         }
     }
 
@@ -250,7 +312,8 @@ internal sealed class YouTubeMiniPlayerArrangementController(
         }
     }
 
-    public async Task RandomizePlaybackPositionsAsync(IReadOnlyList<IYouTubeMiniPlayerArrangementItem> targets)
+    public async Task RandomizePlaybackPositionsAsync(IReadOnlyList<IYouTubeMiniPlayerArrangementItem> targets,
+        IReadOnlyList<YouTubeMiniPlayerArrangementSnapshot>? appliedArrangement = null)
     {
         if (targets.Count == 0)
         {
@@ -263,18 +326,29 @@ internal sealed class YouTubeMiniPlayerArrangementController(
         {
             owner.QueueSave();
         }
-        host.SetStatus(successful.Count > 0
-            ? $"YouTubeミニプレイヤーをランダム配置し、再生位置もランダムに変更しました（{successful.Count}/{targets.Count}件）"
-            : "YouTubeミニプレイヤーをランダム配置しました（再生位置を変更できる動画はありません）");
+        // 再生位置調整を待つ間に、整列が取り消されたり別の整列が適用されたりする。
+        if (appliedArrangement is null || ReferenceEquals(appliedArrangement, session.PreviousArrangement))
+        {
+            host.SetStatus(successful.Count > 0
+                ? $"YouTubeミニプレイヤーをランダム配置し、再生位置もランダムに変更しました（{successful.Count}/{targets.Count}件）"
+                : "YouTubeミニプレイヤーをランダム配置しました（再生位置を変更できる動画はありません）",
+                offerRestorePreviousArrangement: appliedArrangement is not null);
+        }
         await host.RefreshListAsync();
     }
 
-    public void RestoreArrangement()
+    public void RestoreArrangement() => RestoreArrangement(restorePrevious: false);
+
+    public void RestorePreviousArrangement() => RestoreArrangement(restorePrevious: true);
+
+    private void RestoreArrangement(bool restorePrevious)
     {
+        var destination = restorePrevious ? "直前の配置" : "最初の整列前配置";
+        var snapshots = restorePrevious ? session.PreviousArrangement : session.SnapshotInitialArrangement();
         var targets = new List<IYouTubeMiniPlayerArrangementItem>();
         var updatedAt = _utcNow();
         var owners = host.GetOwners();
-        foreach (var snapshot in session.SnapshotInitialArrangement())
+        foreach (var snapshot in snapshots)
         {
             var owner = owners.FirstOrDefault(item => item.WindowId == snapshot.OwnerWindowId);
             var state = owner?.States.FirstOrDefault(state => state.Id == snapshot.StateId);
@@ -292,12 +366,12 @@ internal sealed class YouTubeMiniPlayerArrangementController(
             {
                 state.IsLiveChatWindowDocked = savedChat.IsDocked;
                 state.LiveChatWindowDockSide = savedChat.DockSide;
-                chat.Apply(new Rect(savedChat.Left, savedChat.Top, savedChat.Width, savedChat.Height), savedChat.IsDocked, savedChat.DockSide);
+                chat.Apply(new Rect(savedChat.Left, savedChat.Top, savedChat.Width, savedChat.Height), savedChat.IsDocked, savedChat.DockSide, savedChat.RemoveSpacing);
             }
         }
         if (targets.Count == 0)
         {
-            host.SetStatus("戻せる最初の整列前配置がありません");
+            host.SetStatus($"戻せる{destination}がありません");
             return;
         }
         ApplyPlayers(targets);
@@ -305,8 +379,12 @@ internal sealed class YouTubeMiniPlayerArrangementController(
         {
             item.ArrangementOwner.FindChat(item.State.Id)?.Synchronize();
         }
-        session.ClearInitialArrangement();
-        host.SetStatus($"YouTubeミニプレイヤーを最初の整列前配置へ戻しました（{targets.Count}件）");
+        session.ClearPreviousArrangement();
+        if (!restorePrevious)
+        {
+            session.ClearInitialArrangement();
+        }
+        host.SetStatus($"YouTubeミニプレイヤーを{destination}へ戻しました（{targets.Count}件）");
         _ = host.RefreshListAsync();
     }
 
@@ -328,6 +406,7 @@ internal sealed class YouTubeMiniPlayerArrangementController(
     public static IReadOnlyList<YouTubeMiniPlayerArrangementPreviewItem> CreatePreviewItems(YouTubeMiniPlayerArrangementPlan plan)
     {
         var byId = plan.Targets.ToDictionary(static item => item.State.Id);
+        var minimumSizes = plan.Baselines.ToDictionary(static item => item.Snapshot.StateId, static item => item.MinimumSize);
         var items = new List<YouTubeMiniPlayerArrangementPreviewItem>(plan.Layout.Count * 2);
         foreach (var result in plan.Layout)
         {
@@ -339,7 +418,8 @@ internal sealed class YouTubeMiniPlayerArrangementController(
                 ? (plan.FocusIds.Contains(result.Id) ? YouTubeMiniPlayerArrangementPreviewRole.Focus : YouTubeMiniPlayerArrangementPreviewRole.Secondary)
                 : YouTubeMiniPlayerArrangementPreviewRole.Standard;
             var label = item.State.SourceKind == MiniPlayerSourceKind.LocalFile ? "ローカル" : item.State.IsShorts ? "Shorts" : "YouTube";
-            items.Add(new(result.Id, result.Bounds, $"{label}: {item.Title}", role, YouTubeMiniPlayerLayoutService.GetVideoAspectRatio(item.State)));
+            items.Add(new(result.Id, result.Bounds, $"{label}: {item.Title}", role,
+                YouTubeMiniPlayerLayoutService.GetVideoAspectRatio(item.State), minimumSizes.GetValueOrDefault(result.Id)));
             if (result.ChatBounds is { } bounds)
             {
                 items.Add(new(null, bounds, $"チャット: {item.Title}", YouTubeMiniPlayerArrangementPreviewRole.Chat));

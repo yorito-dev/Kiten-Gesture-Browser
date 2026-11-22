@@ -50,6 +50,11 @@ internal static class AuxiliarySurfaceOwnershipPolicy
         Modeless<RuntimeDiagnosticsWindow>(),
 
         WindowField(
+            "MainWindow.xaml.cs:_bookmarkManagerWindow",
+            AuxiliarySurfaceOwner.MainWindow,
+            AuxiliarySurfaceTermination.ClosedUnregister,
+            "MainWindowがブックマーク管理Windowを保持し、閉じた後の変更反映を待って参照を解除する。"),
+        WindowField(
             "MainWindow.xaml.cs:_windowCloseConfirmationWindow",
             AuxiliarySurfaceOwner.MainWindow,
             AuxiliarySurfaceTermination.BeginWindowShutdown,
@@ -84,6 +89,16 @@ internal static class AuxiliarySurfaceOwnershipPolicy
             AuxiliarySurfaceOwner.MainWindow,
             AuxiliarySurfaceTermination.StopFloatingMedia,
             "MainWindowが独立した一覧Windowを保持し、通常の閉じる操作では非表示、floating-media終了経路でDisposeする。"),
+        WindowField(
+            "MainWindow.YouTubeMiniPlayer.cs:_youTubeMiniPlayerArrangementRegionWindow",
+            AuxiliarySurfaceOwner.FloatingMediaHost,
+            AuxiliarySurfaceTermination.StopFloatingMedia,
+            "範囲選択中だけ保持し、確定、Esc、非アクティブ化またはfloating-media終了時に閉じて参照を解除する。"),
+        WindowField(
+            "MainWindow.YouTubeMiniPlayerArrangementArea.cs:_youTubeMiniPlayerArrangementRegionOutlineWindow",
+            AuxiliarySurfaceOwner.FloatingMediaHost,
+            AuxiliarySurfaceTermination.StopFloatingMedia,
+            "確定後の範囲枠を保持し、整列操作の終了・一覧非表示・範囲解除・floating-media終了で閉じる。"),
         WindowField(
             "MainWindow.YouTubeMiniPlayer.cs:_youTubeMiniPlayerArrangementPreviewWindow",
             AuxiliarySurfaceOwner.FloatingMediaHost,

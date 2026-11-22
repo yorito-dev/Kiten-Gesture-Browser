@@ -24,6 +24,16 @@ public sealed class WorkspaceShellItemService
     private const int MediaThumbnailWidth = 320;
     private const int MediaThumbnailHeight = 180;
     private const int TransferBufferSize = 1024 * 128;
+    private const FileAttributes CopiedAttributes =
+        FileAttributes.ReadOnly | FileAttributes.Hidden | FileAttributes.System | FileAttributes.Archive;
+    private const uint ReadFileAttributes = 0x80;
+    private const uint DeleteAccess = 0x00010000;
+    private const uint OpenDirectoryHandle = 0x02000000;
+    private const uint OpenReparsePoint = 0x00200000;
+    private const int FileDispositionInfo = 4;
+    private const int FileDispositionInfoEx = 21;
+    private const uint DeleteIgnoringReadOnly = 0x11;
+    private const int ErrorDirectoryNotEmpty = 145;
     // コピーUndoはUI側の同期入口を維持するため、内容照合の読取り量に上限を設ける。
     private const long MaxCopyUndoContentBytes = 64L * 1024 * 1024;
     private const string TransferStagingPrefix = ".tabbrowser-transfer-";
@@ -321,28 +331,35 @@ public sealed class WorkspaceShellItemService
         return CreateUndoableResult(ShellFileOperationKind.Move, sourcePath, destinationPath);
     }
 
-    public ShellFileOperationResult MoveToRecycleBin(ShellItem item)
+    internal Task<ShellRecycleResult> MoveToRecycleBinAsync(IReadOnlyList<string> paths)
     {
-        RequireExisting(item);
-        var sourcePath = NormalizePath(item.TargetPath);
-        if (item.Kind == ShellItemKind.Directory)
+        return WindowsRecycleBin.RunOnStaAsync(() =>
         {
-            FileSystem.DeleteDirectory(
-                sourcePath,
-                UIOption.OnlyErrorDialogs,
-                RecycleOption.SendToRecycleBin,
-                UICancelOption.ThrowException);
-        }
-        else
+            var selectedPaths = paths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var groups = paths.GroupBy(
+                path => FindOutermostSelectedPath(path, selectedPaths), StringComparer.OrdinalIgnoreCase);
+            var movedCount = 0;
+            foreach (var group in groups)
+            {
+                if (WindowsRecycleBin.TryMove(group.Key))
+                    movedCount += group.Count();
+            }
+
+            return new ShellRecycleResult(movedCount, paths.Count - movedCount);
+        });
+    }
+
+    private static string FindOutermostSelectedPath(string path, HashSet<string> selectedPaths)
+    {
+        // 配下検索で親子を選んだ場合も、子の成否は親フォルダーとそろえる。
+        var outermost = path;
+        for (var parent = Path.GetDirectoryName(path); parent is not null; parent = Path.GetDirectoryName(parent))
         {
-            FileSystem.DeleteFile(
-                sourcePath,
-                UIOption.OnlyErrorDialogs,
-                RecycleOption.SendToRecycleBin,
-                UICancelOption.ThrowException);
+            if (selectedPaths.Contains(parent))
+                outermost = parent;
         }
 
-        return new ShellFileOperationResult(ShellFileOperationKind.Recycle, sourcePath, string.Empty, CanUndo: false);
+        return outermost;
     }
 
     public ShellFileTransferPlan CreateTransferPlan(
@@ -430,7 +447,7 @@ public sealed class WorkspaceShellItemService
             skippedCount);
     }
 
-    private static ShellFileTransferPreparation CreateTransferPreparationCore(
+    private ShellFileTransferPreparation CreateTransferPreparationCore(
         IEnumerable<string> sourcePaths,
         string destinationDirectory,
         bool move,
@@ -492,7 +509,13 @@ public sealed class WorkspaceShellItemService
                     isDirectory));
             }
 
-            items.Add(new ShellFileTransferPlanItem(sourcePath, itemDestinationPath, isDirectory));
+            var item = new ShellFileTransferPlanItem(sourcePath, itemDestinationPath, isDirectory);
+            if (move && !_transferOperations.AreOnSameVolume(sourcePath, itemDestinationPath))
+            {
+                item = item with { CopyPlan = CaptureMoveCopyPlan(item, cancellationToken) };
+            }
+
+            items.Add(item);
         }
 
         return new ShellFileTransferPreparation(destinationPath, move, items, conflicts);
@@ -531,8 +554,16 @@ public sealed class WorkspaceShellItemService
         }
         else
         {
+            var plannedItem = item.CopyPlan is not null
+                ? item
+                : item with
+                {
+                    CopyPlan = await Task.Run(
+                        () => CaptureMoveCopyPlan(item, cancellationToken),
+                        cancellationToken).ConfigureAwait(false)
+                };
             await CopyPathAsync(
-                item,
+                plannedItem,
                 progress,
                 _transferOperations.CopyChunkCompleted,
                 _transferOperations.DestinationReadyForPublication,
@@ -542,8 +573,8 @@ public sealed class WorkspaceShellItemService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await Task.Run(
-                    () => _transferOperations.DeleteMovedSource(item),
-                    CancellationToken.None).ConfigureAwait(false);
+                    () => _transferOperations.DeleteMovedSource(plannedItem),
+                    cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -585,7 +616,27 @@ public sealed class WorkspaceShellItemService
             cancellationToken).ConfigureAwait(false);
     }
 
-    public void Undo(ShellFileOperationResult operation)
+    internal Task UndoAsync(ShellFileOperationResult operation)
+    {
+        if (operation.Kind == ShellFileOperationKind.Copy)
+            return UndoInBackgroundAsync([operation]);
+
+        Undo(operation);
+        return Task.CompletedTask;
+    }
+
+    internal Task UndoInBackgroundAsync(IReadOnlyList<ShellFileOperationResult> operations)
+    {
+        return WindowsRecycleBin.RunOnStaAsync(() =>
+        {
+            foreach (var operation in operations.Reverse())
+                Undo(operation);
+
+            return true;
+        });
+    }
+
+    internal void Undo(ShellFileOperationResult operation)
     {
         if (!operation.CanUndo)
         {
@@ -601,7 +652,8 @@ public sealed class WorkspaceShellItemService
                 Directory.Delete(operation.DestinationPath, recursive: false);
                 break;
             case ShellFileOperationKind.Copy:
-                DeleteCopiedItemToRecycleBin(operation.DestinationPath);
+                if (!WindowsRecycleBin.TryMove(operation.DestinationPath))
+                    throw new IOException(ShellRecycleResult.NotMovedMessage);
                 break;
             case ShellFileOperationKind.Rename:
             case ShellFileOperationKind.Move:
@@ -721,17 +773,23 @@ public sealed class WorkspaceShellItemService
         var attributes = File.GetAttributes(path);
         if ((attributes & FileAttributes.ReparsePoint) != 0) return null;
         var isDirectory = (attributes & FileAttributes.Directory) != 0;
-        using var handle = CreateFileForIdentity(path, 0x80,
+        using var handle = CreateFileForIdentity(path, ReadFileAttributes,
             FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, FileMode.Open,
-            isDirectory ? 0x02000000u : 0u, IntPtr.Zero);
+            OpenReparsePoint | (isDirectory ? OpenDirectoryHandle : 0u), IntPtr.Zero);
+        return ReadEntryByHandle(handle);
+    }
+
+    private static ShellUndoEntry? ReadEntryByHandle(SafeFileHandle handle)
+    {
         if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var information)) return null;
+        var attributes = (FileAttributes)information.Attributes;
+        if ((attributes & FileAttributes.ReparsePoint) != 0) return null;
         var fileIndex = ((ulong)information.FileIndexHigh << 32) | information.FileIndexLow;
         if (fileIndex == 0) return null;
-        var length = isDirectory ? 0 : new FileInfo(path).Length;
-        var lastWrite = isDirectory ? Directory.GetLastWriteTimeUtc(path) : File.GetLastWriteTimeUtc(path);
-        return new ShellUndoEntry(
-            new ShellFileIdentity(information.VolumeSerialNumber, fileIndex),
-            isDirectory, length, lastWrite);
+        var isDirectory = (attributes & FileAttributes.Directory) != 0;
+        var length = isDirectory ? 0 : ((long)information.FileSizeHigh << 32) | information.FileSizeLow;
+        var time = DateTime.FromFileTimeUtc(((long)information.LastWriteTime.High << 32) | information.LastWriteTime.Low);
+        return new ShellUndoEntry(new ShellFileIdentity(information.VolumeSerialNumber, fileIndex), isDirectory, length, time);
     }
 
     private static string GetIconPngBase64(ShellItem item, CancellationToken cancellationToken)
@@ -1010,18 +1068,6 @@ public sealed class WorkspaceShellItemService
         return Convert.ToBase64String(stream.ToArray());
     }
 
-    private static void DeleteCopiedItemToRecycleBin(string path)
-    {
-        if (Directory.Exists(path))
-        {
-            FileSystem.DeleteDirectory(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-        }
-        else if (File.Exists(path))
-        {
-            FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-        }
-    }
-
     private static async Task CopyPathAsync(
         ShellFileTransferPlanItem item,
         IProgress<ShellFileTransferProgress>? progress,
@@ -1062,6 +1108,7 @@ public sealed class WorkspaceShellItemService
                 await CopyFileAsync(
                     item.SourcePath,
                     stagingPath,
+                    item.CopyPlan?.Files[0].SourceSnapshot,
                     ReportProgress,
                     copyChunkCompleted,
                     () => ownsStagingPath = true,
@@ -1074,27 +1121,45 @@ public sealed class WorkspaceShellItemService
                 return;
             }
 
-            var entries = await Task.Run(
-                () => BuildDirectoryCopyPlan(item.SourcePath, stagingPath, cancellationToken),
+            var entries = item.CopyPlan ?? await Task.Run(
+                () => BuildDirectoryCopyPlan(item.SourcePath, captureIdentity: false, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             CreateDirectoryExclusive(stagingPath);
             ownsStagingPath = true;
-            foreach (var directory in entries.Directories.Skip(1))
+            foreach (var directory in entries.Directories)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                Directory.CreateDirectory(directory);
+                if (directory.SourceSnapshot is { } expected)
+                {
+                    EnsureSourceUnchanged(expected, ReadUndoEntry(directory.SourcePath), directory.SourcePath);
+                }
+
+                if (directory.RelativePath.Length > 0)
+                {
+                    Directory.CreateDirectory(Path.Combine(stagingPath, directory.RelativePath));
+                }
             }
 
             foreach (var file in entries.Files)
             {
                 await CopyFileAsync(
                     file.SourcePath,
-                    file.DestinationPath,
+                    Path.Combine(stagingPath, file.RelativePath),
+                    file.SourceSnapshot,
                     ReportProgress,
                     copyChunkCompleted,
                     static () => { },
                     cancellationToken).ConfigureAwait(false);
+            }
+
+            for (var index = entries.Directories.Count - 1; index >= 0; index--)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var directory = entries.Directories[index];
+                var target = Path.Combine(stagingPath, directory.RelativePath);
+                Directory.SetLastWriteTimeUtc(target, Directory.GetLastWriteTimeUtc(directory.SourcePath));
+                SetCopiedAttributes(target, File.GetAttributes(directory.SourcePath));
             }
 
             destinationReadyForPublication(item);
@@ -1132,9 +1197,19 @@ public sealed class WorkspaceShellItemService
         throw new IOException("コピー用の一時フォルダーを排他的に作成できませんでした: " + error.Message, error);
     }
 
-    private static DirectoryCopyPlan BuildDirectoryCopyPlan(
+    private static TransferCopyPlan CaptureMoveCopyPlan(
+        ShellFileTransferPlanItem item,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return item.IsDirectory
+            ? BuildDirectoryCopyPlan(item.SourcePath, captureIdentity: true, cancellationToken)
+            : new TransferCopyPlan([], [CreateCopyEntry(item.SourcePath, string.Empty, isDirectory: false, captureIdentity: true)]);
+    }
+
+    private static TransferCopyPlan BuildDirectoryCopyPlan(
         string sourceRoot,
-        string destinationRoot,
+        bool captureIdentity,
         CancellationToken cancellationToken)
     {
         if ((File.GetAttributes(sourceRoot) & FileAttributes.ReparsePoint) != 0)
@@ -1142,15 +1217,15 @@ public sealed class WorkspaceShellItemService
             throw new NotSupportedException("シンボリックリンクまたはジャンクションはコピー対象にできません。");
         }
 
-        var directories = new List<string> { destinationRoot };
-        var files = new List<CopyFilePlan>();
-        var pending = new Queue<(string Source, string Destination)>();
-        pending.Enqueue((sourceRoot, destinationRoot));
+        var directories = new List<CopyEntryPlan> { CreateCopyEntry(sourceRoot, string.Empty, isDirectory: true, captureIdentity) };
+        var files = new List<CopyEntryPlan>();
+        var pending = new Queue<string>();
+        pending.Enqueue(sourceRoot);
         while (pending.Count > 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var current = pending.Dequeue();
-            foreach (var entryPath in Directory.EnumerateFileSystemEntries(current.Source))
+            foreach (var entryPath in Directory.EnumerateFileSystemEntries(current))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var attributes = File.GetAttributes(entryPath);
@@ -1160,20 +1235,32 @@ public sealed class WorkspaceShellItemService
                         $"シンボリックリンクまたはジャンクションを含むため処理できません: {GetDisplayName(entryPath)}");
                 }
 
-                var entryDestination = Path.Combine(current.Destination, GetDisplayName(entryPath));
-                if ((attributes & FileAttributes.Directory) != 0)
+                var isDirectory = (attributes & FileAttributes.Directory) != 0;
+                var entry = CreateCopyEntry(entryPath, Path.GetRelativePath(sourceRoot, entryPath), isDirectory, captureIdentity);
+                if (isDirectory)
                 {
-                    directories.Add(entryDestination);
-                    pending.Enqueue((entryPath, entryDestination));
+                    directories.Add(entry);
+                    pending.Enqueue(entryPath);
                 }
                 else
                 {
-                    files.Add(new CopyFilePlan(entryPath, entryDestination));
+                    files.Add(entry);
                 }
             }
         }
 
-        return new DirectoryCopyPlan(directories, files);
+        return new TransferCopyPlan(directories, files);
+    }
+
+    private static CopyEntryPlan CreateCopyEntry(string sourcePath, string relativePath, bool isDirectory, bool captureIdentity)
+    {
+        var snapshot = captureIdentity ? ReadUndoEntry(sourcePath) : null;
+        if (captureIdentity && (snapshot is null || snapshot.IsDirectory != isDirectory))
+        {
+            throw new IOException("移動元を安全に確認できません。");
+        }
+
+        return new CopyEntryPlan(sourcePath, relativePath, snapshot);
     }
 
     private static long MeasureTransferItemBytes(
@@ -1186,12 +1273,12 @@ public sealed class WorkspaceShellItemService
             return new FileInfo(item.SourcePath).Length;
         }
 
-        var entries = BuildDirectoryCopyPlan(item.SourcePath, item.DestinationPath, cancellationToken);
+        var entries = item.CopyPlan ?? BuildDirectoryCopyPlan(item.SourcePath, captureIdentity: false, cancellationToken);
         var totalBytes = 0L;
         foreach (var file in entries.Files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            totalBytes = AddBytesSaturating(totalBytes, new FileInfo(file.SourcePath).Length);
+            totalBytes = AddBytesSaturating(totalBytes, file.SourceSnapshot?.Length ?? new FileInfo(file.SourcePath).Length);
         }
 
         return totalBytes;
@@ -1200,6 +1287,7 @@ public sealed class WorkspaceShellItemService
     private static async Task CopyFileAsync(
         string sourcePath,
         string destinationPath,
+        ShellUndoEntry? sourceSnapshot,
         Action<string, long, bool> progress,
         Action<string, long> copyChunkCompleted,
         Action destinationCreated,
@@ -1213,36 +1301,51 @@ public sealed class WorkspaceShellItemService
             FileShare.Read,
             bufferSize: TransferBufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await using var destination = new FileStream(
+        if (sourceSnapshot is not null)
+        {
+            EnsureSourceUnchanged(sourceSnapshot, ReadEntryByHandle(source.SafeFileHandle), sourcePath);
+        }
+
+        var sourceAttributes = File.GetAttributes(source.SafeFileHandle);
+        var lastWriteTimeUtc = File.GetLastWriteTimeUtc(source.SafeFileHandle);
+        await using (var destination = new FileStream(
             destinationPath,
             FileMode.CreateNew,
             FileAccess.Write,
             FileShare.None,
             bufferSize: TransferBufferSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        destinationCreated();
-        var buffer = ArrayPool<byte>.Shared.Rent(TransferBufferSize);
-        try
+            FileOptions.Asynchronous | FileOptions.SequentialScan))
         {
-            while (true)
+            destinationCreated();
+            var buffer = ArrayPool<byte>.Shared.Rent(TransferBufferSize);
+            try
             {
-                var read = await source.ReadAsync(
-                    buffer.AsMemory(0, TransferBufferSize),
-                    cancellationToken).ConfigureAwait(false);
-                if (read == 0)
+                while (true)
                 {
-                    break;
+                    var read = await source.ReadAsync(
+                        buffer.AsMemory(0, TransferBufferSize),
+                        cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    copyChunkCompleted(sourcePath, read);
+                    progress(sourcePath, read, false);
                 }
 
-                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-                copyChunkCompleted(sourcePath, read);
-                progress(sourcePath, read, false);
+                await Task.Run(() => destination.Flush(flushToDisk: true), cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
             }
         }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        File.SetLastWriteTimeUtc(destinationPath, lastWriteTimeUtc);
+        SetCopiedAttributes(destinationPath, sourceAttributes);
     }
 
     private static long AddBytesSaturating(long current, long added)
@@ -1252,27 +1355,91 @@ public sealed class WorkspaceShellItemService
             : current + added;
     }
 
-    private static void DeleteMovedSource(ShellFileTransferPlanItem item)
+    private static void SetCopiedAttributes(string destinationPath, FileAttributes sourceAttributes)
     {
-        if (item.IsDirectory)
+        var attributes = sourceAttributes & CopiedAttributes;
+        File.SetAttributes(destinationPath, attributes == 0 ? FileAttributes.Normal : attributes);
+    }
+
+    private static void EnsureSourceUnchanged(ShellUndoEntry expected, ShellUndoEntry? actual, string sourcePath)
+    {
+        if (actual is null || actual.Identity != expected.Identity || actual.IsDirectory != expected.IsDirectory
+            || (!expected.IsDirectory && (actual.Length != expected.Length || actual.LastWriteTimeUtc != expected.LastWriteTimeUtc)))
         {
-            Directory.Delete(item.SourcePath, recursive: true);
+            throw new IOException($"処理中に移動元が変更されました: {sourcePath}");
         }
-        else
+    }
+
+    internal static void DeleteMovedSource(ShellFileTransferPlanItem item)
+    {
+        var entries = item.CopyPlan ?? throw new InvalidOperationException("移動元の計画がありません。");
+        foreach (var file in entries.Files)
         {
-            File.Delete(item.SourcePath);
+            TryDeleteCopiedSource(file);
         }
+
+        var hasRemainingDirectory = false;
+        for (var index = entries.Directories.Count - 1; index >= 0; index--)
+        {
+            hasRemainingDirectory |= !TryDeleteCopiedSource(entries.Directories[index]);
+        }
+
+        if (hasRemainingDirectory)
+        {
+            throw new IOException("移動元に計画外の項目が残っています。");
+        }
+    }
+
+    private static bool TryDeleteCopiedSource(CopyEntryPlan entry)
+    {
+        var expected = entry.SourceSnapshot ?? throw new InvalidOperationException("移動元の照合情報がありません。");
+        using var handle = CreateFileForIdentity(entry.SourcePath, DeleteAccess | ReadFileAttributes,
+            FileShare.Read, IntPtr.Zero, FileMode.Open, OpenReparsePoint | OpenDirectoryHandle, IntPtr.Zero);
+        EnsureSourceUnchanged(expected, ReadEntryByHandle(handle), entry.SourcePath);
+
+        // 照合したハンドルで削除し、パスの差し替えや追加項目の再帰削除を防ぐ。
+        var readOnly = (File.GetAttributes(handle) & FileAttributes.ReadOnly) != 0;
+        var disposition = readOnly ? DeleteIgnoringReadOnly : 1u;
+        if (SetFileInformationByHandle(handle, readOnly ? FileDispositionInfoEx : FileDispositionInfo,
+            in disposition, readOnly ? sizeof(uint) : sizeof(byte)))
+        {
+            return true;
+        }
+
+        var error = Marshal.GetLastWin32Error();
+        if (expected.IsDirectory && error == ErrorDirectoryNotEmpty)
+        {
+            return false;
+        }
+
+        throw new IOException("移動元を削除できませんでした。", new Win32Exception(error));
     }
 
     private static void TryDeleteOwnedPartialCopy(string path)
     {
         try
         {
-            if (Directory.Exists(path))
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) != 0 && (attributes & FileAttributes.ReparsePoint) == 0)
+            {
+                var options = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    AttributesToSkip = FileAttributes.ReparsePoint,
+                    IgnoreInaccessible = false
+                };
+                foreach (var entry in Directory.EnumerateFileSystemEntries(path, "*", options))
+                {
+                    ClearReadOnly(entry, File.GetAttributes(entry));
+                }
+            }
+
+            ClearReadOnly(path, attributes);
+            if ((attributes & FileAttributes.Directory) != 0)
             {
                 Directory.Delete(path, recursive: true);
             }
-            else if (File.Exists(path))
+            else
             {
                 File.Delete(path);
             }
@@ -1280,6 +1447,15 @@ public sealed class WorkspaceShellItemService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // 排他的に取得した一時領域だけを後始末する。失敗時は競合先へ触れず一時データを残す。
+        }
+    }
+
+    private static void ClearReadOnly(string path, FileAttributes attributes)
+    {
+        if ((attributes & (FileAttributes.ReadOnly | FileAttributes.ReparsePoint)) == FileAttributes.ReadOnly)
+        {
+            var writableAttributes = attributes & ~FileAttributes.ReadOnly;
+            File.SetAttributes(path, writableAttributes == 0 ? FileAttributes.Normal : writableAttributes);
         }
     }
 
@@ -1414,6 +1590,10 @@ public sealed class WorkspaceShellItemService
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out ByHandleFileInformation information);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass, in uint information, int size);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeFileTime
     {
@@ -1480,8 +1660,20 @@ public enum ShellFileOperationKind
     CreateDirectory,
     Rename,
     Copy,
-    Move,
-    Recycle
+    Move
+}
+
+internal readonly record struct ShellRecycleResult(int MovedCount, int NotMovedCount)
+{
+    internal const string NotMovedMessage = "ごみ箱へ移動できなかったため、元の場所に残しました";
+
+    internal string GetSelectionStatus()
+    {
+        if (NotMovedCount == 0)
+            return $"{MovedCount:N0} 件をごみ箱へ移動しました。復元はWindowsのごみ箱から行ってください。";
+
+        return $"移動済み {MovedCount:N0} 件、未移動 {NotMovedCount:N0} 件。{NotMovedMessage}";
+    }
 }
 
 public sealed record ShellFileOperationResult(
@@ -1508,7 +1700,10 @@ public sealed record ShellFileTransferPlan(
 public sealed record ShellFileTransferPlanItem(
     string SourcePath,
     string DestinationPath,
-    bool IsDirectory);
+    bool IsDirectory)
+{
+    internal TransferCopyPlan? CopyPlan { get; init; }
+}
 
 public sealed record ShellFileTransferPreparation(
     string DestinationDirectory,
@@ -1539,7 +1734,7 @@ public sealed record ShellFileTransferProgress(
     string CurrentPath,
     long BytesTransferred);
 
-internal sealed record CopyFilePlan(string SourcePath, string DestinationPath);
+internal sealed record CopyEntryPlan(string SourcePath, string RelativePath, ShellUndoEntry? SourceSnapshot);
 
 internal sealed record WorkspaceShellItemTransferOperations(
     Func<string, string, bool> AreOnSameVolume,
@@ -1554,6 +1749,6 @@ internal sealed record WorkspaceShellIconLookupRequest(
     bool UseFileAttributes,
     string? CacheKey);
 
-internal sealed record DirectoryCopyPlan(
-    IReadOnlyList<string> Directories,
-    IReadOnlyList<CopyFilePlan> Files);
+internal sealed record TransferCopyPlan(
+    IReadOnlyList<CopyEntryPlan> Directories,
+    IReadOnlyList<CopyEntryPlan> Files);

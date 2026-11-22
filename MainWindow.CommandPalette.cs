@@ -501,7 +501,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
         var hasLink = tab is not null
             && context.ExplicitContextTabId == tab.Id
             && !string.IsNullOrWhiteSpace(context.LinkUrl);
-        var hasMiniPlayers = GetOpenMainWindows()
+        var hasMiniPlayers = GetSamePrivacyMainWindows(GetOpenMainWindows())
             .Any(window => window._youTubeMiniPlayerRuntimes.Count > 0);
         return new CommandInvocationContext(
             surface,
@@ -570,7 +570,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
 
     private IReadOnlyList<MiniPlayerCommandSource> GetCommandPaletteMiniPlayerSources()
     {
-        return GetOpenMainWindows()
+        return GetSamePrivacyMainWindows(GetOpenMainWindows())
             .SelectMany(window => window._youTubeMiniPlayers
                 .Where(state => window._youTubeMiniPlayerRuntimes.ContainsKey(state.Id))
                 .Select(state => new MiniPlayerCommandSource(
@@ -598,7 +598,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
 
     private IReadOnlyList<TabCommandSource> GetCommandPaletteTabSources()
     {
-        return GetOpenMainWindows()
+        return GetSamePrivacyMainWindows(GetOpenMainWindows())
             .SelectMany(window =>
             {
                 var windowLabel = ReferenceEquals(window, this)
@@ -735,7 +735,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
             return;
         }
 
-        var target = GetOpenMainWindows()
+        var target = GetSamePrivacyMainWindows(GetOpenMainWindows())
             .SelectMany(window => window._tabs.Select(tab => new { Window = window, Tab = tab }))
             .FirstOrDefault(entry => entry.Tab.Id == tabId);
         if (target is null)
@@ -773,7 +773,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
             return;
         }
 
-        var target = GetOpenMainWindows()
+        var target = GetSamePrivacyMainWindows(GetOpenMainWindows())
             .Select(window => new
             {
                 Window = window,
@@ -1380,7 +1380,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
             return Task.CompletedTask;
         }
 
-        var owner = GetOpenMainWindows().FirstOrDefault(window =>
+        var owner = GetSamePrivacyMainWindows(GetOpenMainWindows()).FirstOrDefault(window =>
             window._youTubeMiniPlayerRuntimes.ContainsKey(id)
             && window._youTubeMiniPlayers.Any(state => state.Id == id));
         var state = owner?._youTubeMiniPlayers.FirstOrDefault(candidate => candidate.Id == id);
@@ -1404,10 +1404,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
     }
 
     private Task CopyCommandPaletteSelectionAsync(CommandActionContext context)
-    {
-        CopySelectedText(context.InvocationContext?.SelectedText);
-        return Task.CompletedTask;
-    }
+        => CopySelectedTextAsync(context.InvocationContext?.SelectedText);
 
     private Task SearchCommandPaletteSelectionAsync(CommandActionContext context)
     {
@@ -1452,14 +1449,11 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
     }
 
     private Task CopyCommandPaletteLinkUrlAsync(CommandActionContext context)
-    {
-        CopyContextLink(
+        => CopyContextLinkAsync(
             LinkCopyFormat.Url,
             context.InvocationContext?.LinkUrl,
             context.InvocationContext?.LinkText,
             "リンクURLをコピーしました");
-        return Task.CompletedTask;
-    }
 
     private Task SortCommandPaletteFolderAsync(
         string sortMode,
@@ -1609,16 +1603,10 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
         => _commandPaletteViewController?.QueueCommandPaletteTextInput(null);
 
     private Task CopyCurrentPageFromCommandPaletteAsync(LinkCopyFormat format)
-    {
-        CopyCurrentPageLink(format);
-        return Task.CompletedTask;
-    }
+        => CopyCurrentPageLinkAsync(format);
 
     private Task CopyAllTabsMarkdownFromCommandPaletteAsync()
-    {
-        CopyAllTabsMarkdown();
-        return Task.CompletedTask;
-    }
+        => CopyAllTabsMarkdownAsync();
 
     private Task OpenDownloadsFromCommandPaletteAsync()
     {

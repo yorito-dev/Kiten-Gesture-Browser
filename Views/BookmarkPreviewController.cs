@@ -14,6 +14,8 @@ internal interface IBookmarkPreviewHost
 
     bool HasLoadedNewTabPage { get; }
 
+    bool IsLinkHoverPreviewEnabled { get; }
+
     string ResolveUrl(string input);
 
     Task<CoreWebView2Environment> EnsureEnvironmentAsync();
@@ -29,8 +31,11 @@ internal sealed class BookmarkPreviewController
     private readonly FrameworkElement _webHost;
     private readonly IBookmarkPreviewHost _host;
     private readonly WindowTaskSupervisor _windowTaskSupervisor;
+    private readonly string _previewProfileName = "KitenBookmarkPreview-" + Guid.NewGuid().ToString("N");
     private Popup? _bookmarkPreviewPopup;
     private WebView2? _bookmarkPreviewWebView;
+    private Task? _bookmarkPreviewCoreInitialization;
+    private CoreWebView2? _restrictedCore;
     private readonly PopupNavigationRequestCoordinator _bookmarkPreviewRequestCoordinator = new();
     private TextBlock? _bookmarkPreviewTitleText;
     private TextBlock? _bookmarkPreviewUrlText;
@@ -83,14 +88,14 @@ internal sealed class BookmarkPreviewController
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(url) || !_host.HasLoadedNewTabPage)
+        if (!_host.IsLinkHoverPreviewEnabled || string.IsNullOrWhiteSpace(url) || !_host.HasLoadedNewTabPage)
         {
             return;
         }
 
+        var requestVersion = _bookmarkPreviewRequestCoordinator.BeginRequest();
         try
         {
-            var requestVersion = _bookmarkPreviewRequestCoordinator.BeginRequest();
             var target = _host.ResolveUrl(url);
             var popup = EnsureBookmarkPreviewPopup();
             PositionBookmarkPreviewPopup(popup, left, top, right, bottom);
@@ -118,38 +123,50 @@ internal sealed class BookmarkPreviewController
                 return;
             }
 
-            await webView.EnsureCoreWebView2Async(environment);
+            if (_bookmarkPreviewCoreInitialization is null)
+            {
+                var options = WebViewLifecycleService.CreatePrivatePreviewOptions(environment, _previewProfileName);
+                _bookmarkPreviewCoreInitialization = webView.EnsureCoreWebView2Async(environment, options);
+            }
+
+            await _bookmarkPreviewCoreInitialization;
             if (!IsCurrentBookmarkPreviewRequest(requestVersion, webView, popup, cancellationToken))
             {
                 return;
             }
 
-            ConfigureBookmarkPreviewWebView(webView.CoreWebView2);
+            if (webView.CoreWebView2 is not { Profile: { } profile } core
+                || !WebViewLifecycleService.IsPrivatePreviewProfile(profile.IsInPrivateModeEnabled, profile.ProfileName, _previewProfileName))
+            {
+                throw new InvalidOperationException("ブックマークプレビューの分離プロファイルを確認できません。");
+            }
+
+            ConfigureBookmarkPreviewWebView(core);
 
             if (!_bookmarkPreviewRequestCoordinator.IsCurrentUrl(target))
             {
                 _bookmarkPreviewRequestCoordinator.SetCurrentUrl(target);
-                webView.CoreWebView2.Navigate(target);
+                core.Navigate(target);
             }
         }
         catch (WebView2RuntimeNotFoundException)
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (!CanContinueBookmarkPreviewRequest(requestVersion, cancellationToken))
             {
                 return;
             }
 
-            CloseBookmarkPreview(clearNavigation: true);
+            CloseBookmarkPreview(disposeWebView: true);
             _host.ReportError("WebView2 Runtime が見つかりません");
         }
         catch (Exception ex)
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (!CanContinueBookmarkPreviewRequest(requestVersion, cancellationToken))
             {
                 return;
             }
 
-            CloseBookmarkPreview(clearNavigation: true);
+            CloseBookmarkPreview(disposeWebView: true);
             _host.ReportError("ブックマークプレビューを表示できません: " + ex.Message);
         }
     }
@@ -160,13 +177,17 @@ internal sealed class BookmarkPreviewController
         Popup popup,
         CancellationToken cancellationToken)
     {
-        return !cancellationToken.IsCancellationRequested
-            && !_host.IsClosingWindow
-            && _bookmarkPreviewRequestCoordinator.IsCurrent(requestVersion)
+        return CanContinueBookmarkPreviewRequest(requestVersion, cancellationToken)
             && ReferenceEquals(_bookmarkPreviewWebView, webView)
             && ReferenceEquals(_bookmarkPreviewPopup, popup)
             && popup.IsOpen == true;
     }
+
+    private bool CanContinueBookmarkPreviewRequest(int requestVersion, CancellationToken cancellationToken)
+        => !cancellationToken.IsCancellationRequested
+            && !_host.IsClosingWindow
+            && _host.IsLinkHoverPreviewEnabled
+            && _bookmarkPreviewRequestCoordinator.IsCurrent(requestVersion);
 
     private Popup EnsureBookmarkPreviewPopup()
     {
@@ -192,6 +213,11 @@ internal sealed class BookmarkPreviewController
 
         _bookmarkPreviewWebView = new WebView2
         {
+            CreationProperties = new CoreWebView2CreationProperties
+            {
+                ProfileName = _previewProfileName,
+                IsInPrivateModeEnabled = true
+            },
             Width = BookmarkPreviewPopupWidth,
             Height = BookmarkPreviewPopupHeight - 47
         };
@@ -273,9 +299,10 @@ internal sealed class BookmarkPreviewController
         popup.VerticalOffset = Math.Max(12, Math.Min(y, Math.Max(12, hostHeight - BookmarkPreviewPopupHeight - 12)));
     }
 
-    private static void ConfigureBookmarkPreviewWebView(CoreWebView2 core)
+    private void ConfigureBookmarkPreviewWebView(CoreWebView2 core)
     {
         WebViewLifecycleService.ApplyPreviewCoreSettings(core);
+        WebViewLifecycleService.UpdatePrivatePreviewRestrictions(ref _restrictedCore, core);
     }
 
     internal void CloseBookmarkPreview(bool clearNavigation = false, bool disposeWebView = false)
@@ -306,8 +333,10 @@ internal sealed class BookmarkPreviewController
             return;
         }
 
+        WebViewLifecycleService.UpdatePrivatePreviewRestrictions(ref _restrictedCore, null);
         _bookmarkPreviewWebView?.Dispose();
         _bookmarkPreviewWebView = null;
+        _bookmarkPreviewCoreInitialization = null;
         _bookmarkPreviewPopup = null;
         _bookmarkPreviewTitleText = null;
         _bookmarkPreviewUrlText = null;

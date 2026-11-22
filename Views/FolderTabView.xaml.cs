@@ -64,6 +64,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private bool _isInitialLoadStarted;
     private bool _hasLoadedContent;
     private bool _isDisposed;
+    private bool _isRecyclingSelection;
     private Action<string>? _openLocalVideoInMiniPlayer;
     private Action<string>? _recordRecentItemOpened;
     private Func<string, object?, Task>? _executeCommandAsync;
@@ -152,6 +153,12 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         IsVisibleChanged += FolderTabView_IsVisibleChanged;
     }
 
+    internal FolderTabView(WorkspaceShellItemService shellItemService, string initialPath)
+        : this(initialPath)
+    {
+        _shellItemService = shellItemService;
+    }
+
     public ObservableCollection<FolderTabItemViewModel> Items { get; } = [];
 
     public ObservableCollection<FolderTabPathSuggestion> PathSuggestions { get; } = [];
@@ -233,6 +240,8 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     public bool CanAcceptTabHeaderFileDrop => !_isDisposed
         && _fileTransferCancellation is null
         && !_isConflictResolutionOpen;
+
+    internal bool HasPendingTransfer => _fileTransferCancellation is not null || _isConflictResolutionOpen;
 
     public Task<bool> TryHandleTabHeaderFileDropAsync(IReadOnlyList<string> paths, bool move)
     {
@@ -458,8 +467,8 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         _recursiveSearchCancellation?.Cancel();
         _recursiveSearchCancellation?.Dispose();
         _recursiveSearchCancellation = null;
+        // CTSの破棄は、転送処理とそのキャンセル後の後始末が終わってから行う。
         _fileTransferCancellation?.Cancel();
-        _fileTransferCancellation?.Dispose();
         _fileTransferCancellation = null;
         CancelIconLoading();
         QuickLookPreviewHost.Dispose();
@@ -834,12 +843,12 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private void CancelFileOperationButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_fileTransferCancellation is null)
+        if (_isDisposed || _fileTransferCancellation is not { } cancellation)
         {
             return;
         }
 
-        _fileTransferCancellation.Cancel();
+        cancellation.Cancel();
         FileOperationTitleText.Text = "キャンセル中...";
         CancelFileOperationButton.IsEnabled = false;
         CancelFileOperationPanelButton.IsEnabled = false;
@@ -847,6 +856,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private async void RetryFileOperationButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+
         if (_failedTransferPaths.Count == 0
             || string.IsNullOrWhiteSpace(_failedTransferDestination)
             || _fileTransferCancellation is not null)
@@ -928,6 +942,9 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private async Task RecycleSelectionAsync()
     {
+        if (_isDisposed || _isRecyclingSelection)
+            return;
+
         var selectedItems = GetSelectedFileOperationItems();
         if (selectedItems.Count == 0)
         {
@@ -949,31 +966,31 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
             return;
         }
 
-        QuickLookPreviewHost.Close();
-        var succeeded = 0;
-        var failureMessages = new List<string>();
-        foreach (var item in selectedItems)
+        _isRecyclingSelection = true;
+        try
         {
-            try
-            {
-                _ = _shellItemService.MoveToRecycleBin(CreateShellItem(item.FullPath));
-                succeeded++;
-            }
-            catch (Exception ex) when (IsExpectedFileOperationException(ex))
-            {
-                failureMessages.Add($"{item.Name}: {ex.Message}");
-            }
-        }
+            QuickLookPreviewHost.Close();
+            var previousOperations = _lastFileOperations;
+            var paths = selectedItems.Select(static item => item.FullPath).ToArray();
+            var result = await _shellItemService.MoveToRecycleBinAsync(paths);
+            if (_isDisposed)
+                return;
 
-        _lastFileOperations = [];
-        await RefreshAfterFileOperationAsync([]);
-        var status = $"{succeeded:N0} 件をごみ箱へ移動しました。復元はWindowsのごみ箱から行ってください。";
-        if (failureMessages.Count > 0)
+            if (ReferenceEquals(_lastFileOperations, previousOperations))
+                _lastFileOperations = [];
+            await RefreshAfterFileOperationAsync([]);
+            if (!_isDisposed)
+                ShowOperationStatus(result.GetSelectionStatus());
+        }
+        catch (Exception ex) when (IsExpectedFileOperationException(ex))
         {
-            status += $" 失敗 {failureMessages.Count:N0} 件: {failureMessages[0]}";
+            if (!_isDisposed)
+                ShowMessage("ごみ箱への移動結果を確認できません: " + ex.Message);
         }
-
-        ShowOperationStatus(status);
+        finally
+        {
+            _isRecyclingSelection = false;
+        }
     }
 
     private async Task UndoLastFileOperationAsync()
@@ -988,24 +1005,23 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         {
             QuickLookPreviewHost.Close();
             var operations = _lastFileOperations;
-            await Task.Run(() =>
-            {
-                foreach (var operation in operations.Reverse())
-                {
-                    _shellItemService.Undo(operation);
-                }
-            });
+            await _shellItemService.UndoInBackgroundAsync(operations);
+            if (_isDisposed)
+                return;
+
             _lastFileOperations = [];
             var reselectPaths = operations
                 .Select(operation => operation.SourcePath)
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .ToArray();
             await RefreshAfterFileOperationAsync(reselectPaths);
-            ShowOperationStatus("直前の操作を元に戻しました。");
+            if (!_isDisposed)
+                ShowOperationStatus("直前の操作を元に戻しました。");
         }
         catch (Exception ex) when (IsExpectedFileOperationException(ex))
         {
-            ShowMessage("元に戻せませんでした: " + ex.Message);
+            if (!_isDisposed)
+                ShowMessage("元に戻せませんでした: " + ex.Message);
         }
     }
 
@@ -1037,6 +1053,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private async Task PasteClipboardAsync()
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+
         if (_fileTransferCancellation is not null)
         {
             ShowMessage("ファイル操作を実行中です。");
@@ -1061,8 +1082,10 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         }
         catch (Exception ex) when (IsExpectedFileOperationException(ex) || IsExpectedClipboardException(ex))
         {
-            ShowMessage("貼り付けを開始できません: " + ex.Message);
-            return;
+            if (!_isDisposed)
+            {
+                ShowMessage("貼り付けを開始できません: " + ex.Message);
+            }
         }
     }
 
@@ -1071,6 +1094,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         string destinationPath,
         bool move)
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+
         if (_isConflictResolutionOpen)
         {
             ShowMessage("同名項目の確認を実行中です。");
@@ -1081,7 +1109,17 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         try
         {
             var preparation = await _shellItemService.PrepareTransferAsync(paths, destinationPath, move);
+            if (_isDisposed)
+            {
+                return;
+            }
+
             var conflictResolutions = await ResolveTransferConflictsAsync(preparation.Conflicts);
+            if (_isDisposed)
+            {
+                return;
+            }
+
             if (conflictResolutions is null)
             {
                 ShowOperationStatus($"{(move ? "移動" : "コピー")}をキャンセルしました。");
@@ -1102,7 +1140,10 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         }
         catch (Exception ex) when (IsExpectedFileOperationException(ex))
         {
-            ShowMessage("ファイル操作を開始できません: " + ex.Message);
+            if (!_isDisposed)
+            {
+                ShowMessage("ファイル操作を開始できません: " + ex.Message);
+            }
         }
         finally
         {
@@ -1129,6 +1170,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
                 Owner = Window.GetWindow(this)
             };
             _ = await ModelessWindowService.ShowAsync(dialog);
+            if (_isDisposed)
+            {
+                return null;
+            }
+
             switch (dialog.Choice)
             {
                 case FolderFileConflictChoice.Skip:
@@ -1159,10 +1205,9 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         RetryFileOperationButton.Visibility = Visibility.Collapsed;
         _failedTransferPaths = [];
         _failedTransferDestination = string.Empty;
-        _fileTransferCancellation = new CancellationTokenSource();
-        var cancellationToken = _fileTransferCancellation.Token;
-        CancelFileOperationButton.Visibility = Visibility.Visible;
-        ShowFileOperationProgress(plan.Move, plan.Items.Count);
+        var transferCancellation = new CancellationTokenSource();
+        var cancellationToken = transferCancellation.Token;
+        _fileTransferCancellation = transferCancellation;
         var succeeded = new List<ShellFileOperationResult>();
         var failureMessage = string.Empty;
         var failedPaths = new List<string>();
@@ -1172,6 +1217,8 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         ShellFileTransferMeasurement? measurement = null;
         try
         {
+            CancelFileOperationButton.Visibility = Visibility.Visible;
+            ShowFileOperationProgress(plan.Move, plan.Items.Count);
             try
             {
                 measurement = await _shellItemService.MeasureTransferAsync(plan, cancellationToken);
@@ -1182,7 +1229,15 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
             }
             catch (Exception ex) when (IsExpectedFileOperationException(ex))
             {
-                FileOperationDetailText.Text = "容量を取得できないため、項目数で進捗を表示します";
+                if (!_isDisposed)
+                {
+                    FileOperationDetailText.Text = "容量を取得できないため、項目数で進捗を表示します";
+                }
+            }
+
+            if (_isDisposed)
+            {
+                return;
             }
 
             FileOperationProgressBar.IsIndeterminate = false;
@@ -1206,6 +1261,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
                     measurement);
                 var progress = new Progress<ShellFileTransferProgress>(value =>
                 {
+                    if (_isDisposed)
+                    {
+                        return;
+                    }
+
                     var currentItemBytes = itemBytes > 0
                         ? Math.Min(value.BytesTransferred, itemBytes)
                         : value.BytesTransferred;
@@ -1226,6 +1286,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
                         plan.Move,
                         progress,
                         cancellationToken);
+                    if (_isDisposed)
+                    {
+                        return;
+                    }
+
                     succeeded.Add(operation);
                     processed++;
                     completedBytes = AddTransferBytes(completedBytes, itemBytes);
@@ -1256,16 +1321,31 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         }
         finally
         {
-            CancelFileOperationButton.Visibility = Visibility.Collapsed;
-            HideFileOperationProgress();
-            _fileTransferCancellation.Dispose();
-            _fileTransferCancellation = null;
+            transferCancellation.Dispose();
+            if (ReferenceEquals(_fileTransferCancellation, transferCancellation))
+            {
+                _fileTransferCancellation = null;
+                if (!_isDisposed)
+                {
+                    CancelFileOperationButton.Visibility = Visibility.Collapsed;
+                    HideFileOperationProgress();
+                }
+            }
+        }
+
+        if (_isDisposed)
+        {
+            return;
         }
 
         if (succeeded.Count > 0)
         {
             _lastFileOperations = succeeded.ToArray();
             await RefreshAfterFileOperationAsync(succeeded.Select(operation => operation.DestinationPath).ToArray());
+            if (_isDisposed)
+            {
+                return;
+            }
         }
 
         var unprocessed = plan.Items.Count - processed - (string.IsNullOrEmpty(failureMessage) ? 0 : 1);
@@ -1415,10 +1495,20 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private async Task RefreshAfterFileOperationAsync(IReadOnlyList<string> selectedPaths)
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+
         _folderWatcherTimer.Stop();
         _ignoreWatcherEventsUntilUtc = DateTime.UtcNow.AddSeconds(1);
         SetSelectedPaths(selectedPaths.Where(_itemsByPath.ContainsKey));
         await NavigateCoreAsync(CurrentPath);
+        if (_isDisposed)
+        {
+            return;
+        }
+
         SetSelectedPaths(selectedPaths.Where(_itemsByPath.ContainsKey));
         _selectionAnchorPath = _selectedPaths.FirstOrDefault();
         RestoreSelectionForCurrentView();
@@ -2612,6 +2702,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         string destinationPath,
         bool move)
     {
+        if (_isDisposed)
+        {
+            return false;
+        }
+
         if (_fileTransferCancellation is not null)
         {
             ShowMessage("ファイル操作を実行中です。");
@@ -2637,7 +2732,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         }
         catch (Exception ex) when (IsExpectedFileOperationException(ex) || IsExpectedClipboardException(ex))
         {
-            ShowMessage("ドロップ操作を開始できません: " + ex.Message);
+            if (!_isDisposed)
+            {
+                ShowMessage("ドロップ操作を開始できません: " + ex.Message);
+            }
+
             return false;
         }
     }
@@ -3276,7 +3375,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            ShowMessage("フォルダーを表示できませんでした: " + ex.Message);
+            if (!_isDisposed)
+            {
+                ShowMessage("フォルダーを表示できませんでした: " + ex.Message);
+            }
+
             return false;
         }
     }

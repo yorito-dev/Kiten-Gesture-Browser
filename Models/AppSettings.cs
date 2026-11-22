@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 
 using System.Text.Json.Serialization;
+using TabBrowser.Services;
 
 namespace TabBrowser.Models;
 
@@ -25,7 +26,7 @@ public sealed class AppSettings
 
     public bool PreserveContextMenuOnShortRightClick { get; set; } = true;
 
-    public bool EnableLinkHoverPreview { get; set; } = true;
+    public bool EnableLinkHoverPreview { get; set; }
 
     public List<GestureMappingSettings> GestureMappings { get; set; } = GestureSettingsCatalog.CreateDefaultMappings();
 
@@ -40,6 +41,8 @@ public sealed class AppSettings
     public ClipboardHistorySettings ClipboardHistory { get; set; } = new();
 
     public BrowsingHistorySettings BrowsingHistory { get; set; } = new();
+
+    public bool RecordRecentWebVisits { get; set; }
 
     public SitePrivacySettings SitePrivacy { get; set; } = new();
 
@@ -461,8 +464,28 @@ public static class BrowsingHistorySettingsProfile
 
         var host = uri.IdnHost.ToLowerInvariant();
         var containerId = ContainerProfile.NormalizeId(containerProfileId);
-        return !normalized.ExcludedHosts.Contains(host, StringComparer.OrdinalIgnoreCase)
+        return !normalized.ExcludedHosts.Any(excludedHost =>
+                BrowserUrlRulesService.HostMatches(host, GetExcludedHostForComparison(excludedHost)))
             && !normalized.ExcludedContainerProfileIds.Contains(containerId, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // 設定の表記を保ち、比較時に国際化ドメイン名を閲覧先のURLと同じ形式にする。
+    private static string GetExcludedHostForComparison(string host)
+    {
+        if (!host.Any(static character => !char.IsAscii(character))
+            || !TryGetHttpUri("https://" + host, out var uri))
+        {
+            return host;
+        }
+
+        try
+        {
+            return uri.IdnHost;
+        }
+        catch (UriFormatException)
+        {
+            return host;
+        }
     }
 
     public static string NormalizeHost(string? value)

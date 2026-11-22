@@ -37,12 +37,14 @@ public sealed record YouTubeMiniPlayerArrangementItem(
 public sealed record YouTubeMiniPlayerArrangementResult(
     Guid Id,
     Rect Bounds,
-    Rect? ChatBounds = null);
+    Rect? ChatBounds = null)
+{
+    public YouTubeLiveChatDockSide? ChatDockSide { get; init; }
+}
 
 public static class YouTubeMiniPlayerArrangementService
 {
-    private const double OuterMargin = 12;
-    private const double Gap = 12;
+    private const double DefaultSpacing = 12;
 
     public static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreateLayout(
         YouTubeMiniPlayerArrangeMode mode,
@@ -50,9 +52,12 @@ public static class YouTubeMiniPlayerArrangementService
         IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
         System.Random? random = null,
         IReadOnlyCollection<Guid>? focusIds = null,
-        YouTubeMiniPlayerLinearPlacement linearPlacement = YouTubeMiniPlayerLinearPlacement.Second)
+        YouTubeMiniPlayerLinearPlacement linearPlacement = YouTubeMiniPlayerLinearPlacement.Second,
+        bool removeSpacing = false)
     {
-        var layout = CreateLayoutCore(mode, workArea, items, random, focusIds, linearPlacement);
+        var layout = CreateLayoutCore(mode, workArea, items, random, focusIds, linearPlacement,
+            removeSpacing ? 0 : DefaultSpacing);
+        if (removeSpacing) return layout;
         var byId = items.ToDictionary(item => item.Id);
         return layout.Select(result =>
         {
@@ -77,7 +82,8 @@ public static class YouTubeMiniPlayerArrangementService
         IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
         System.Random? random,
         IReadOnlyCollection<Guid>? focusIds,
-        YouTubeMiniPlayerLinearPlacement linearPlacement)
+        YouTubeMiniPlayerLinearPlacement linearPlacement,
+        double spacing)
     {
         if (items.Count == 0 || workArea.IsEmpty || workArea.Width <= 0 || workArea.Height <= 0)
         {
@@ -87,61 +93,66 @@ public static class YouTubeMiniPlayerArrangementService
         var randomGenerator = random ?? System.Random.Shared;
         if (mode is YouTubeMiniPlayerArrangeMode.Horizontal or YouTubeMiniPlayerArrangeMode.Vertical)
         {
-            var linearArea = Deflate(
-                GetLinearPlacementArea(mode, workArea, linearPlacement),
-                OuterMargin);
-            return CreateGroupLayout(mode, linearArea, items, randomGenerator);
+            var section = GetLinearPlacementArea(mode, workArea, linearPlacement);
+            if (spacing == 0)
+            {
+                var horizontal = mode == YouTubeMiniPlayerArrangeMode.Horizontal;
+                var layout = CreatePackedLine(section, items, horizontal, YouTubeMiniPlayerLinearPlacement.Second);
+                return layout.Count > 0 ? layout : CreatePackedLine(workArea, items, horizontal, linearPlacement);
+            }
+            return CreateGroupLayout(mode, Deflate(section, spacing), items, randomGenerator, spacing);
         }
 
-        var layoutArea = Deflate(workArea, OuterMargin);
+        var layoutArea = spacing == 0 ? workArea : Deflate(workArea, spacing);
         if (mode == YouTubeMiniPlayerArrangeMode.Focus)
         {
-            return CreateFocusLayout(layoutArea, items, focusIds);
+            return CreateFocusLayout(layoutArea, items, focusIds, spacing);
         }
 
-        if (mode == YouTubeMiniPlayerArrangeMode.Monitor)
+        if (mode == YouTubeMiniPlayerArrangeMode.Monitor || (spacing == 0 && mode == YouTubeMiniPlayerArrangeMode.Grid))
         {
-            return CreateGridLayout(layoutArea, items);
+            return CreateGridLayout(layoutArea, items, spacing);
         }
 
         if (mode == YouTubeMiniPlayerArrangeMode.Chat)
         {
-            return CreateChatLayout(layoutArea, items);
+            return CreateChatLayout(layoutArea, items, spacing);
         }
 
         var normalItems = items.Where(static item => GetAspectRatio(item) >= 1).ToList();
         var shortsItems = items.Where(static item => GetAspectRatio(item) < 1).ToList();
         if (normalItems.Count == 0)
         {
-            return CreateGroupLayout(mode, layoutArea, shortsItems, randomGenerator);
+            return CreateGroupLayout(mode, layoutArea, shortsItems, randomGenerator, spacing);
         }
 
         if (shortsItems.Count == 0)
         {
-            return CreateGroupLayout(mode, layoutArea, normalItems, randomGenerator);
+            return CreateGroupLayout(mode, layoutArea, normalItems, randomGenerator, spacing);
         }
 
         var normalWeight = normalItems.Count;
         var shortsWeight = shortsItems.Count * 0.65;
         var normalRatio = Math.Clamp(normalWeight / (normalWeight + shortsWeight), 0.45, 0.75);
-        var usableWidth = Math.Max(1, layoutArea.Width - Gap);
+        var usableWidth = Math.Max(1, layoutArea.Width - spacing);
         var normalWidth = usableWidth * normalRatio;
         var normalArea = new Rect(layoutArea.Left, layoutArea.Top, normalWidth, layoutArea.Height);
         var shortsArea = new Rect(
-            normalArea.Right + Gap,
+            normalArea.Right + spacing,
             layoutArea.Top,
             usableWidth - normalWidth,
             layoutArea.Height);
 
-        return CreateGroupLayout(mode, normalArea, normalItems, randomGenerator)
-            .Concat(CreateGroupLayout(mode, shortsArea, shortsItems, randomGenerator))
+        return CreateGroupLayout(mode, normalArea, normalItems, randomGenerator, spacing)
+            .Concat(CreateGroupLayout(mode, shortsArea, shortsItems, randomGenerator, spacing))
             .ToList();
     }
 
     private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreateFocusLayout(
         Rect area,
         IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
-        IReadOnlyCollection<Guid>? focusIds)
+        IReadOnlyCollection<Guid>? focusIds,
+        double spacing)
     {
         var requestedFocusIds = focusIds?.ToHashSet() ?? [];
         var focusItems = requestedFocusIds.Count > 0
@@ -156,7 +167,7 @@ public static class YouTubeMiniPlayerArrangementService
         var secondaryItems = items.Where(item => !resolvedFocusIds.Contains(item.Id)).ToList();
         if (secondaryItems.Count == 0)
         {
-            var focusedLayout = CreateGridLayout(area, focusItems);
+            var focusedLayout = CreateGridLayout(area, focusItems, spacing);
             return IsLayoutValid(focusedLayout, area) ? focusedLayout : [];
         }
 
@@ -165,7 +176,7 @@ public static class YouTubeMiniPlayerArrangementService
         Rect secondaryArea;
         if (area.Width >= area.Height)
         {
-            var usableWidth = Math.Max(1, area.Width - Gap);
+            var usableWidth = Math.Max(1, area.Width - spacing);
             var focusWidth = usableWidth * primaryShare;
             focusArea = new Rect(
                 area.Left,
@@ -173,14 +184,14 @@ public static class YouTubeMiniPlayerArrangementService
                 focusWidth,
                 area.Height);
             secondaryArea = new Rect(
-                focusArea.Right + Gap,
+                focusArea.Right + spacing,
                 area.Top,
                 Math.Max(1, usableWidth - focusWidth),
                 area.Height);
         }
         else
         {
-            var usableHeight = Math.Max(1, area.Height - Gap);
+            var usableHeight = Math.Max(1, area.Height - spacing);
             var focusHeight = usableHeight * primaryShare;
             focusArea = new Rect(
                 area.Left,
@@ -189,15 +200,15 @@ public static class YouTubeMiniPlayerArrangementService
                 focusHeight);
             secondaryArea = new Rect(
                 area.Left,
-                focusArea.Bottom + Gap,
+                focusArea.Bottom + spacing,
                 area.Width,
                 Math.Max(1, usableHeight - focusHeight));
         }
 
         var focusLayout = focusItems.Count == 1
             ? CreateSingleFocusLayout(area, focusArea, focusItems[0])
-            : CreateGridLayout(focusArea, focusItems);
-        var secondaryLayout = CreateGridLayout(secondaryArea, secondaryItems);
+            : CreateGridLayout(focusArea, focusItems, spacing);
+        var secondaryLayout = CreateGridLayout(secondaryArea, secondaryItems, spacing);
         var layout = focusLayout
             .Concat(secondaryLayout)
             .ToList();
@@ -293,23 +304,24 @@ public static class YouTubeMiniPlayerArrangementService
 
     private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreateChatLayout(
         Rect area,
-        IReadOnlyList<YouTubeMiniPlayerArrangementItem> items)
+        IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
+        double spacing)
     {
         var results = new List<YouTubeMiniPlayerArrangementResult>(items.Count);
-        var (columns, rows) = GetBestGridDimensions(area, items);
-        var cellWidth = Math.Max(1, (area.Width - (Gap * (columns - 1))) / columns);
-        var cellHeight = Math.Max(1, (area.Height - (Gap * (rows - 1))) / rows);
+        var (columns, rows) = GetBestGridDimensions(area, items, spacing);
+        var cellWidth = Math.Max(1, (area.Width - (spacing * (columns - 1))) / columns);
+        var cellHeight = Math.Max(1, (area.Height - (spacing * (rows - 1))) / rows);
         for (var index = 0; index < items.Count; index++)
         {
             var item = items[index];
             var cell = new Rect(
-                area.Left + ((index % columns) * (cellWidth + Gap)),
-                area.Top + ((index / columns) * (cellHeight + Gap)),
+                area.Left + ((index % columns) * (cellWidth + spacing)),
+                area.Top + ((index / columns) * (cellHeight + spacing)),
                 cellWidth,
                 cellHeight);
             if (!item.HasChat
                 || cell.Width < (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth)
-                    + Gap
+                    + spacing
                     + YouTubeLiveChatWindowState.MinimumWidth
                 || cell.Height < YouTubeLiveChatWindowState.MinimumHeight)
             {
@@ -323,14 +335,14 @@ public static class YouTubeMiniPlayerArrangementService
             var chatWidth = Math.Clamp(
                 cell.Width * 0.36,
                 YouTubeLiveChatWindowState.MinimumWidth,
-                cell.Width - Gap - (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth));
+                cell.Width - spacing - (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth));
             var playerArea = new Rect(
                 cell.Left,
                 cell.Top,
-                cell.Width - chatWidth - Gap,
+                cell.Width - chatWidth - spacing,
                 cell.Height);
             var chatBounds = new Rect(
-                playerArea.Right + Gap,
+                playerArea.Right + spacing,
                 cell.Top,
                 chatWidth,
                 cell.Height);
@@ -353,14 +365,15 @@ public static class YouTubeMiniPlayerArrangementService
         YouTubeMiniPlayerArrangeMode mode,
         Rect area,
         IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
-        System.Random random)
+        System.Random random,
+        double spacing)
     {
         return mode switch
         {
-            YouTubeMiniPlayerArrangeMode.Horizontal => CreateCellsLayout(area, items, items.Count, 1),
-            YouTubeMiniPlayerArrangeMode.Vertical => CreateCellsLayout(area, items, 1, items.Count),
-            YouTubeMiniPlayerArrangeMode.Random => CreateRandomLayout(area, items, random),
-            _ => CreateGridLayout(area, items)
+            YouTubeMiniPlayerArrangeMode.Horizontal => CreateCellsLayout(area, items, items.Count, 1, spacing),
+            YouTubeMiniPlayerArrangeMode.Vertical => CreateCellsLayout(area, items, 1, items.Count, spacing),
+            YouTubeMiniPlayerArrangeMode.Random => CreateRandomLayout(area, items, random, spacing),
+            _ => CreateGridLayout(area, items, spacing)
         };
     }
 
@@ -397,16 +410,17 @@ public static class YouTubeMiniPlayerArrangementService
     private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreateRandomLayout(
         Rect area,
         IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
-        System.Random random)
+        System.Random random,
+        double spacing)
     {
         var results = new List<YouTubeMiniPlayerArrangementResult>(items.Count);
-        var (columns, rows) = GetBestGridDimensions(area, items);
-        var cellWidth = Math.Max(1, (area.Width - (Gap * (columns - 1))) / columns);
-        var cellHeight = Math.Max(1, (area.Height - (Gap * (rows - 1))) / rows);
+        var (columns, rows) = GetBestGridDimensions(area, items, spacing);
+        var cellWidth = Math.Max(1, (area.Width - (spacing * (columns - 1))) / columns);
+        var cellHeight = Math.Max(1, (area.Height - (spacing * (rows - 1))) / rows);
         var cells = Enumerable.Range(0, items.Count)
             .Select(index => new Rect(
-                area.Left + ((index % columns) * (cellWidth + Gap)),
-                area.Top + ((index / columns) * (cellHeight + Gap)),
+                area.Left + ((index % columns) * (cellWidth + spacing)),
+                area.Top + ((index / columns) * (cellHeight + spacing)),
                 cellWidth,
                 cellHeight))
             .ToList();
@@ -427,7 +441,7 @@ public static class YouTubeMiniPlayerArrangementService
                 area.Width,
                 area.Height);
             var aspectRatio = GetAspectRatio(item);
-            var minimumSize = YouTubeMiniPlayerLayoutService.NormalizeSizeToVideo(
+            var minimumSize = (spacing == 0 ? item.MinimumSize : null) ?? YouTubeMiniPlayerLayoutService.NormalizeSizeToVideo(
                 YouTubeMiniPlayerLayoutService.MinimumWidth,
                 YouTubeMiniPlayerLayoutService.MinimumHeight,
                 preferHeight: false,
@@ -449,23 +463,143 @@ public static class YouTubeMiniPlayerArrangementService
 
     private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreateGridLayout(
         Rect area,
-        IReadOnlyList<YouTubeMiniPlayerArrangementItem> items)
+        IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
+        double spacing)
     {
-        var (bestColumns, bestRows) = GetBestGridDimensions(area, items);
-        return CreateCellsLayout(area, items, bestColumns, bestRows);
+        if (spacing == 0) return CreatePackedGrid(area, items);
+        var (bestColumns, bestRows) = GetBestGridDimensions(area, items, spacing);
+        return CreateCellsLayout(area, items, bestColumns, bestRows, spacing);
+    }
+
+    private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreatePackedGrid(
+        Rect area, IReadOnlyList<YouTubeMiniPlayerArrangementItem> items)
+    {
+        const double tolerance = 0.000001;
+        var ratios = items.Select(GetAspectRatio).ToArray();
+        var minimums = items.Select(GetMinimumFittedSize).ToArray();
+        var inset = YouTubeMiniPlayerLayoutService.GetChromeInset();
+        var bestArea = 0.0;
+        var bestRows = Array.Empty<PackedRow>();
+        var bestExpansion = 0.0;
+        var maxRows = Math.Min(items.Count, Math.Floor((area.Height + tolerance) / minimums.Min(size => size.Height)));
+        for (var rowCount = 1; rowCount <= maxRows; rowCount++)
+        {
+            var rows = new PackedRow[rowCount];
+            var start = 0;
+            for (var row = 0; row < rowCount; row++)
+            {
+                var count = items.Count / rowCount + (row < items.Count % rowCount ? 1 : 0);
+                var minHeight = 0.0;
+                var ratioSum = 0.0;
+                for (var index = start; index < start + count; index++)
+                {
+                    minHeight = Math.Max(minHeight, minimums[index].Height);
+                    ratioSum += ratios[index];
+                }
+                rows[row] = new(count, minHeight, (area.Width - count * inset) / ratioSum + inset, ratioSum);
+                start += count;
+            }
+
+            var minTotal = rows.Sum(row => row.MinHeight);
+            if (minTotal > area.Height + tolerance || rows.Any(row => row.MinHeight > row.MaxHeight + tolerance)) continue;
+            // 行の幅か全体の高さに達するまで、各行を最小寸法から広げる。
+            var expansion = GetExpansion(area.Height, minTotal, rows.Sum(row => row.MaxHeight));
+            var usedArea = rows.Sum(row => row.GetWidth(expansion, inset) * row.GetHeight(expansion));
+            if (usedArea <= bestArea + tolerance) continue;
+            bestArea = usedArea;
+            bestRows = rows;
+            bestExpansion = expansion;
+        }
+
+        if (bestRows.Length == 0)
+        {
+            // 同じ行で高さをそろえられなくても、一列なら収まることがある。
+            var line = CreatePackedLine(area, items, horizontal: true, YouTubeMiniPlayerLinearPlacement.Second);
+            return line.Count > 0 ? line : CreatePackedLine(area, items, horizontal: false, YouTubeMiniPlayerLinearPlacement.Second);
+        }
+
+        var result = new List<YouTubeMiniPlayerArrangementResult>(items.Count);
+        var top = area.Top + Math.Max(0, area.Height - bestRows.Sum(row => row.GetHeight(bestExpansion))) / 2;
+        foreach (var row in bestRows)
+        {
+            var height = row.GetHeight(bestExpansion);
+            var left = area.Left + Math.Max(0, area.Width - row.GetWidth(bestExpansion, inset)) / 2;
+            for (var column = 0; column < row.Count; column++)
+            {
+                var index = result.Count;
+                var width = YouTubeMiniPlayerLayoutService.GetOuterWidthForVideoHeight(height, ratios[index]);
+                result.Add(new(items[index].Id, new(left, top, width, height)));
+                left += width;
+            }
+            top += height;
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreatePackedLine(
+        Rect area, IReadOnlyList<YouTubeMiniPlayerArrangementItem> items, bool horizontal,
+        YouTubeMiniPlayerLinearPlacement placement)
+    {
+        var length = horizontal ? area.Width : area.Height;
+        var crossLength = horizontal ? area.Height : area.Width;
+        var ratios = items.Select(GetAspectRatio).ToArray();
+        var minimums = items.Select(GetMinimumFittedSize).ToArray();
+        if (minimums.Any(size => (horizontal ? size.Height : size.Width) > crossLength + 0.000001)) return [];
+        var minimumLengths = minimums.Select(size => horizontal ? size.Width : size.Height).ToArray();
+        var minimumTotal = minimumLengths.Sum();
+        if (minimumTotal > length + 0.000001) return [];
+        var maximumLengths = ratios.Select(ratio => horizontal
+            ? YouTubeMiniPlayerLayoutService.GetOuterWidthForVideoHeight(crossLength, ratio)
+            : YouTubeMiniPlayerLayoutService.GetOuterHeightForVideoWidth(crossLength, ratio)).ToArray();
+        var maximumTotal = maximumLengths.Sum();
+        var expansion = GetExpansion(length, minimumTotal, maximumTotal);
+        var alignment = placement switch
+        {
+            YouTubeMiniPlayerLinearPlacement.First => 0,
+            YouTubeMiniPlayerLinearPlacement.Third => 1,
+            _ => 0.5
+        };
+        var offset = Math.Max(0, length - Math.Min(length, maximumTotal)) / 2;
+        var result = new List<YouTubeMiniPlayerArrangementResult>(items.Count);
+        for (var index = 0; index < items.Count; index++)
+        {
+            var size = minimumLengths[index] + (maximumLengths[index] - minimumLengths[index]) * expansion;
+            var crossSize = horizontal
+                ? YouTubeMiniPlayerLayoutService.GetOuterHeightForVideoWidth(size, ratios[index])
+                : YouTubeMiniPlayerLayoutService.GetOuterWidthForVideoHeight(size, ratios[index]);
+            var crossOffset = Math.Max(0, crossLength - crossSize) * alignment;
+            result.Add(new(items[index].Id, horizontal
+                ? new(area.Left + offset, area.Top + crossOffset, size, crossSize)
+                : new(area.Left + crossOffset, area.Top + offset, crossSize, size)));
+            offset += size;
+        }
+        return result;
+    }
+
+    private static Size GetMinimumFittedSize(YouTubeMiniPlayerArrangementItem item)
+        => YouTubeMiniPlayerLayoutService.NormalizeSizeToVideo(0, 0, false, GetAspectRatio(item), item.MinimumSize);
+
+    private static double GetExpansion(double available, double minimum, double maximum)
+        => maximum > minimum ? Math.Clamp((available - minimum) / (maximum - minimum), 0, 1) : 0;
+
+    private readonly record struct PackedRow(int Count, double MinHeight, double MaxHeight, double RatioSum)
+    {
+        public double GetHeight(double expansion) => MinHeight + (MaxHeight - MinHeight) * expansion;
+        public double GetWidth(double expansion, double inset) => RatioSum * (GetHeight(expansion) - inset) + Count * inset;
     }
 
     private static (int Columns, int Rows) GetBestGridDimensions(
         Rect area,
-        IReadOnlyList<YouTubeMiniPlayerArrangementItem> items)
+        IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
+        double spacing)
     {
         var bestColumns = 1;
         var bestArea = 0d;
         for (var columns = 1; columns <= items.Count; columns++)
         {
             var rows = (int)Math.Ceiling(items.Count / (double)columns);
-            var cellWidth = Math.Max(1, (area.Width - (Gap * (columns - 1))) / columns);
-            var cellHeight = Math.Max(1, (area.Height - (Gap * (rows - 1))) / rows);
+            var cellWidth = Math.Max(1, (area.Width - (spacing * (columns - 1))) / columns);
+            var cellHeight = Math.Max(1, (area.Height - (spacing * (rows - 1))) / rows);
             var size = FitSize(items[0], cellWidth, cellHeight, area.Width, area.Height);
             var score = size.Width * size.Height;
             if (score > bestArea)
@@ -483,19 +617,20 @@ public static class YouTubeMiniPlayerArrangementService
         Rect area,
         IReadOnlyList<YouTubeMiniPlayerArrangementItem> items,
         int columns,
-        int rows)
+        int rows,
+        double spacing)
     {
         var results = new List<YouTubeMiniPlayerArrangementResult>(items.Count);
-        var cellWidth = Math.Max(1, (area.Width - (Gap * (columns - 1))) / columns);
-        var cellHeight = Math.Max(1, (area.Height - (Gap * (rows - 1))) / rows);
+        var cellWidth = Math.Max(1, (area.Width - (spacing * (columns - 1))) / columns);
+        var cellHeight = Math.Max(1, (area.Height - (spacing * (rows - 1))) / rows);
         for (var index = 0; index < items.Count; index++)
         {
             var item = items[index];
             var column = index % columns;
             var row = index / columns;
             var cell = new Rect(
-                area.Left + (column * (cellWidth + Gap)),
-                area.Top + (row * (cellHeight + Gap)),
+                area.Left + (column * (cellWidth + spacing)),
+                area.Top + (row * (cellHeight + spacing)),
                 cellWidth,
                 cellHeight);
             var size = FitSize(item, cell.Width, cell.Height, area.Width, area.Height);

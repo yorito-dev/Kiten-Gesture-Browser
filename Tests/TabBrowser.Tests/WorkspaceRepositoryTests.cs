@@ -4,6 +4,10 @@ using TabBrowser.ViewModels;
 using Microsoft.Data.Sqlite;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
+using System.Collections.ObjectModel;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using TabBrowser.Views;
 using Xunit;
 using BrowserSplitViewOrientation = TabBrowser.Models.SplitViewOrientation;
 using BrowserSplitViewPane = TabBrowser.Models.SplitViewPane;
@@ -12,6 +16,84 @@ namespace TabBrowser.Tests;
 
 public sealed class WorkspaceRepositoryTests
 {
+    [Fact]
+    public async Task FolderRoundTripsAndReloadsKeepOnlyCachedCanvasLayers()
+    {
+        using var database = new TempDatabase();
+        var repository = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var service = new WorkspaceService(repository);
+        var first = await service.CreateWorkspaceAsync("検品用1", 1);
+        var second = await service.CreateWorkspaceAsync("検品用2", 2);
+        var folder = await service.AddFolderAsync(first.Id, "フォルダー", 0, 0);
+        await service.AddNoteAsync(first.Id, "カード", "内容", 0, 0, parentFolderId: folder.Id);
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
+            dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    using var viewModel = CreateWorkspaceViewModel(service, first.Id);
+                    await viewModel.InitializeAsync();
+                    using var canvas = new WorkspaceCanvasView { DataContext = viewModel };
+                    var layers = Assert.IsType<Dictionary<ObservableCollection<WorkspaceItemViewModel>, ItemsControl>>(
+                        typeof(WorkspaceCanvasView).GetField("_workspaceVisualLayers",
+                            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(canvas));
+                    await viewModel.LoadWorkspaceAsync(second.Id);
+                    var retained = layers[viewModel.Items];
+                    await viewModel.LoadWorkspaceAsync(first.Id);
+
+                    ObservableCollection<WorkspaceItemViewModel>? discardedItems = null;
+                    ItemsControl? discarded = null;
+                    for (var iteration = 0; iteration < 4; iteration++)
+                    {
+                        await viewModel.LoadWorkspaceAsync(first.Id, folderId: folder.Id);
+                        Assert.Single(viewModel.Items);
+                        discardedItems ??= viewModel.Items;
+                        discarded ??= layers[viewModel.Items];
+                        viewModel.GoToParentFolderCommand.Execute(null);
+                        Assert.Null(viewModel.CurrentFolderId);
+                    }
+                    var afterFolderRoundTrips = layers.Count;
+                    for (var iteration = 0; iteration < 4; iteration++)
+                    {
+                        await viewModel.LoadWorkspaceAsync(first.Id, forceReload: true);
+                    }
+
+                    Assert.True(afterFolderRoundTrips == 2 && layers.Count == 2,
+                        $"フォルダー往復後={afterFolderRoundTrips} 件、再読込後={layers.Count} 件");
+                    Assert.Null(discarded!.ItemsSource);
+                    Assert.Null(discarded.Parent);
+                    typeof(WorkspaceCanvasView).GetMethod("PrepareWorkspaceVisualLayer",
+                        BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(canvas, [discardedItems]);
+                    Assert.Equal(2, layers.Count);
+                    await viewModel.LoadWorkspaceAsync(second.Id);
+                    Assert.Same(retained, layers[viewModel.Items]);
+
+                    completion.SetResult();
+                }
+                catch (Exception exception)
+                {
+                    completion.SetException(exception);
+                }
+                finally
+                {
+                    dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+                }
+            }));
+            Dispatcher.Run();
+        })
+        {
+            IsBackground = true
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
     [Fact]
     public async Task NoteUpdateAfterOtherConnectionDeletesTargetDoesNotSucceed()
     {
@@ -1451,6 +1533,64 @@ public sealed class WorkspaceRepositoryTests
         Assert.DoesNotContain(secondView.Items, item => item.Id == note.Id);
         Assert.Same(firstItems, firstView.Items);
         Assert.Same(secondItems, secondView.Items);
+    }
+
+    [Fact]
+    public async Task DirectCardDeletionKeepsVisibleCollectionAndClearsSelection()
+    {
+        using var database = new TempDatabase();
+        var repository = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var workspace = await repository.CreateWorkspaceAsync(new Workspace { Name = "検証", Index = 1 });
+        var service = new WorkspaceService(repository);
+        for (var index = 0; index < 6; index++)
+        {
+            await service.AddNoteAsync(workspace.Id, $"メモ {index + 1}", "本文", 40 + index * 220, 60);
+        }
+
+        await using var view = CreateWorkspaceViewModel(service, workspace.Id);
+        await view.InitializeAsync();
+        var visibleItems = view.Items;
+        var deleteItem = (AsyncRelayCommand)view.DeleteItemCommand;
+        var deleteItems = (AsyncRelayCommand)view.DeleteItemsCommand;
+
+        for (var remaining = 5; remaining >= 3; remaining--)
+        {
+            var card = view.Items[0];
+            view.SetSelectedItems([card, view.Items[^1]], card);
+
+            await deleteItem.ExecuteAsync(card);
+
+            Assert.Same(visibleItems, view.Items);
+            Assert.Equal(remaining, view.Items.Count);
+            Assert.DoesNotContain(card, view.Items);
+            Assert.Null(view.SelectedItem);
+            Assert.Empty(view.SelectedItems);
+        }
+
+        var batch = view.Items.Take(2).ToArray();
+        var lastCard = view.Items[^1];
+        view.SetSelectedItems(view.Items, lastCard);
+        await deleteItems.ExecuteAsync(batch);
+
+        Assert.Same(visibleItems, view.Items);
+        Assert.Same(lastCard, Assert.Single(view.Items));
+        Assert.True(view.HasItems);
+        Assert.Null(view.SelectedItem);
+        Assert.Empty(view.SelectedItems);
+
+        var hasItemsChanged = false;
+        view.PropertyChanged += (_, args) =>
+            hasItemsChanged |= args.PropertyName == nameof(WorkspaceOSViewModel.HasItems);
+        view.SelectedItem = lastCard;
+        await deleteItem.ExecuteAsync(lastCard);
+
+        Assert.Same(visibleItems, view.Items);
+        Assert.Empty(view.Items);
+        Assert.False(view.HasItems);
+        Assert.True(hasItemsChanged);
+        Assert.Null(view.SelectedItem);
+        Assert.Empty(view.SelectedItems);
+        Assert.False(view.HasWorkspaceError);
     }
 
     [Fact]

@@ -262,10 +262,12 @@ internal sealed class NativeWebContextMenuController
 
         var hasLink = _host.IsSplitViewLinkUrl(_contextLinkUri);
         var canUseCurrentPage = _host.CanUseContextPageUrl(_contextPageUri);
+        var containerProfiles = hasLink || canUseCurrentPage ? _host.ReloadContainerProfiles() : [];
         var hasSelection = !string.IsNullOrWhiteSpace(_translateSelectionText);
         _translateMenuItem.IsEnabled = _host.CanTranslateContextMenuTarget(_translateSelectionText, _translatePageUri);
         _copyPageUrlMenuItem.IsEnabled = canUseCurrentPage;
-        PopulatePageContainerMenu(_core.Environment, _openPageInContainerMenuItem, _contextPageUri);
+        PopulatePageContainerMenu(_core.Environment, _openPageInContainerMenuItem,
+            canUseCurrentPage ? _contextPageUri : null, containerProfiles);
         _openPageInContainerMenuItem.IsEnabled = !hasLink
             && canUseCurrentPage
             && _openPageInContainerMenuItem.Children.Count > 0;
@@ -274,7 +276,8 @@ internal sealed class NativeWebContextMenuController
         _openLinkInNewWindowMenuItem.IsEnabled = _openLinkInNewTabMenuItem.IsEnabled;
         _copyLinkUrlMenuItem.IsEnabled = _openLinkInNewTabMenuItem.IsEnabled;
         _copyLinkMarkdownMenuItem.IsEnabled = _openLinkInNewTabMenuItem.IsEnabled;
-        PopulateLinkContainerMenu(_core.Environment, _openLinkInContainerMenuItem, _contextLinkUri);
+        PopulateLinkContainerMenu(_core.Environment, _openLinkInContainerMenuItem,
+            hasLink ? _contextLinkUri : null, containerProfiles);
         _openLinkInContainerMenuItem.IsEnabled = _openLinkInNewTabMenuItem.IsEnabled
             && _openLinkInContainerMenuItem.Children.Count > 0;
         var canOpenLinkInSplit = _host.CanOpenInSplitView(_tab)
@@ -354,19 +357,20 @@ internal sealed class NativeWebContextMenuController
     private void PopulateLinkContainerMenu(
         CoreWebView2Environment environment,
         CoreWebView2ContextMenuItem menuItem,
-        string? linkUri)
+        string? linkUri,
+        IReadOnlyList<ContainerProfile> containerProfiles)
     {
         while (menuItem.Children.Count > 0)
         {
             menuItem.Children.RemoveAt(0);
         }
-        if (!_host.IsSplitViewLinkUrl(linkUri))
+        if (linkUri is null)
         {
             return;
         }
 
-        var normalizedLinkUri = _host.NormalizeYouTubeShortsUrl(linkUri!);
-        foreach (var profile in _host.ReloadContainerProfiles())
+        var normalizedLinkUri = _host.NormalizeYouTubeShortsUrl(linkUri);
+        foreach (var profile in containerProfiles)
         {
             var profileId = profile.Id;
             var profileName = _host.GetContainerProfileMenuHeader(profile);
@@ -388,19 +392,20 @@ internal sealed class NativeWebContextMenuController
     private void PopulatePageContainerMenu(
         CoreWebView2Environment environment,
         CoreWebView2ContextMenuItem menuItem,
-        string? pageUri)
+        string? pageUri,
+        IReadOnlyList<ContainerProfile> containerProfiles)
     {
         while (menuItem.Children.Count > 0)
         {
             menuItem.Children.RemoveAt(0);
         }
-        if (!_host.CanUseContextPageUrl(pageUri))
+        if (pageUri is null)
         {
             return;
         }
 
-        var normalizedPageUri = _host.NormalizeYouTubeShortsUrl(pageUri!);
-        foreach (var profile in _host.ReloadContainerProfiles())
+        var normalizedPageUri = _host.NormalizeYouTubeShortsUrl(pageUri);
+        foreach (var profile in containerProfiles)
         {
             if (string.Equals(_tab.ContainerProfileId, profile.Id, StringComparison.OrdinalIgnoreCase))
             {

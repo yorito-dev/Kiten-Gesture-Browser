@@ -34,7 +34,7 @@ internal static class UiOperationExceptionBoundary
         }
     }
 
-    private static bool IsRecoverableOperationFailure(Exception exception)
+    internal static bool IsRecoverableOperationFailure(Exception exception)
         => exception is not OutOfMemoryException
             and not StackOverflowException
             and not AccessViolationException;

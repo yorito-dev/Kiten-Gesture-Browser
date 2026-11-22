@@ -23,7 +23,8 @@ internal sealed record YouTubeMiniPlayerListPopupElements(
     FrameworkElement? YouTubeMiniPlayerArrangeMenuButton = null,
     FrameworkElement? YouTubeMiniPlayerGlobalActionsButton = null,
     Popup? YouTubeMiniPlayerClosedHistoryPopup = null,
-    FrameworkElement? YouTubeMiniPlayerClosedHistoryButton = null);
+    FrameworkElement? YouTubeMiniPlayerClosedHistoryButton = null,
+    ComboBox? YouTubeMiniPlayerArrangeAreaComboBox = null);
 
 internal interface IYouTubeMiniPlayerListPopupHost
 {
@@ -53,6 +54,7 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
     private bool _isTracking;
     private int _presentationGeneration;
     private bool _contentHeightFitRequested;
+    private Vector? _arrangementMenuGrabOffset;
 
     public YouTubeMiniPlayerListPopupController(
         Window owner, YouTubeMiniPlayerListPopupElements elements,
@@ -127,11 +129,14 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
     {
         if (_isDisposed) return;
         YouTubeMiniPlayerItemMorePopup.IsOpen = false;
-        YouTubeMiniPlayerArrangePopup.IsOpen = false;
         YouTubeMiniPlayerGlobalActionsPopup.IsOpen = false;
         YouTubeMiniPlayerLinearPlacementPopup.IsOpen = false;
         if (YouTubeMiniPlayerClosedHistoryPopup is { } history) history.IsOpen = false;
-        if (!_host.IsArrangementEditMode) _host.CancelArrangementPreview(showStatus: false);
+        if (!_host.IsArrangementEditMode)
+        {
+            YouTubeMiniPlayerArrangePopup.IsOpen = false;
+            _host.CancelArrangementPreview(showStatus: false);
+        }
     }
 
     private void YouTubeMiniPlayerListOwnerWindow_PreviewGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -142,12 +147,12 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
             YouTubeMiniPlayerItemMorePopup.IsOpen = false;
         // WebView2等へ入力先が移る場合も、MouseDownの到達だけに依存しない。
         var withinArrange = IsFocusWithinPopup(YouTubeMiniPlayerArrangePopup, e.NewFocus)
-            || IsFocusWithinPopup(GetArrangeDisplayPopup(), e.NewFocus)
+            || IsFocusWithinArrangeDropdown(e.NewFocus)
             || IsFocusWithinPopup(YouTubeMiniPlayerLinearPlacementPopup, e.NewFocus)
             || IsFocusWithinElement(_elements.YouTubeMiniPlayerArrangeMenuButton, e.NewFocus);
         if (!withinArrange)
         {
-            YouTubeMiniPlayerArrangePopup.IsOpen = false;
+            if (!_host.IsArrangementEditMode) YouTubeMiniPlayerArrangePopup.IsOpen = false;
             YouTubeMiniPlayerLinearPlacementPopup.IsOpen = false;
         }
         if (!IsFocusWithinPopup(YouTubeMiniPlayerGlobalActionsPopup, e.NewFocus)
@@ -162,6 +167,10 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
 
     private static bool IsFocusWithinPopup(Popup? popup, IInputElement? focus)
         => popup?.IsOpen == true && IsFocusWithinElement(popup.Child, focus);
+
+    private bool IsFocusWithinArrangeDropdown(IInputElement? focus)
+        => IsFocusWithinPopup(GetComboBoxPopup(_elements.YouTubeMiniPlayerArrangeDisplayComboBox), focus)
+            || IsFocusWithinPopup(GetComboBoxPopup(_elements.YouTubeMiniPlayerArrangeAreaComboBox), focus);
 
     private static bool IsFocusWithinElement(DependencyObject? root, IInputElement? focus)
     {
@@ -211,14 +220,14 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
         await _host.StopHoverPreviewAsync();
     }
 
-    public void CloseAuxiliaryPopups()
+    public void CloseAuxiliaryPopups(bool preserveArrangementEdit = false)
     {
         ListWindow.CloseCaptionContextMenu();
         YouTubeMiniPlayerAbRepeatPopup.IsOpen = false;
         YouTubeMiniPlayerSpeedPopup.IsOpen = false;
         YouTubeMiniPlayerVolumePopup.IsOpen = false;
         YouTubeMiniPlayerItemMorePopup.IsOpen = false;
-        YouTubeMiniPlayerArrangePopup.IsOpen = false;
+        if (!preserveArrangementEdit || !_host.IsArrangementEditMode) YouTubeMiniPlayerArrangePopup.IsOpen = false;
         YouTubeMiniPlayerGlobalActionsPopup.IsOpen = false;
         YouTubeMiniPlayerLinearPlacementPopup.IsOpen = false;
         if (YouTubeMiniPlayerClosedHistoryPopup is { } history) history.IsOpen = false;
@@ -366,12 +375,18 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
             popupDeviceBounds.Left + (popupDeviceBounds.Width / 2),
             popupDeviceBounds.Top + (popupDeviceBounds.Height / 2));
 
+    public void UpdateYouTubeMiniPlayerArrangePopupSize()
+        => UpdateYouTubeMiniPlayerSidePopupSize(YouTubeMiniPlayerArrangePopup);
+
     public void UpdateYouTubeMiniPlayerGlobalActionsPopupSize()
+        => UpdateYouTubeMiniPlayerSidePopupSize(YouTubeMiniPlayerGlobalActionsPopup);
+
+    private void UpdateYouTubeMiniPlayerSidePopupSize(Popup popup)
     {
-        if (YouTubeMiniPlayerGlobalActionsPopup.Child is not FrameworkElement root) return;
+        if (popup.Child is not FrameworkElement root) return;
         try
         {
-            var ownerDpi = VisualTreeHelper.GetDpi(_owner);
+            var ownerDpi = VisualTreeHelper.GetDpi(ListWindow);
             var popupDpi = VisualTreeHelper.GetDpi(root);
             var origin = root.PointToScreen(new Point());
             var workArea = _host.GetWorkAreaForDevicePoint(origin);
@@ -387,7 +402,68 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
     }
 
     public void UpdateYouTubeMiniPlayerArrangePopupPlacement()
-        => UpdateYouTubeMiniPlayerSidePopupPlacement(YouTubeMiniPlayerArrangePopup, YouTubeMiniPlayerArrangePopupWidth);
+    {
+        var popup = YouTubeMiniPlayerArrangePopup;
+        if (!popup.IsOpen && popup.Placement == PlacementMode.Relative)
+        {
+            popup.Placement = PlacementMode.Left;
+            popup.ClearValue(Popup.PlacementRectangleProperty);
+            popup.HorizontalOffset = -YouTubeMiniPlayerArrangePopupGap;
+        }
+
+        if (popup.Placement != PlacementMode.Relative)
+            UpdateYouTubeMiniPlayerSidePopupPlacement(popup, YouTubeMiniPlayerArrangePopupWidth);
+        if (popup.IsOpen) UpdateYouTubeMiniPlayerArrangePopupSize();
+    }
+
+    public void BeginArrangementMenuDrag()
+    {
+        _arrangementMenuGrabOffset = null;
+        if (_isDisposed || YouTubeMiniPlayerArrangePopup is not { IsOpen: true, Child: Visual root }
+            || !_host.TryGetCursorDevicePoint(out var cursor)) return;
+
+        try
+        {
+            _arrangementMenuGrabOffset = cursor - root.PointToScreen(new Point());
+        }
+        catch (InvalidOperationException)
+        {
+            // 閉じた直後など、画面座標を取得できない場合は移動しない。
+        }
+    }
+
+    public void MoveArrangementMenuDrag()
+    {
+        var popup = YouTubeMiniPlayerArrangePopup;
+        if (_isDisposed || _arrangementMenuGrabOffset is not { } grabOffset
+            || !popup.IsOpen || popup.PlacementTarget is not { } target
+            || !_host.TryGetCursorDevicePoint(out var cursor)) return;
+
+        try
+        {
+            // 物理座標でつかんだ位置を保ち、配置先要素の座標へ変換する。
+            var origin = target.PointFromScreen(cursor - grabOffset);
+            if (popup.Placement != PlacementMode.Relative)
+            {
+                popup.HorizontalOffset = 0;
+                popup.VerticalOffset = 0;
+                popup.Placement = PlacementMode.Relative;
+            }
+            popup.PlacementRectangle = new Rect(origin, new Size());
+        }
+        catch (InvalidOperationException)
+        {
+            // 配置先要素が切り離された場合は移動を終える。
+            _arrangementMenuGrabOffset = null;
+        }
+    }
+
+    public void EndArrangementMenuDrag()
+    {
+        if (_arrangementMenuGrabOffset is null) return;
+        _arrangementMenuGrabOffset = null;
+        if (!_isDisposed && YouTubeMiniPlayerArrangePopup.IsOpen) UpdateYouTubeMiniPlayerArrangePopupSize();
+    }
 
     public void UpdateYouTubeMiniPlayerGlobalActionsPopupPlacement()
         => UpdateYouTubeMiniPlayerSidePopupPlacement(YouTubeMiniPlayerGlobalActionsPopup, YouTubeMiniPlayerGlobalActionsPopupWidth);
@@ -493,7 +569,7 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
             || IsFocusWithinPopup(YouTubeMiniPlayerVolumePopup, source)
             || IsFocusWithinPopup(YouTubeMiniPlayerItemMorePopup, source)
             || IsFocusWithinPopup(YouTubeMiniPlayerArrangePopup, source)
-            || IsFocusWithinPopup(GetArrangeDisplayPopup(), source)
+            || IsFocusWithinArrangeDropdown(source)
             || IsFocusWithinPopup(YouTubeMiniPlayerGlobalActionsPopup, source)
             || IsFocusWithinPopup(YouTubeMiniPlayerClosedHistoryPopup, source)
             || IsFocusWithinPopup(YouTubeMiniPlayerLinearPlacementPopup, source))
@@ -579,18 +655,16 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
     }
 
     private bool IsWithinArrangePopupOrDropdown(Point cursorPoint)
-    {
-        var isWithin = IsCursorWithinYouTubeMiniPlayerListPopup(YouTubeMiniPlayerArrangePopup, cursorPoint);
-        if (GetArrangeDisplayPopup() is Popup displayPopup)
-        {
-            isWithin |= IsCursorWithinYouTubeMiniPlayerListPopup(displayPopup, cursorPoint);
-        }
-        return isWithin;
-    }
+        => IsCursorWithinYouTubeMiniPlayerListPopup(YouTubeMiniPlayerArrangePopup, cursorPoint)
+            || IsCursorWithinYouTubeMiniPlayerListPopup(GetComboBoxPopup(_elements.YouTubeMiniPlayerArrangeDisplayComboBox), cursorPoint)
+            || IsCursorWithinYouTubeMiniPlayerListPopup(GetComboBoxPopup(_elements.YouTubeMiniPlayerArrangeAreaComboBox), cursorPoint);
 
-    private Popup? GetArrangeDisplayPopup()
-        => _elements.YouTubeMiniPlayerArrangeDisplayComboBox?.Template?.FindName("PART_Popup",
-            _elements.YouTubeMiniPlayerArrangeDisplayComboBox) as Popup;
+    public bool IsWithinArrangementMenu(Point devicePoint)
+        => IsWithinArrangePopupOrDropdown(devicePoint)
+            || IsCursorWithinYouTubeMiniPlayerListPopup(YouTubeMiniPlayerLinearPlacementPopup, devicePoint);
+
+    private static Popup? GetComboBoxPopup(ComboBox? comboBox)
+        => comboBox?.Template?.FindName("PART_Popup", comboBox) as Popup;
 
     private void CloseSidePopupsIfPointerIsOutside(Point cursorPoint, bool protectTriggers = true)
     {
@@ -601,7 +675,7 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
         var isWithinArrange = IsWithinArrangePopupOrDropdown(cursorPoint);
         var isWithinLinear = IsCursorWithinYouTubeMiniPlayerListPopup(YouTubeMiniPlayerLinearPlacementPopup, cursorPoint);
         CloseYouTubeMiniPlayerListPopupIfPointerIsOutside(YouTubeMiniPlayerArrangePopup, cursorPoint,
-            isWithinArrange || isWithinLinear
+            _host.IsArrangementEditMode || isWithinArrange || isWithinLinear
                 || (protectTriggers && IsWithinTrigger(_elements.YouTubeMiniPlayerArrangeMenuButton, cursorPoint)),
             protectPlacementTarget: false);
         CloseYouTubeMiniPlayerListPopupIfPointerIsOutside(YouTubeMiniPlayerGlobalActionsPopup, cursorPoint,
@@ -666,9 +740,9 @@ internal sealed class YouTubeMiniPlayerListPopupController : IDisposable
         }
     }
 
-    private bool IsCursorWithinYouTubeMiniPlayerListPopup(Popup popup, Point cursorPoint)
+    private bool IsCursorWithinYouTubeMiniPlayerListPopup(Popup? popup, Point cursorPoint)
     {
-        return popup.IsOpen
+        return popup?.IsOpen == true
             && popup.Child is FrameworkElement child
             && _hitTest(child, cursorPoint);
     }

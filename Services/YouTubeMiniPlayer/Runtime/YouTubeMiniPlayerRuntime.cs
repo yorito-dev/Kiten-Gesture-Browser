@@ -88,7 +88,13 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public Grid WebHost { get; } = webHost;
 
-    public WebView2? WebView { get; set; } = webView;
+    private WebView2? _webView = webView;
+
+    public WebView2? WebView
+    {
+        get => _webView;
+        set => _webView = value;
+    }
 
     public LocalVideoPlayerView? LocalVideoView { get; } = localVideoView;
 
@@ -96,7 +102,7 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public bool IsInputTransparent { get; set; }
 
-    public IDisposable? TransparencyRegistration { get; set; }
+    public YouTubeMiniPlayerRuntimeRegistrations Registrations { get; } = new();
 
     public bool IsApplyingMinimumSize { get; set; }
 
@@ -104,19 +110,9 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public bool IsLiveEdgeSeekInProgress { get; set; }
 
-    public EventHandler<CoreWebView2WebMessageReceivedEventArgs>? WebMessageReceived { get; set; }
-
-    public EventHandler<object>? DocumentTitleChanged { get; set; }
-
-    public EventHandler<object>? ContainsFullScreenElementChanged { get; set; }
-
     public Action<bool>? FullScreenStateChanged { get; set; }
 
     public string WebMessageToken { get; } = Guid.NewGuid().ToString("N");
-
-    public DispatcherTimer? TitleBandHideTimer { get; set; }
-
-    public DispatcherTimer? ToolbarHideTimer { get; set; }
 
     public DispatcherTimer? WebDragFollowTimer { get; set; }
 
@@ -151,8 +147,6 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public bool IsFullScreen { get; set; }
 
-    public bool IsInitialLivePlaybackResolved { get; set; }
-
     public bool IsLiveContinuationEnabled { get; set; } = true;
 
     public YouTubeMiniPlayerLiveContinuationNavigation? LiveContinuationNavigation { get; set; }
@@ -171,19 +165,9 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public bool IsLoadStoppedForInactivity { get; set; }
 
-    public YouTubeMiniPlayerLiveChatRequests LiveChatRequests { get; } = new();
+    public YouTubeMiniPlayerLiveChatState LiveChat { get; } = new();
 
-    public bool? LiveChatAvailability { get; set; }
-
-    public bool IsLiveChatWindowOpen { get; set; }
-
-    public bool IsToolbarMenuOpen { get; set; }
-
-    public bool IsNativePositionRefreshQueued { get; set; }
-
-    public int OverlayPlacementGeneration { get; set; }
-
-    public int ToolbarPlacementRequestGeneration { get; set; }
+    public YouTubeMiniPlayerOverlayState Overlay { get; } = new();
 
     public bool IsTaskbarCloseRequested { get; set; }
 
@@ -219,63 +203,20 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public YouTubeMiniPlayerDisplayHealthTracker DisplayHealth { get; } = new();
 
-    private readonly object _recoveryNavigationSync = new();
-    private long _recoveryNavigationGeneration;
-    private TaskCompletionSource<bool>? _recoveryNavigationCompletion;
-    private WebView2? _expectedRecoveryWebView;
+    public YouTubeMiniPlayerRestorationState Restoration { get; } = new();
 
-    public YouTubeMiniPlayerRecoveryNavigationWait BeginRecoveryNavigation(WebView2? expectedWebView)
-    {
-        lock (_recoveryNavigationSync)
-        {
-            _recoveryNavigationGeneration++;
-            _recoveryNavigationCompletion?.TrySetResult(false);
-            _expectedRecoveryWebView = expectedWebView;
-            _recoveryNavigationCompletion = new TaskCompletionSource<bool>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-            return new YouTubeMiniPlayerRecoveryNavigationWait(
-                _recoveryNavigationGeneration,
-                _recoveryNavigationCompletion.Task);
-        }
-    }
-
+    // 従来と同じく、復旧のロック内で現在のWebViewを読み取る。
     public void CompleteRecoveryNavigation(WebView2 webView, bool isHealthy)
-    {
-        lock (_recoveryNavigationSync)
-        {
-            if (_recoveryNavigationCompletion is null
-                || (_expectedRecoveryWebView is not null
-                    && !ReferenceEquals(_expectedRecoveryWebView, webView))
-                || !ReferenceEquals(WebView, webView))
-            {
-                return;
-            }
-
-            _recoveryNavigationCompletion.TrySetResult(isHealthy);
-            _recoveryNavigationCompletion = null;
-            _expectedRecoveryWebView = null;
-        }
-    }
-
-    public void CancelRecoveryNavigation(YouTubeMiniPlayerRecoveryNavigationWait? wait = null)
-    {
-        lock (_recoveryNavigationSync)
-        {
-            if (wait is { } expected && expected.Generation != _recoveryNavigationGeneration)
-            {
-                return;
-            }
-
-            _recoveryNavigationCompletion?.TrySetResult(false);
-            _recoveryNavigationCompletion = null;
-            _expectedRecoveryWebView = null;
-        }
-    }
+        => Restoration.CompleteRecoveryNavigation(in _webView, webView, isHealthy);
 }
 
-internal readonly record struct YouTubeMiniPlayerRecoveryNavigationWait(
-    long Generation,
-    Task<bool> Completion);
+internal sealed class YouTubeMiniPlayerRuntimeRegistrations
+{
+    public IDisposable? Transparency { get; set; }
+    public EventHandler<CoreWebView2WebMessageReceivedEventArgs>? WebMessageReceived { get; set; }
+    public EventHandler<object>? DocumentTitleChanged { get; set; }
+    public EventHandler<object>? ContainsFullScreenElementChanged { get; set; }
+}
 
 public enum YouTubeMiniPlayerDisplayHealthState
 {

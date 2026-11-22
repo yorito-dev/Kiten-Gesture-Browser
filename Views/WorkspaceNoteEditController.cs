@@ -29,7 +29,7 @@ internal interface IWorkspaceNoteEditHost
 
 internal interface IWorkspaceNoteStore
 {
-    Task<IReadOnlyList<WorkspaceItem>> GetWorkspaceItemsAsync(Guid workspaceId);
+    Task<WorkspaceItem?> GetItemByIdAsync(Guid itemId);
 
     Task UpdateNoteAsync(Guid noteId, string title, string content, double fontSize);
 
@@ -40,8 +40,8 @@ internal interface IWorkspaceNoteStore
 
 internal sealed class WorkspaceNoteStore(WorkspaceService service) : IWorkspaceNoteStore
 {
-    public Task<IReadOnlyList<WorkspaceItem>> GetWorkspaceItemsAsync(Guid workspaceId)
-        => service.GetWorkspaceItemsAsync(workspaceId);
+    public Task<WorkspaceItem?> GetItemByIdAsync(Guid itemId)
+        => service.GetItemByIdAsync(itemId);
 
     public Task UpdateNoteAsync(Guid noteId, string title, string content, double fontSize)
         => service.UpdateNoteAsync(noteId, title, content, fontSize);
@@ -170,10 +170,10 @@ public sealed class WorkspaceNoteEditController
                 owner.Closed += ownerClosedHandler;
             lifetimeRegistration = _host.LifetimeToken.Register(() => ownerClosed.TrySetResult());
             var store = _createStore();
-            IReadOnlyList<WorkspaceItem> items;
+            WorkspaceItem? item;
             try
             {
-                var load = store.GetWorkspaceItemsAsync(workspaceId);
+                var load = store.GetItemByIdAsync(noteId);
                 if (await Task.WhenAny(load, ownerClosed.Task) != load)
                 {
                     _ = load.ContinueWith(static completed => _ = completed.Exception,
@@ -181,7 +181,7 @@ public sealed class WorkspaceNoteEditController
                         TaskScheduler.Default);
                     return;
                 }
-                items = await load;
+                item = await load;
             }
             catch (Exception ex)
             {
@@ -191,7 +191,7 @@ public sealed class WorkspaceNoteEditController
 
             if (!IsRequestActive(owner)) return;
 
-            if (items.FirstOrDefault(item => item.Id == noteId) is not NoteItem note)
+            if (item is not NoteItem { DeletedAt: null } note || note.WorkspaceId != workspaceId)
             {
                 _host.SetStatus("メモが見つかりません");
                 return;

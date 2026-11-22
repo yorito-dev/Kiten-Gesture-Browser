@@ -96,7 +96,7 @@ internal sealed class TabDragController : IDisposable
     {
         if (_disposed) return;
         _reorder.ClearDropPreview();
-        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
+        if (VisualTreeTraversal.FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
         {
             _dragSourceTab = null;
             _dragSourceList = null;
@@ -135,71 +135,73 @@ internal sealed class TabDragController : IDisposable
         _dragSourceList = null;
         _activeDragTab = tab;
         _activeDragList = dragList;
-        _dragOriginalTabs = _tabs.ToList();
-        _tabDragSessionCoordinator.BeginInteractiveDrag();
-        foreach (var draggedTab in _reorder.GetTabDragGroup(tab)) draggedTab.IsDragSource = true;
-        ShowTabDragPreview(tab);
-        _host.SetStatus($"{TabDragStatusPrefix}{tab.DisplayTitle}");
-
-        var result = DragDropEffects.None;
-        var workspaceDropRouteActive = false;
-        var detachPreviewAtRelease = false;
-        var operation = _host.CreateOperation(tab);
         try
         {
-            result = operation.Run(dragList);
+            ITabDragOperation operation;
+            DragDropEffects result;
+            bool workspaceDropRouteActive;
+            bool detachPreviewAtRelease;
+            try
+            {
+                _dragOriginalTabs = _tabs.ToList();
+                _tabDragSessionCoordinator.BeginInteractiveDrag();
+                foreach (var draggedTab in _reorder.GetTabDragGroup(tab)) draggedTab.IsDragSource = true;
+                ShowTabDragPreview(tab);
+                _host.SetStatus($"{TabDragStatusPrefix}{tab.DisplayTitle}");
+
+                operation = _host.CreateOperation(tab);
+                result = operation.Run(dragList);
+                if (_disposed) return;
+
+                workspaceDropRouteActive = _host.ShouldSuppressDetachForWorkspaceDrop();
+                detachPreviewAtRelease = _tabDragSessionCoordinator.IsDetachPreviewActive;
+            }
+            finally
+            {
+                if (!_disposed) ClearTabDragVisualState();
+            }
+            if (_disposed) return;
+
+            if (_tabDragSessionCoordinator.IsCancelled)
+            {
+                RestoreOriginalTabOrder();
+                if (_tabs.Contains(tab)) _host.SelectTab(tab);
+                _host.SetStatus("タブ移動をキャンセルしました", autoClear: true);
+                return;
+            }
+            if (_tabDragSessionCoordinator.IsDetachedToWindow)
+            {
+                if (result == DragDropEffects.None && !operation.IsSourceOriginal) operation.TryTransferCurrentSourceAtCursor();
+                return;
+            }
+            if (result == DragDropEffects.None && workspaceDropRouteActive && _tabs.Contains(tab))
+            {
+                RestoreOriginalTabOrder();
+                return;
+            }
+            if (result == DragDropEffects.None && _tabs.Contains(tab) && operation.TryTransferOriginalSourceAtCursor())
+            {
+                return;
+            }
+            if (result == DragDropEffects.None && _tabs.Contains(tab)
+                && (_tabDragSessionCoordinator.ShouldCompleteAsNewWindow || detachPreviewAtRelease
+                    || _host.IsPointOutsideWindow(_host.GetMousePositionInWindow())))
+            {
+                RestoreOriginalTabOrder();
+                operation.DetachOriginalTab(tab);
+            }
+            else if (result == DragDropEffects.None && _tabs.Contains(tab))
+            {
+                RestoreOriginalTabOrder();
+                _host.SelectTab(tab);
+                _host.SetStatus("タブ移動をキャンセルしました", autoClear: true);
+            }
+            if (result == DragDropEffects.Copy && _tabs.Contains(tab)) RestoreOriginalTabOrder();
         }
         finally
         {
-            if (!_disposed)
-            {
-                workspaceDropRouteActive = _host.ShouldSuppressDetachForWorkspaceDrop();
-                detachPreviewAtRelease = _tabDragSessionCoordinator.IsDetachPreviewActive;
-                ClearTabDragVisualState();
-            }
-        }
-        if (_disposed) return;
-
-        if (_tabDragSessionCoordinator.IsCancelled)
-        {
-            RestoreOriginalTabOrder();
-            if (_tabs.Contains(tab)) _host.SelectTab(tab);
-            _host.SetStatus("タブ移動をキャンセルしました", autoClear: true);
             CompleteTabDragCleanup();
-            return;
         }
-        if (_tabDragSessionCoordinator.IsDetachedToWindow)
-        {
-            if (result == DragDropEffects.None && !operation.IsSourceOriginal) operation.TryTransferCurrentSourceAtCursor();
-            CompleteTabDragCleanup();
-            return;
-        }
-        if (result == DragDropEffects.None && workspaceDropRouteActive && _tabs.Contains(tab))
-        {
-            RestoreOriginalTabOrder();
-            CompleteTabDragCleanup();
-            return;
-        }
-        if (result == DragDropEffects.None && _tabs.Contains(tab) && operation.TryTransferOriginalSourceAtCursor())
-        {
-            CompleteTabDragCleanup();
-            return;
-        }
-        if (result == DragDropEffects.None && _tabs.Contains(tab)
-            && (_tabDragSessionCoordinator.ShouldCompleteAsNewWindow || detachPreviewAtRelease
-                || _host.IsPointOutsideWindow(_host.GetMousePositionInWindow())))
-        {
-            RestoreOriginalTabOrder();
-            operation.DetachOriginalTab(tab);
-        }
-        else if (result == DragDropEffects.None && _tabs.Contains(tab))
-        {
-            RestoreOriginalTabOrder();
-            _host.SelectTab(tab);
-            _host.SetStatus("タブ移動をキャンセルしました", autoClear: true);
-        }
-        if (result == DragDropEffects.Copy && _tabs.Contains(tab)) RestoreOriginalTabOrder();
-        CompleteTabDragCleanup();
     }
 
     internal void QueryContinueDrag(object sender, QueryContinueDragEventArgs e)
@@ -212,12 +214,14 @@ internal sealed class TabDragController : IDisposable
 
     private void CompleteTabDragCleanup()
     {
+        var hadActiveOperation = _activeDragList is not null;
         _dragOriginalTabs = null;
+        _activeDragTab = null;
         _activeDragList = null;
         _tabDragSessionCoordinator.ClearDetachedToWindow();
         _tabDragSessionCoordinator.ClearCompleteAsNewWindow();
         _tabDragSessionCoordinator.TrySetDetachPreviewActive(false);
-        _host.CompleteOperation();
+        if (hadActiveOperation) _host.CompleteOperation();
     }
 
     internal void RestoreOriginalTabOrder()
@@ -355,27 +359,22 @@ internal sealed class TabDragController : IDisposable
         QueueTabDragPreviewMove();
     }
 
-    private static T? FindVisualParent<T>(DependencyObject? source) where T : DependencyObject
-    {
-        while (source is not null)
-        {
-            if (source is T found) return found;
-            source = VisualTreeHelper.GetParent(source);
-        }
-        return null;
-    }
-
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        HideTabDragPreview();
-        _host.ClearSourceDrivenPreview();
-        _host.ResetWorkspaceHover();
-        ClearTabFlags();
-        _dragSourceTab = null;
-        _dragSourceList = null;
-        _activeDragTab = null;
-        CompleteTabDragCleanup();
+        try
+        {
+            HideTabDragPreview();
+            _host.ClearSourceDrivenPreview();
+            _host.ResetWorkspaceHover();
+            ClearTabFlags();
+        }
+        finally
+        {
+            _dragSourceTab = null;
+            _dragSourceList = null;
+            CompleteTabDragCleanup();
+        }
     }
 }

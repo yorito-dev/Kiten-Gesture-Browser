@@ -155,6 +155,9 @@ public sealed class YouTubePlaybackDiagnosticController
             null,
             null,
             stallDuration));
+        var action = sourceKind == "tab"
+            ? WebViewProcessFailurePolicy.GetTabAction(processFailedKind)
+            : WebViewProcessFailurePolicy.GetAction(processFailedKind);
         var fields = new List<string>
         {
             "runner=youtube-playback",
@@ -163,7 +166,7 @@ public sealed class YouTubePlaybackDiagnosticController
             $"source={sourceKind}",
             $"target={targetId}",
             $"kind={processFailedKind}",
-            $"action={WebViewProcessFailurePolicy.GetAction(processFailedKind)}"
+            $"action={action}"
         };
         if (stallDuration is { } activeStallDuration)
         {

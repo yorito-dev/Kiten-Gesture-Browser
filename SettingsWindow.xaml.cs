@@ -27,11 +27,12 @@ public partial class SettingsWindow : Window
     private const double MaximumCpuSaverDelaySeconds = 3600;
 
     private readonly ContainerProfileStore _containerProfileStore = new();
-    private readonly HashSet<string> _protectedContainerProfileIds;
+    private readonly Func<IReadOnlyCollection<string>> _getProtectedContainerProfileIds;
     private readonly AppSettings _workingSettings;
     private readonly ObservableCollection<SearchAliasSettings> _searchAliases;
 
     private List<ContainerProfile> _containerProfiles = [];
+    private bool _canEditContainerProfiles;
     private IReadOnlyList<GestureCommandOption> _gestureCommandOptions =
         GestureSettingsCatalog.CommandOptions;
     private MouseGestureSettingsWindow? _mouseGestureSettingsWindow;
@@ -40,19 +41,17 @@ public partial class SettingsWindow : Window
     private bool _isUpdatingYouTubeMiniPlayerQualitySliders;
 
     public SettingsWindow(AppSettings settings)
-        : this(settings, [])
+        : this(settings, static () => [])
     {
     }
 
-    public SettingsWindow(AppSettings settings, IEnumerable<string>? protectedContainerProfileIds)
+    public SettingsWindow(AppSettings settings, Func<IReadOnlyCollection<string>> getProtectedContainerProfileIds)
     {
+        _getProtectedContainerProfileIds = getProtectedContainerProfileIds;
         InitializeComponent();
         SettingsTabControl.SelectionChanged += SettingsTabControl_SelectionChanged;
         ApplySettingsTabSelection(SettingsTabControl.SelectedIndex);
 
-        _protectedContainerProfileIds = (protectedContainerProfileIds ?? [])
-            .Select(ContainerProfile.NormalizeId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         _workingSettings = CloneSettings(settings);
         SearchEngineBox.Text = _workingSettings.SearchEngine;
         SearchUrlTemplateBox.Text = _workingSettings.SearchUrlTemplate;
@@ -91,6 +90,7 @@ public partial class SettingsWindow : Window
         _workingSettings.BrowsingHistory = BrowsingHistorySettingsProfile.Normalize(
             _workingSettings.BrowsingHistory);
         EnableBrowsingHistoryCheckBox.IsChecked = _workingSettings.BrowsingHistory.IsEnabled;
+        RecordRecentWebVisitsCheckBox.IsChecked = _workingSettings.RecordRecentWebVisits;
         BrowsingHistoryExcludedHostsBox.Text = string.Join(
             Environment.NewLine,
             _workingSettings.BrowsingHistory.ExcludedHosts);
@@ -301,6 +301,11 @@ public partial class SettingsWindow : Window
 
     private void AddContainerProfileButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!_canEditContainerProfiles)
+        {
+            return;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var profile = new ContainerProfile
         {
@@ -319,7 +324,7 @@ public partial class SettingsWindow : Window
 
     private void SaveContainerProfileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (GetSelectedContainerProfile() is not { } profile || profile.IsDefault)
+        if (!_canEditContainerProfiles || GetSelectedContainerProfile() is not { } profile || profile.IsDefault)
         {
             return;
         }
@@ -338,14 +343,14 @@ public partial class SettingsWindow : Window
 
     private void DeleteContainerProfileButton_Click(object sender, RoutedEventArgs e)
     {
-        if (GetSelectedContainerProfile() is not { } profile || profile.IsDefault)
+        if (!_canEditContainerProfiles || GetSelectedContainerProfile() is not { } profile || profile.IsDefault)
         {
             return;
         }
 
-        if (IsProtectedContainerProfile(profile.Id))
+        const string inUseError = "使用中のコンテナは削除できません。開いているタブと閉じたタブ履歴から外してから削除してください。";
+        if (!CheckContainerProfileCanBeDeleted(profile.Id, inUseError))
         {
-            SetError("使用中のコンテナは削除できません。開いているタブと閉じたタブ履歴から外してから削除してください。");
             return;
         }
 
@@ -356,7 +361,7 @@ public partial class SettingsWindow : Window
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
             MessageBoxResult.No);
-        if (result != MessageBoxResult.Yes)
+        if (result != MessageBoxResult.Yes || !CheckContainerProfileCanBeDeleted(profile.Id, inUseError))
         {
             return;
         }
@@ -368,14 +373,14 @@ public partial class SettingsWindow : Window
 
     private void DeleteContainerProfileDataButton_Click(object sender, RoutedEventArgs e)
     {
-        if (GetSelectedContainerProfile() is not { } profile || profile.IsDefault)
+        if (!_canEditContainerProfiles || GetSelectedContainerProfile() is not { } profile || profile.IsDefault)
         {
             return;
         }
 
-        if (IsProtectedContainerProfile(profile.Id))
+        const string inUseError = "使用中のコンテナデータは削除できません。対象コンテナのタブを閉じてから実行してください。";
+        if (!CheckContainerProfileCanBeDeleted(profile.Id, inUseError))
         {
-            SetError("使用中のコンテナデータは削除できません。対象コンテナのタブを閉じてから実行してください。");
             return;
         }
 
@@ -392,7 +397,7 @@ public partial class SettingsWindow : Window
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
             MessageBoxResult.No);
-        if (result != MessageBoxResult.Yes)
+        if (result != MessageBoxResult.Yes || !CheckContainerProfileCanBeDeleted(profile.Id, inUseError))
         {
             return;
         }
@@ -462,7 +467,6 @@ public partial class SettingsWindow : Window
     {
         ApplySettingsTabSelection(SettingsTabControl.SelectedIndex);
         SettingsScrollViewer.ScrollToTop();
-
     }
 
     private void SettingsTabControl_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -679,12 +683,11 @@ public partial class SettingsWindow : Window
         {
             IsEnabled = EnableBrowsingHistoryCheckBox.IsChecked == true,
             ExcludedHosts = browsingHistoryExcludedHosts,
-            ExcludedContainerProfileIds = BrowsingHistoryExcludedContainersPanel.Children
-                .OfType<CheckBox>()
-                .Where(static checkBox => checkBox.IsChecked == true)
-                .Select(static checkBox => checkBox.Tag as string ?? string.Empty)
-                .ToList()
+            ExcludedContainerProfileIds = _canEditContainerProfiles
+                ? ReadCheckedBrowsingHistoryContainerIds(BrowsingHistoryExcludedContainersPanel)
+                : _workingSettings.BrowsingHistory.ExcludedContainerProfileIds
         });
+        result.RecordRecentWebVisits = RecordRecentWebVisitsCheckBox.IsChecked == true;
         result.EnableBrowserExtensions = EnableExtensionsCheckBox.IsChecked == true;
         if (!AdBlockingSettingsProfile.TryBuildEditingResult(EnableAdBlockingCheckBox.IsChecked == true,
                 AdBlockingExcludedHostsBox.Text, out var adBlocking, out var invalidAdBlockingHost))
@@ -751,7 +754,11 @@ public partial class SettingsWindow : Window
 
     private void ReloadContainerProfileInputs(string? selectProfileId = null)
     {
-        _containerProfiles = _containerProfileStore.Load();
+        var loaded = _containerProfileStore.Load();
+        _containerProfiles = loaded.Profiles;
+        _canEditContainerProfiles = loaded.IsAuthoritative;
+        SetError(ContainerProfileLoadErrorText, GetContainerProfileLoadError(loaded.Status));
+        AddContainerProfileButton.IsEnabled = _canEditContainerProfiles;
         ContainerProfileList.ItemsSource = null;
         ContainerProfileList.ItemsSource = _containerProfiles;
 
@@ -763,18 +770,43 @@ public partial class SettingsWindow : Window
             ?? _containerProfiles.FirstOrDefault(static profile => profile.IsDefault);
 
         ApplySelectedContainerProfileToInputs();
-        ReloadBrowsingHistoryContainerInputs();
+        ReloadBrowsingHistoryContainerInputs(
+            BrowsingHistoryExcludedContainersPanel,
+            _containerProfiles,
+            BrowsingHistorySettingsProfile.Normalize(_workingSettings.BrowsingHistory).ExcludedContainerProfileIds,
+            _canEditContainerProfiles);
     }
 
-    private void ReloadBrowsingHistoryContainerInputs()
-    {
-        var excludedIds = BrowsingHistorySettingsProfile.Normalize(_workingSettings.BrowsingHistory)
-            .ExcludedContainerProfileIds
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        BrowsingHistoryExcludedContainersPanel.Children.Clear();
-        foreach (var profile in _containerProfiles)
+    internal static string GetContainerProfileLoadError(ContainerProfileLoadStatus status)
+        => status switch
         {
-            BrowsingHistoryExcludedContainersPanel.Children.Add(new CheckBox
+            ContainerProfileLoadStatus.RecoveredFromBackup =>
+                "コンテナ設定のファイルを読めないため、バックアップの内容を表示しています。編集はできません。",
+            ContainerProfileLoadStatus.Failed =>
+                "コンテナ設定のファイルを読めないため、コンテナを編集できません。",
+            _ => string.Empty
+        };
+
+    internal static void ReloadBrowsingHistoryContainerInputs(
+        Panel panel,
+        IReadOnlyList<ContainerProfile> profiles,
+        IReadOnlyCollection<string> savedExcludedIds,
+        bool canEdit)
+    {
+        panel.IsEnabled = canEdit;
+        var hasExistingInputs = panel.Children.Count > 0;
+        if (!canEdit && hasExistingInputs)
+        {
+            // 読み込みに失敗しても、編集中のチェックは保持する。
+            return;
+        }
+
+        var excludedIds = (hasExistingInputs ? ReadCheckedBrowsingHistoryContainerIds(panel) : savedExcludedIds)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        panel.Children.Clear();
+        foreach (var profile in profiles)
+        {
+            panel.Children.Add(new CheckBox
             {
                 Content = profile.Name,
                 Tag = profile.Id,
@@ -783,6 +815,12 @@ public partial class SettingsWindow : Window
             });
         }
     }
+
+    private static List<string> ReadCheckedBrowsingHistoryContainerIds(Panel panel)
+        => panel.Children.OfType<CheckBox>()
+            .Where(static checkBox => checkBox.IsChecked == true)
+            .Select(static checkBox => checkBox.Tag as string ?? string.Empty)
+            .ToList();
 
     private bool TryReadBrowsingHistoryHosts(out List<string> hosts)
     {
@@ -809,8 +847,8 @@ public partial class SettingsWindow : Window
     private void ApplySelectedContainerProfileToInputs()
     {
         var profile = GetSelectedContainerProfile();
-        var canEdit = profile is { IsDefault: false };
-        var isProtected = profile is not null && IsProtectedContainerProfile(profile.Id);
+        var canEdit = _canEditContainerProfiles && profile is { IsDefault: false };
+        var isProtected = profile is not null && IsProtectedContainerProfile(profile.Id, _getProtectedContainerProfileIds);
 
         ContainerProfileNameBox.Text = profile?.Name ?? string.Empty;
         ContainerProfileColorBox.Text = profile?.Color ?? ContainerProfile.DefaultColor;
@@ -828,8 +866,11 @@ public partial class SettingsWindow : Window
 
     private void SaveContainerProfiles(string? selectProfileId)
     {
-        _containerProfileStore.Save(_containerProfiles);
-        ContainerProfilesChanged = true;
+        if (_canEditContainerProfiles && _containerProfileStore.Save(_containerProfiles))
+        {
+            ContainerProfilesChanged = true;
+        }
+
         ReloadContainerProfileInputs(selectProfileId);
     }
 
@@ -877,11 +918,24 @@ public partial class SettingsWindow : Window
         return true;
     }
 
-    private bool IsProtectedContainerProfile(string? containerProfileId)
+    private bool CheckContainerProfileCanBeDeleted(string profileId, string inUseError)
+    {
+        if (IsProtectedContainerProfile(profileId, _getProtectedContainerProfileIds))
+        {
+            SetError(inUseError);
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static bool IsProtectedContainerProfile(
+        string? containerProfileId,
+        Func<IReadOnlyCollection<string>> getProtectedContainerProfileIds)
     {
         var normalizedId = ContainerProfile.NormalizeId(containerProfileId);
         return string.Equals(normalizedId, ContainerProfile.DefaultId, StringComparison.OrdinalIgnoreCase)
-            || _protectedContainerProfileIds.Contains(normalizedId);
+            || getProtectedContainerProfileIds().Contains(normalizedId, StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool TryGetSafeContainerProfileDataFolder(ContainerProfile profile, out string profileDataFolder)
@@ -1047,10 +1101,12 @@ public partial class SettingsWindow : Window
         GestureSummaryText.Text = $"{mappings.Count} 件の割り当て";
     }
 
-    private void SetError(string message)
+    private void SetError(string message) => SetError(ErrorText, message);
+
+    private static void SetError(TextBlock errorText, string message)
     {
-        ErrorText.Text = message;
-        ErrorText.Visibility = string.IsNullOrWhiteSpace(message)
+        errorText.Text = message;
+        errorText.Visibility = string.IsNullOrWhiteSpace(message)
             ? Visibility.Collapsed
             : Visibility.Visible;
     }
@@ -1129,49 +1185,6 @@ public partial class SettingsWindow : Window
         var copy = SettingsService.CloneForEdit(settings);
 
         return copy;
-    }
-    private static TabLayoutSettings CloneTabLayout(TabLayoutSettings? settings)
-    {
-        settings = TabLayoutSettingsProfile.Normalize(settings);
-        return new TabLayoutSettings
-        {
-            Mode = settings.Mode,
-            VerticalSidebarWidth = settings.VerticalSidebarWidth,
-            VerticalSidebarCollapsed = settings.VerticalSidebarCollapsed,
-            ShowTabSearch = settings.ShowTabSearch,
-            ShowPinnedTabsSection = settings.ShowPinnedTabsSection
-        };
-    }
-
-    private static ToolbarVisibilitySettings CloneToolbarVisibility(ToolbarVisibilitySettings? settings)
-    {
-        settings ??= new ToolbarVisibilitySettings();
-        return new ToolbarVisibilitySettings
-        {
-            ShowBackButton = settings.ShowBackButton,
-            AutoHideToolbar = settings.AutoHideToolbar,
-            ShowForwardButton = settings.ShowForwardButton,
-            ShowReloadButton = settings.ShowReloadButton,
-            ShowRestoreButton = settings.ShowRestoreButton,
-            ShowClosedTabHistoryButton = settings.ShowClosedTabHistoryButton,
-            ShowAddressBox = settings.ShowAddressBox,
-            ShowGoButton = settings.ShowGoButton,
-            ShowActionsButton = settings.ShowActionsButton,
-            ShowAddBookmarkButton = settings.ShowAddBookmarkButton,
-            ShowBookmarkListButton = settings.ShowBookmarkListButton,
-            ShowWorkspaceOSButton = settings.ShowWorkspaceOSButton,
-
-            PreservedCompatibilitySettings = PublicSettingsCompatibility.Clone(settings.PreservedCompatibilitySettings, toolbar: true),
-
-            ShowToolsButton = settings.ShowToolsButton,
-            ShowAddExtensionButton = settings.ShowAddExtensionButton,
-            ShowImportExtensionButton = settings.ShowImportExtensionButton,
-            ShowManageExtensionsButton = settings.ShowManageExtensionsButton,
-            ShowGestureSettingsButton = settings.ShowGestureSettingsButton,
-            ShowSettingsButton = settings.ShowSettingsButton,
-            ShowExtensionIcons = settings.ShowExtensionIcons,
-            ShowStatusText = settings.ShowStatusText
-        };
     }
 
     private static string NormalizeCliPath(string value)

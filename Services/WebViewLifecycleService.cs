@@ -113,6 +113,57 @@ public sealed class WebViewLifecycleService
         core.Settings.AreDevToolsEnabled = false;
     }
 
+    internal static CoreWebView2ControllerOptions CreatePrivatePreviewOptions(
+        CoreWebView2Environment environment,
+        string profileName)
+    {
+        var options = environment.CreateCoreWebView2ControllerOptions();
+        options.ProfileName = profileName;
+        options.IsInPrivateModeEnabled = true;
+        return options;
+    }
+
+    internal static bool IsPrivatePreviewProfile(bool isInPrivateModeEnabled, string? profileName, string expectedProfileName)
+        => isInPrivateModeEnabled && string.Equals(profileName, expectedProfileName, StringComparison.Ordinal);
+
+    internal static void UpdatePrivatePreviewRestrictions(ref CoreWebView2? restrictedCore, CoreWebView2? core)
+    {
+        if (ReferenceEquals(restrictedCore, core)) return;
+        if (restrictedCore is { } previous)
+        {
+            previous.DownloadStarting -= RejectDownload;
+            previous.NewWindowRequested -= RejectNewWindow;
+            previous.PermissionRequested -= RejectPermission;
+            previous.LaunchingExternalUriScheme -= RejectExternalUri;
+        }
+
+        restrictedCore = core;
+        if (core is null) return;
+        core.DownloadStarting += RejectDownload;
+        core.NewWindowRequested += RejectNewWindow;
+        core.PermissionRequested += RejectPermission;
+        core.LaunchingExternalUriScheme += RejectExternalUri;
+    }
+
+    private static void RejectDownload(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        e.Cancel = true;
+        e.Handled = true;
+    }
+
+    private static void RejectNewWindow(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+        => e.Handled = true;
+
+    private static void RejectPermission(object? sender, CoreWebView2PermissionRequestedEventArgs e)
+    {
+        e.State = CoreWebView2PermissionState.Deny;
+        e.SavesInProfile = false;
+        e.Handled = true;
+    }
+
+    private static void RejectExternalUri(object? sender, CoreWebView2LaunchingExternalUriSchemeEventArgs e)
+        => e.Cancel = true;
+
     public static string FormatNavigationError(CoreWebView2WebErrorStatus status)
     {
         return status switch
