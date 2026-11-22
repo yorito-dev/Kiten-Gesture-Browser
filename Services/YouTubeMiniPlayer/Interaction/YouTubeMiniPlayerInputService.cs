@@ -287,7 +287,8 @@ public static class YouTubeMiniPlayerInputService
         double aspectRatio,
         bool resizeLeft,
         bool resizeTop,
-        Rect workArea)
+        Rect workArea,
+        Size? minimumSize = null)
     {
         var requestedBounds = CalculateResizeBounds(
             aspectRatio,
@@ -300,7 +301,8 @@ public static class YouTubeMiniPlayerInputService
             resizeLeft,
             resizeTop,
             !resizeLeft,
-            !resizeTop);
+            !resizeTop,
+            minimumSize);
 
         var anchorX = resizeLeft ? startBounds.Right : startBounds.Left;
         var anchorY = resizeTop ? startBounds.Bottom : startBounds.Top;
@@ -326,8 +328,8 @@ public static class YouTubeMiniPlayerInputService
             height = YouTubeMiniPlayerLayoutService.GetOuterHeightForVideoWidth(width, aspectRatio);
         }
 
-        if (width < YouTubeMiniPlayerLayoutService.MinimumWidth
-            || height < YouTubeMiniPlayerLayoutService.MinimumHeight
+        if (width + 0.0001 < (minimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth)
+            || height + 0.0001 < (minimumSize?.Height ?? YouTubeMiniPlayerLayoutService.MinimumHeight)
             || width <= 0
             || height <= 0)
         {

@@ -92,18 +92,11 @@ public sealed class TabShelfTabViewModel : INotifyPropertyChanged
     }
 
     public bool Update(CapturedTabSnapshot snapshot)
-    {
-        var groupingChanged = WindowGroupTitle != snapshot.WindowGroupTitle;
-        Snapshot = snapshot;
-        NotifyContentChanged();
-        return groupingChanged;
-    }
+        => UpdateContent(snapshot, PlayerState);
 
     public void Update(YouTubeMiniPlayerWorkspaceState playerState)
     {
-        PlayerState = playerState;
-        UpdateYouTubeMiniPlayerThumbnail(playerState.Url);
-        NotifyContentChanged();
+        UpdateContent(Snapshot, playerState);
     }
 
     private void UpdateYouTubeMiniPlayerThumbnail(string url)
@@ -145,29 +138,49 @@ public sealed class TabShelfTabViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasThumbnail));
     }
 
-    private void NotifyContentChanged()
+    private bool UpdateContent(CapturedTabSnapshot? snapshot, YouTubeMiniPlayerWorkspaceState? playerState)
     {
-        OnPropertyChanged(nameof(Snapshot));
-        OnPropertyChanged(nameof(PlayerState));
-        OnPropertyChanged(nameof(IsYouTubeMiniPlayer));
-        OnPropertyChanged(nameof(IsFolderTab));
-        OnPropertyChanged(nameof(TabId));
-        OnPropertyChanged(nameof(WindowId));
-        OnPropertyChanged(nameof(WindowGroupTitle));
-        OnPropertyChanged(nameof(WindowSortOrder));
-        OnPropertyChanged(nameof(IsForeignWindow));
-        OnPropertyChanged(nameof(Title));
-        OnPropertyChanged(nameof(Url));
-        OnPropertyChanged(nameof(TabIndex));
-        OnPropertyChanged(nameof(DisplayIndex));
-        OnPropertyChanged(nameof(IsActive));
-        OnPropertyChanged(nameof(IsPinned));
-        OnPropertyChanged(nameof(Favicon));
-        OnPropertyChanged(nameof(HasFavicon));
-        OnPropertyChanged(nameof(Thumbnail));
-        OnPropertyChanged(nameof(HasThumbnail));
-        OnPropertyChanged(nameof(SecondaryText));
-        OnPropertyChanged(nameof(ThumbnailPlaceholderText));
+        var previous = (
+            Snapshot, PlayerState, IsYouTubeMiniPlayer, IsFolderTab, TabId, WindowId, WindowGroupTitle,
+            WindowSortOrder, IsForeignWindow, Title, Url, TabIndex, DisplayIndex, IsActive, IsPinned,
+            Favicon, HasFavicon, Thumbnail, HasThumbnail, SecondaryText, ThumbnailPlaceholderText);
+        Snapshot = snapshot;
+        PlayerState = playerState;
+        if (playerState is not null)
+        {
+            UpdateYouTubeMiniPlayerThumbnail(playerState.Url);
+        }
+
+        NotifyIfChanged(previous.Snapshot, Snapshot);
+        NotifyIfChanged(previous.PlayerState, PlayerState);
+        NotifyIfChanged(previous.IsYouTubeMiniPlayer, IsYouTubeMiniPlayer);
+        NotifyIfChanged(previous.IsFolderTab, IsFolderTab);
+        NotifyIfChanged(previous.TabId, TabId);
+        NotifyIfChanged(previous.WindowId, WindowId);
+        NotifyIfChanged(previous.WindowGroupTitle, WindowGroupTitle);
+        NotifyIfChanged(previous.WindowSortOrder, WindowSortOrder);
+        NotifyIfChanged(previous.IsForeignWindow, IsForeignWindow);
+        NotifyIfChanged(previous.Title, Title);
+        NotifyIfChanged(previous.Url, Url);
+        NotifyIfChanged(previous.TabIndex, TabIndex);
+        NotifyIfChanged(previous.DisplayIndex, DisplayIndex);
+        NotifyIfChanged(previous.IsActive, IsActive);
+        NotifyIfChanged(previous.IsPinned, IsPinned);
+        NotifyIfChanged(previous.Favicon, Favicon);
+        NotifyIfChanged(previous.HasFavicon, HasFavicon);
+        NotifyIfChanged(previous.Thumbnail, Thumbnail);
+        NotifyIfChanged(previous.HasThumbnail, HasThumbnail);
+        NotifyIfChanged(previous.SecondaryText, SecondaryText);
+        NotifyIfChanged(previous.ThumbnailPlaceholderText, ThumbnailPlaceholderText);
+        return previous.WindowGroupTitle != WindowGroupTitle;
+    }
+
+    private void NotifyIfChanged<T>(T previous, T current, [CallerArgumentExpression(nameof(current))] string? propertyName = null)
+    {
+        if (!EqualityComparer<T>.Default.Equals(previous, current))
+        {
+            OnPropertyChanged(propertyName);
+        }
     }
 
     private static string CreatePlayerStatusText(YouTubeMiniPlayerWorkspaceState state)

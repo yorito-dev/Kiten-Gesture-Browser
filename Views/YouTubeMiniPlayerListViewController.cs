@@ -20,6 +20,7 @@ internal sealed record YouTubeMiniPlayerListElements(
     Button YouTubeMiniPlayerGlobalActionsButton,
     Button YouTubeMiniPlayerArrangeMenuButton,
     Button YouTubeMiniPlayerRestoreArrangementButton,
+    Button YouTubeMiniPlayerRestorePreviousArrangementButton,
     Button YouTubeMiniPlayerPlayPauseAllButton,
     Button YouTubeMiniPlayerRestoreClosedButton,
     Button YouTubeMiniPlayerPauseAllButton,
@@ -62,6 +63,7 @@ internal interface IYouTubeMiniPlayerListHost
     Guid? PreviewTargetId { get; }
     bool HasArrangementPreview { get; }
     bool HasInitialArrangement { get; }
+    bool HasPreviousArrangement { get; }
     bool HasRestorablePlayer { get; }
     bool IsRestoringClosedPlayer { get; }
     bool IsLiveSeekInProgress { get; }
@@ -134,6 +136,7 @@ internal sealed class YouTubeMiniPlayerListViewController
     private Button YouTubeMiniPlayerGlobalActionsButton => _elements.YouTubeMiniPlayerGlobalActionsButton;
     private Button YouTubeMiniPlayerArrangeMenuButton => _elements.YouTubeMiniPlayerArrangeMenuButton;
     private Button YouTubeMiniPlayerRestoreArrangementButton => _elements.YouTubeMiniPlayerRestoreArrangementButton;
+    private Button YouTubeMiniPlayerRestorePreviousArrangementButton => _elements.YouTubeMiniPlayerRestorePreviousArrangementButton;
     private Button YouTubeMiniPlayerPlayPauseAllButton => _elements.YouTubeMiniPlayerPlayPauseAllButton;
     private Button YouTubeMiniPlayerRestoreClosedButton => _elements.YouTubeMiniPlayerRestoreClosedButton;
 
@@ -785,6 +788,10 @@ internal sealed class YouTubeMiniPlayerListViewController
         YouTubeMiniPlayerArrangeMenuButton.IsEnabled = hasPlayers && canOperate;
         YouTubeMiniPlayerRestoreArrangementButton.Visibility =
             _host.HasInitialArrangement
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        YouTubeMiniPlayerRestorePreviousArrangementButton.Visibility =
+            _host.HasPreviousArrangement
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 

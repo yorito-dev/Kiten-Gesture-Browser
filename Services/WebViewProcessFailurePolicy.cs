@@ -7,11 +7,17 @@ public enum WebViewProcessFailureAction
     ObserveOnly,
     RevalidateMediaPlayback,
     ReloadAffectedRuntime,
-    RecreateProcessGroup
+    RecreateProcessGroup,
+    KeepPageForFrameFailure
 }
 
 public static class WebViewProcessFailurePolicy
 {
+    public static WebViewProcessFailureAction GetTabAction(CoreWebView2ProcessFailedKind kind)
+        => kind == CoreWebView2ProcessFailedKind.FrameRenderProcessExited
+            ? WebViewProcessFailureAction.KeepPageForFrameFailure
+            : GetAction(kind);
+
     public static WebViewProcessFailureAction GetAction(CoreWebView2ProcessFailedKind kind)
     {
         return kind switch

@@ -171,7 +171,7 @@ public static class StartupPerformanceReportFormatter
 
         var lines = new List<string>
         {
-            "TabBrowser 起動・復元パフォーマンス",
+            "Kiten 起動・復元パフォーマンス",
             $"イベント数: {entries.Count}"
         };
         foreach (var entry in entries.OrderBy(static entry => entry.Sequence))

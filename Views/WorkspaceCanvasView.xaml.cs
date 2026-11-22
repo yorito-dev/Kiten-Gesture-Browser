@@ -203,12 +203,12 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
         ResetRangeSelection();
         ResetCanvasPan();
         SubscribeToViewModel(null);
-        foreach (var layer in _workspaceVisualLayers.Values)
+        foreach (var (items, layer) in _workspaceVisualLayers.ToArray())
         {
-            DetachWorkspaceVisualLayerEvents(layer);
+            RemoveWorkspaceVisualLayer(items, layer);
         }
 
-        _workspaceVisualLayers.Clear();
+        _activeCanvasItemsControl = CanvasItemsControl;
         QuickLookPreviewHost.Dispose();
         Loaded -= WorkspaceCanvasView_Loaded;
         DataContextChanged -= WorkspaceCanvasView_DataContextChanged;
@@ -504,7 +504,8 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
 
     private void PrepareWorkspaceVisualLayer(ObservableCollection<WorkspaceItemViewModel> items)
     {
-        if (_isDisposed || _workspaceVisualLayers.ContainsKey(items))
+        if (_isDisposed || _subscribedViewModel?.OwnsVisibleItems(items) != true
+            || _workspaceVisualLayers.ContainsKey(items))
         {
             return;
         }
@@ -522,6 +523,8 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
             () =>
             {
                 if (!_isDisposed
+                    && _workspaceVisualLayers.TryGetValue(items, out var currentLayer)
+                    && ReferenceEquals(currentLayer, layer)
                     && !ReferenceEquals(layer, _activeCanvasItemsControl))
                 {
                     layer.Visibility = Visibility.Collapsed;
@@ -551,6 +554,30 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
         _activeCanvasItemsControl.Opacity = 1;
         _activeCanvasItemsControl.IsHitTestVisible = true;
         _activeCanvasItemsControl.Visibility = Visibility.Visible;
+
+        if (_subscribedViewModel is { } viewModel)
+        {
+            foreach (var (itemsToRemove, layer) in _workspaceVisualLayers
+                         .Where(pair => !viewModel.OwnsVisibleItems(pair.Key)).ToArray())
+            {
+                RemoveWorkspaceVisualLayer(itemsToRemove, layer);
+            }
+        }
+    }
+
+    private void RemoveWorkspaceVisualLayer(
+        ObservableCollection<WorkspaceItemViewModel> items, ItemsControl layer)
+    {
+        _workspaceVisualLayers.Remove(items);
+        layer.ContextMenu = null;
+        layer.Visibility = Visibility.Collapsed;
+        layer.IsHitTestVisible = false;
+        layer.ItemsSource = null;
+        if (!ReferenceEquals(layer, CanvasItemsControl))
+        {
+            DetachWorkspaceVisualLayerEvents(layer);
+            CanvasItemsHost.Children.Remove(layer);
+        }
     }
 
     private ItemsControl GetOrCreateWorkspaceVisualLayer(

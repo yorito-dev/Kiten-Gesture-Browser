@@ -1080,11 +1080,11 @@ public sealed class RuntimeDiagnosticMonitor
             }
             else if (averageHostCpu / averageTotalCpu >= 0.7)
             {
-                observations.Add("CPU負荷はTabBrowser本体側が中心です。UI操作、バックグラウンド処理、診断イベントの発生状況を確認してください。");
+                observations.Add("CPU負荷はKiten本体側が中心です。UI操作、バックグラウンド処理、診断イベントの発生状況を確認してください。");
             }
             else
             {
-                observations.Add("CPU負荷はTabBrowser本体とWebView2子プロセスの両方に分散しています。");
+                observations.Add("CPU負荷はKiten本体とWebView2子プロセスの両方に分散しています。");
             }
         }
 
@@ -1112,7 +1112,7 @@ public static class RuntimeDiagnosticReportFormatter
     {
         var lines = new List<string>
         {
-            "TabBrowser Runtime診断",
+            "Kiten Runtime診断",
             $"チャンネル: {ApplicationChannelService.DisplayName}",
             $"バージョン: {GetApplicationVersion()}",
             $"取得: {snapshot.CapturedAt:yyyy-MM-dd HH:mm:ss zzz}",
@@ -1175,7 +1175,7 @@ public static class RuntimeDiagnosticReportFormatter
     {
         var lines = new List<string>
         {
-            "TabBrowser Runtime長時間計測レポート",
+            "Kiten Runtime長時間計測レポート",
             $"チャンネル: {ApplicationChannelService.DisplayName}",
             $"バージョン: {GetApplicationVersion()}",
             $"開始: {report.StartedAt:yyyy-MM-dd HH:mm:ss zzz}",

@@ -302,25 +302,6 @@ public sealed class ContextCommandProvider
             .ToList();
     }
 
-    private static CommandAction Create(
-        string id,
-        string title,
-        Func<Task> runAsync,
-        string category,
-        Func<CommandInvocationContext, CommandAvailability> availability,
-        IEnumerable<string>? gestureCommandIds,
-        params string[] keywords)
-    {
-        return new CommandAction(
-            id,
-            title,
-            _ => runAsync(),
-            keywords,
-            category: category,
-            gestureCommandIds: gestureCommandIds,
-            getAvailability: availability);
-    }
-
     private static CommandAction CreateWithContext(
         string id,
         string title,

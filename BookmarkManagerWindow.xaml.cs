@@ -8,10 +8,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Media;
 using Microsoft.Win32;
 using TabBrowser.Models;
 using TabBrowser.Services;
+using TabBrowser.Views;
 
 namespace TabBrowser;
 
@@ -28,7 +28,8 @@ public partial class BookmarkManagerWindow : Window
     });
 
     private readonly BookmarkService _bookmarkService = new();
-    private readonly BookmarkData _initialData;
+    private BookmarkData _appliedData;
+    private Task<bool>? _applyChangesTask;
 
     public BookmarkManagerWindow(
         ObservableCollection<BookmarkItem> bookmarks,
@@ -41,7 +42,7 @@ public partial class BookmarkManagerWindow : Window
         Bookmarks = new ObservableCollection<BookmarkItem>(bookmarks.Select(BookmarkDataSnapshot.Clone));
         Folders = new ObservableCollection<BookmarkFolderItem>(folders.Select(BookmarkDataSnapshot.Clone));
         SortMode = sortMode;
-        _initialData = BookmarkDataSnapshot.Clone(CreateBookmarkData());
+        _appliedData = BookmarkDataSnapshot.Clone(CreateBookmarkData());
         BookmarkView = CollectionViewSource.GetDefaultView(Bookmarks);
         BookmarkView.Filter = FilterBookmark;
         DataContext = this;
@@ -86,8 +87,37 @@ public partial class BookmarkManagerWindow : Window
 
     public bool ChangedBookmarks => DeletedBookmarks || ImportedBookmarks || EditedBookmarks;
 
-    internal BookmarkChangeSet CreateChangeSet()
-        => BookmarkChangeSet.Create(_initialData, CreateBookmarkData());
+    internal async Task<bool> ApplyPendingChangesAsync(
+        Func<BookmarkChangeSet, Task<BookmarkMutationResult>> applyChangesAsync)
+    {
+        if (!ChangedBookmarks)
+        {
+            return true;
+        }
+
+        while (_applyChangesTask is { IsCompleted: false } pending)
+        {
+            await pending;
+        }
+
+        var task = ApplyChangesAsync(applyChangesAsync);
+        _applyChangesTask = task;
+        return await task;
+    }
+
+    private async Task<bool> ApplyChangesAsync(
+        Func<BookmarkChangeSet, Task<BookmarkMutationResult>> applyChangesAsync)
+    {
+        var snapshot = BookmarkDataSnapshot.Clone(CreateBookmarkData());
+        var result = await applyChangesAsync(BookmarkChangeSet.Create(_appliedData, snapshot));
+        if (result.Persisted || result.HasPendingChanges)
+        {
+            // 書き込みに失敗した差分も共有データには反映済みで、再編集はその状態から適用する。
+            _appliedData = snapshot;
+        }
+
+        return result.Persisted;
+    }
 
     private bool _isAllFoldersSelected = true;
     private bool _isRefreshingBookmarkFolders;
@@ -203,7 +233,7 @@ public partial class BookmarkManagerWindow : Window
     private void FolderList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _folderDragStartPoint = e.GetPosition(this);
-        _folderDragSource = FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as BookmarkFolderFilterItem;
+        _folderDragSource = VisualTreeTraversal.FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext as BookmarkFolderFilterItem;
     }
 
     private void FolderList_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -450,7 +480,7 @@ public partial class BookmarkManagerWindow : Window
     private void BookmarkGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _bookmarkDragStartPoint = e.GetPosition(this);
-        _bookmarkDragSource = FindVisualParent<DataGridRow>(e.OriginalSource as DependencyObject)?.DataContext as BookmarkItem;
+        _bookmarkDragSource = VisualTreeTraversal.FindVisualParent<DataGridRow>(e.OriginalSource as DependencyObject)?.DataContext as BookmarkItem;
     }
 
     private void BookmarkGrid_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -1444,7 +1474,7 @@ public partial class BookmarkManagerWindow : Window
 
     private static bool TryGetDropBookmark(DragEventArgs e, out BookmarkItem bookmark)
     {
-        if (FindVisualParent<DataGridRow>(e.OriginalSource as DependencyObject)?.DataContext is BookmarkItem item)
+        if (VisualTreeTraversal.FindVisualParent<DataGridRow>(e.OriginalSource as DependencyObject)?.DataContext is BookmarkItem item)
         {
             bookmark = item;
             return true;
@@ -1564,7 +1594,7 @@ public partial class BookmarkManagerWindow : Window
 
     private static bool TryGetDropFolder(DragEventArgs e, out BookmarkFolderFilterItem folder)
     {
-        if (FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext is BookmarkFolderFilterItem item)
+        if (VisualTreeTraversal.FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject)?.DataContext is BookmarkFolderFilterItem item)
         {
             folder = item;
             return true;
@@ -1789,23 +1819,10 @@ public partial class BookmarkManagerWindow : Window
 
     private void UpdateFolderSortOrders()
     {
-        RemoveDuplicateFolderRecordsWithoutOrdering();
+        RemoveDuplicateFolderRecords();
         for (var i = 0; i < Folders.Count; i++)
         {
             Folders[i].SortOrder = i;
-        }
-    }
-
-    private void RemoveDuplicateFolderRecordsWithoutOrdering()
-    {
-        var seen = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
-        foreach (var folder in Folders.ToList())
-        {
-            folder.Path = BookmarkService.NormalizeFolderPath(folder.Path);
-            if (string.IsNullOrWhiteSpace(folder.Path) || !seen.Add(folder.Path))
-            {
-                Folders.Remove(folder);
-            }
         }
     }
 
@@ -1833,22 +1850,6 @@ public partial class BookmarkManagerWindow : Window
         return !string.IsNullOrWhiteSpace(normalizedCandidate)
             && (normalizedCandidate.Equals(normalizedFolderPath, StringComparison.CurrentCultureIgnoreCase)
                 || normalizedCandidate.StartsWith(normalizedFolderPath + " / ", StringComparison.CurrentCultureIgnoreCase));
-    }
-
-    private static T? FindVisualParent<T>(DependencyObject? source)
-        where T : DependencyObject
-    {
-        while (source is not null)
-        {
-            if (source is T target)
-            {
-                return target;
-            }
-
-            source = VisualTreeHelper.GetParent(source);
-        }
-
-        return null;
     }
 
     private void UpdateStatus()

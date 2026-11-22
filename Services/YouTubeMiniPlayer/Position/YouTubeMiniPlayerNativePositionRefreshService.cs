@@ -14,15 +14,15 @@ internal static class YouTubeMiniPlayerNativePositionRefreshService
         Action<YouTubeMiniPlayerRuntime> refreshOverlayPosition)
     {
         _ = forceNativePosition;
-        if (runtime.IsNativePositionRefreshQueued)
+        if (runtime.Overlay.IsNativePositionRefreshQueued)
         {
             return;
         }
 
-        runtime.IsNativePositionRefreshQueued = true;
+        runtime.Overlay.IsNativePositionRefreshQueued = true;
         dispatcher.BeginInvoke(new Action(() =>
         {
-            runtime.IsNativePositionRefreshQueued = false;
+            runtime.Overlay.IsNativePositionRefreshQueued = false;
             if (!runtimes.TryGetValue(runtime.State.Id, out var current)
                 || !ReferenceEquals(current, runtime)
                 || !current.TaskbarWindow.IsVisible)

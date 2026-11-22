@@ -19,6 +19,7 @@ internal interface IYouTubeMiniPlayerPersistenceHost : IYouTubeMiniPlayerPersist
     bool IsInitialized { get; }
     bool RestorePlaceholdersEnabled { get; }
     IReadOnlyList<IYouTubeMiniPlayerPersistenceOwner> GetOwners();
+    IReadOnlyList<IYouTubeMiniPlayerPersistenceOwner> GetWorkspaceOwners();
     Func<IEnumerable<YouTubeMiniPlayerState>, int> CreatePlaceholderRestorer();
     IEnumerable<YouTubeMiniPlayerState> LoadStoredPlayers();
     void SaveSnapshot(IReadOnlyList<YouTubeMiniPlayerState> players);
@@ -260,6 +261,12 @@ internal sealed class YouTubeMiniPlayerPersistenceController
         };
     }
 
+    internal bool CanConfirmPersistedState()
+        => Volatile.Read(ref _persistedSaveRequestVersion) >= Volatile.Read(ref _saveRequestVersion)
+            && !_youTubeMiniPlayerStateSyncCoordinator.HasPendingEventStateSave
+            && !_youTubeMiniPlayerStateSyncCoordinator.IsCaptureRunning
+            && !HasAdvancingPlaybackPosition([_host], _utcNow());
+
     private void MarkSavePersisted(long saveVersion)
     {
         while (true)
@@ -395,7 +402,7 @@ internal sealed class YouTubeMiniPlayerPersistenceController
 
     public IReadOnlyList<YouTubeMiniPlayerWorkspaceState> CaptureWorkspaceMediaOverlayShelfItems()
     {
-        return _host.GetOwners()
+        return _host.GetWorkspaceOwners()
             .SelectMany(static window => window.States)
             .Where(static state => state.SourceKind == MiniPlayerSourceKind.YouTube)
             .DistinctBy(static state => state.Id)
@@ -407,7 +414,7 @@ internal sealed class YouTubeMiniPlayerPersistenceController
 
     public async Task<IReadOnlyList<YouTubeMiniPlayerWorkspaceState>> CaptureWorkspaceMediaOverlaysAsync()
     {
-        foreach (var window in _host.GetOwners())
+        foreach (var window in _host.GetWorkspaceOwners())
         {
             await window.CaptureLoadedAsync();
         }

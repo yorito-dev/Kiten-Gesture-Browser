@@ -302,11 +302,11 @@ internal sealed class YouTubeMiniPlayerTransparencyController
                 native.SetMoveMode(IsMoveMode);
             }
             runtime.IsInputTransparent = true;
-            runtime.ToolbarHideTimer?.Stop();
-            runtime.TitleBandHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
+            runtime.Overlay.TitleBandHideTimer?.Stop();
             CloseMenus(runtime.Toolbar);
             CloseMenus(runtime.TitleBand);
-            runtime.IsToolbarMenuOpen = false;
+            runtime.Overlay.IsToolbarMenuOpen = false;
             runtime.ToolbarPopup.IsOpen = false;
             runtime.TitleBandPopup.IsOpen = false;
             runtime.Toolbar.Visibility = Visibility.Collapsed;
@@ -411,15 +411,23 @@ internal sealed class YouTubeMiniPlayerTransparencyController
 
         private IntPtr Callback(int code, IntPtr word, IntPtr parameter)
         {
-            if (code >= 0 && IsInstalled)
+            try
             {
-                var message = word.ToInt32();
-                if (message is 0x0200 or 0x0201 or 0x0202 or 0x0205 or 0x0208 or 0x020C)
+                if (code >= 0 && IsInstalled)
                 {
-                    var data = Marshal.PtrToStructure<MouseData>(parameter);
-                    if (_receive(message, data.Point.X, data.Point.Y, (data.Flags & 1) != 0)) return new IntPtr(1);
+                    var message = word.ToInt32();
+                    if (message is 0x0200 or 0x0201 or 0x0202 or 0x0205 or 0x0208 or 0x020C)
+                    {
+                        var data = Marshal.PtrToStructure<MouseData>(parameter);
+                        if (_receive(message, data.Point.X, data.Point.Y, (data.Flags & 1) != 0)) return new IntPtr(1);
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ミニプレイヤーのマウスフック: {ex.GetType().Name}");
+            }
+
             return CallNextHookEx(IntPtr.Zero, code, word, parameter);
         }
 

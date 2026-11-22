@@ -78,9 +78,9 @@ public sealed class BrowserTab : INotifyPropertyChanged
 
     internal int PendingSavedNavigationHistoryIndex { get; set; } = -1;
 
-    internal bool HasCertificateError { get; set; }
+    internal TabAddressNavigationState AddressNavigation { get; } = new();
 
-    internal string? ConnectionBadgeNavigationUrl { get; set; }
+    internal string? AddressUrl => AddressNavigation.PendingAddress ?? Url;
 
     public string? Url
     {

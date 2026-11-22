@@ -274,6 +274,33 @@ public sealed class YouTubeMiniPlayerListWindowTests
     });
 
     [Fact]
+    public void UndoActionBelongsToTheSourceAndFollowsTheCurrentOperationResult() => RunInSta(() =>
+    {
+        long now = 0;
+        using var source = new YouTubeMiniPlayerListWindow(() => now);
+        using var other = CreateWindow();
+        other.AttachContent(new Border(), new ResourceDictionary());
+        other.ShowOrActivate();
+
+        const string message = "3件を整列しました";
+        YouTubeMiniPlayerListWindow.PublishOperationStatus(message, source, [source, other],
+            offerRestorePreviousArrangement: true);
+        Assert.True(source.CanRestorePreviousArrangementFromStatus);
+        Assert.Equal(message, other.OperationStatus);
+        Assert.False(other.CanRestorePreviousArrangementFromStatus);
+
+        source.ShowOperationStatus(message);
+        Assert.False(source.CanRestorePreviousArrangementFromStatus);
+        source.ShowOperationStatus(message, offerRestorePreviousArrangement: true);
+        Assert.True(source.CanRestorePreviousArrangementFromStatus);
+        now = 5 * Stopwatch.Frequency;
+        source.ClearExpiredOperationStatus();
+        Assert.False(source.CanRestorePreviousArrangementFromStatus);
+        Assert.Empty(source.OperationStatus);
+        return Task.CompletedTask;
+    });
+
+    [Fact]
     public void WindowStartsWithoutNativeResourcesAndUsesIndependentTaskbarConfiguration() => RunInSta(() =>
     {
         using var window = new YouTubeMiniPlayerListWindow();

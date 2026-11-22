@@ -149,8 +149,8 @@ internal static class YouTubeMiniPlayerWebDragService
             current => CreateFollowTimer(current, callbacks), resizeEdges);
         if (runtime.IsResizing)
         {
-            runtime.TitleBandHideTimer?.Stop();
-            runtime.ToolbarHideTimer?.Stop();
+            runtime.Overlay.TitleBandHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
             runtime.TitleBandPopup.IsOpen = false;
             runtime.ToolbarPopup.IsOpen = false;
             runtime.TitleBand.Visibility = Visibility.Collapsed;

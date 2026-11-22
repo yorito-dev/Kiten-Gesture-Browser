@@ -21,6 +21,9 @@ internal partial class YouTubeMiniPlayerListWindow : Window, IDisposable
     private static readonly DependencyPropertyKey OperationStatusPropertyKey = DependencyProperty.RegisterReadOnly(
         nameof(OperationStatus), typeof(string), typeof(YouTubeMiniPlayerListWindow), new PropertyMetadata(string.Empty));
     public static readonly DependencyProperty OperationStatusProperty = OperationStatusPropertyKey.DependencyProperty;
+    private static readonly DependencyPropertyKey CanRestorePreviousArrangementFromStatusPropertyKey = DependencyProperty.RegisterReadOnly(
+        nameof(CanRestorePreviousArrangementFromStatus), typeof(bool), typeof(YouTubeMiniPlayerListWindow), new PropertyMetadata(false));
+    public static readonly DependencyProperty CanRestorePreviousArrangementFromStatusProperty = CanRestorePreviousArrangementFromStatusPropertyKey.DependencyProperty;
     private static readonly DependencyPropertyKey InformationTextPropertyKey = DependencyProperty.RegisterReadOnly(
         nameof(InformationText), typeof(string), typeof(YouTubeMiniPlayerListWindow), new PropertyMetadata(string.Empty));
     public static readonly DependencyProperty InformationTextProperty = InformationTextPropertyKey.DependencyProperty;
@@ -86,6 +89,7 @@ internal partial class YouTubeMiniPlayerListWindow : Window, IDisposable
             HoverPreviewToggleRequested = null;
             _operationStatusShownAt = null;
             SetValue(OperationStatusPropertyKey, string.Empty);
+            SetValue(CanRestorePreviousArrangementFromStatusPropertyKey, false);
             _activePlayerTitle = string.Empty;
             SetValue(InformationTextPropertyKey, string.Empty);
             if (_source?.IsDisposed == false) _source.RemoveHook(WindowMessage);
@@ -105,6 +109,7 @@ internal partial class YouTubeMiniPlayerListWindow : Window, IDisposable
     internal bool IsManipulating { get; private set; }
     public bool IsCollapsed => (bool)GetValue(IsCollapsedProperty);
     public string OperationStatus => (string)GetValue(OperationStatusProperty);
+    public bool CanRestorePreviousArrangementFromStatus => (bool)GetValue(CanRestorePreviousArrangementFromStatusProperty);
     public string InformationText => (string)GetValue(InformationTextProperty);
     internal double MinimumContentHeight => IsCollapsed ? 48 : 180;
     internal FrameworkElement? InitialPlacementTarget { get; init; }
@@ -198,14 +203,17 @@ internal partial class YouTubeMiniPlayerListWindow : Window, IDisposable
         _initialRestoredDevicePosition = null;
     }
 
-    internal void ShowOperationStatus(string message)
+    internal void ShowOperationStatus(string message, bool offerRestorePreviousArrangement = false)
     {
         if (_disposed) return;
         // 同じ文言でも新しい通知なら期限を延長する。空の結果には期限を持たせない。
         _operationStatusShownAt = string.IsNullOrEmpty(message) ? null : _getTimestamp();
-        if (string.Equals(OperationStatus, message, StringComparison.Ordinal)) return;
+        offerRestorePreviousArrangement &= _operationStatusShownAt.HasValue;
+        if (string.Equals(OperationStatus, message, StringComparison.Ordinal)
+            && CanRestorePreviousArrangementFromStatus == offerRestorePreviousArrangement) return;
         SetValue(OperationStatusPropertyKey, message);
-        // 同じ表示文字列でも、操作結果とタイトルでは折り返し方が変わる。
+        SetValue(CanRestorePreviousArrangementFromStatusPropertyKey, offerRestorePreviousArrangement);
+        // 結果とタイトルでは折り返し方が異なり、ボタンの有無でも必要な高さが変わる。
         UpdateInformationText(forceFit: true);
     }
 
@@ -232,12 +240,13 @@ internal partial class YouTubeMiniPlayerListWindow : Window, IDisposable
     }
 
     internal static void PublishOperationStatus(string message, YouTubeMiniPlayerListWindow source,
-        IEnumerable<YouTubeMiniPlayerListWindow> lists)
+        IEnumerable<YouTubeMiniPlayerListWindow> lists, bool offerRestorePreviousArrangement = false)
     {
         if (source._disposed) return;
         // 通知元には非表示中も結果を残し、別ownerの結果は開いている一覧にも届ける。
-        foreach (var list in lists.Prepend(source).Distinct())
-            if (ReferenceEquals(list, source) || list.IsOpen) list.ShowOperationStatus(message);
+        source.ShowOperationStatus(message, offerRestorePreviousArrangement);
+        foreach (var list in lists.Distinct())
+            if (!ReferenceEquals(list, source) && list.IsOpen) list.ShowOperationStatus(message);
     }
 
     internal void FitToContentHeight()

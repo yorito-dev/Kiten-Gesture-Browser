@@ -6,6 +6,13 @@ public static class DownloadFailureClassifier
 {
     public static DownloadFailureInfo ClassifyWebView2(CoreWebView2DownloadInterruptReason reason)
     {
+        if (reason == CoreWebView2DownloadInterruptReason.FileMalicious)
+        {
+            return new DownloadFailureInfo(
+                "ウイルスが検出されたためダウンロードが中断されました",
+                "Windows セキュリティの警告を確認してください。");
+        }
+
         var name = reason.ToString();
         var normalized = Normalize(name);
 

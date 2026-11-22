@@ -178,10 +178,20 @@ public sealed class YouTubeMiniPlayerListPresentationTests
         Assert.Equal(Color.FromRgb(19, 37, 42), Assert.IsType<SolidColorBrush>(bar.Background).Color);
         Assert.Equal(System.Windows.Automation.AutomationLiveSetting.Polite, System.Windows.Automation.AutomationProperties.GetLiveSetting(text));
         if (width == 780) SaveSnapshot(content, "operation-result");
+        var undo = Descendants(bar).OfType<Button>().Single();
+        Assert.False(undo.IsVisible);
+        window.ShowOperationStatus("2件を整列しました", offerRestorePreviousArrangement: true);
+        await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        window.UpdateLayout();
+        Assert.True(undo.IsVisible);
+        Assert.Equal("直前に戻す", undo.Content);
+        Assert.True(text.TranslatePoint(new(text.ActualWidth, 0), bar).X <= undo.TranslatePoint(new(), bar).X);
+        Assert.True(undo.TranslatePoint(new(undo.ActualWidth, undo.ActualHeight), bar).X <= bar.ActualWidth);
         var message = "対象を選択してください。" + new string('あ', 180);
         window.ShowOperationStatus(message);
         await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         window.UpdateLayout();
+        Assert.False(undo.IsVisible);
         Assert.Equal(message, text.Text);
         var clip = Assert.IsType<Border>(text.Parent);
         Assert.InRange(clip.ActualHeight, 1, 32);
@@ -765,6 +775,47 @@ public sealed class YouTubeMiniPlayerListPresentationTests
     });
 
     [Fact]
+    public void ArrangementDestinationChoicesFitTheDarkMenuWithoutClipping() => RunInSta(() =>
+    {
+        var grid = LoadProductPart("YouTubeMiniPlayerArrangePopup", out _);
+        Layout(grid, 420);
+        var combo = Descendants(grid).OfType<ComboBox>().Single(element => element.Name == "YouTubeMiniPlayerArrangeAreaComboBox");
+        Assert.Equal(new[] { "ディスプレイ全体", "空きスペース", "指定した範囲" }, combo.Items.OfType<ComboBoxItem>().Select(item => item.Content));
+        Assert.Equal(0, combo.SelectedIndex);
+        Assert.True(((SolidColorBrush)combo.Background).Color.R < 80);
+        var button = Descendants(grid).OfType<Button>().Single(element => element.Name == "YouTubeMiniPlayerArrangeRegionButton");
+        Assert.False(button.IsEnabled);
+        Assert.Equal("範囲を指定", button.Content);
+        Assert.True(button.TranslatePoint(new(button.ActualWidth, 0), grid).X <= grid.ActualWidth);
+        Assert.True(combo.ActualWidth > 200);
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public void ArrangementFailureFitsBelowTheButtonsWithoutDisablingRetry() => RunInSta(() =>
+    {
+        var grid = LoadProductPart("YouTubeMiniPlayerArrangePopup", out _);
+        var panel = Descendants(grid).OfType<Border>().Single(element => element.Name == "YouTubeMiniPlayerArrangeFailurePanel");
+        var text = Assert.IsType<TextBlock>(panel.Child);
+        Assert.Equal(Visibility.Collapsed, panel.Visibility);
+        Layout(grid, 420);
+        var heightWithoutMessage = grid.DesiredSize.Height;
+        text.Text = "配置不可：横一列 3（下段）\n全件を配置できる空きスペースがありません。対象を減らすか範囲を指定してください";
+        panel.Visibility = Visibility.Visible;
+        Layout(grid, 420);
+
+        var button = Descendants(grid).OfType<Button>().Single(element => Equals(element.Content, "ランダム配置＋再生位置"));
+        Assert.True(button.IsEnabled);
+        Assert.True(panel.TranslatePoint(new(0, 0), grid).Y >= button.TranslatePoint(new(0, button.ActualHeight), grid).Y);
+        Assert.Equal(TextWrapping.Wrap, text.TextWrapping);
+        Assert.True(panel.ActualHeight > 38);
+        Assert.True(panel.TranslatePoint(new(panel.ActualWidth, panel.ActualHeight), grid).Y <= grid.ActualHeight);
+        Assert.InRange(grid.DesiredSize.Height - heightWithoutMessage, 38, 72);
+        Assert.True(((SolidColorBrush)panel.Background).Color.R < 80);
+        return Task.CompletedTask;
+    });
+
+    [Fact]
     public void SevenArrangementDiagramsLoadWithExistingCommandsAndDarkControls() => RunInSta(() =>
     {
         var grid = LoadProductPart("YouTubeMiniPlayerArrangePopup", out var document);
@@ -778,8 +829,40 @@ public sealed class YouTubeMiniPlayerListPresentationTests
         Assert.Equal("YouTubeMiniPlayerLinearPlacementPopupTrigger", (string?)commands.Single(element =>
             (string?)element.Attribute(X + "Name") == "YouTubeMiniPlayerArrangeHorizontalButton").Attribute("Tag"));
         Assert.All(Descendants(grid).OfType<Button>(), button => Assert.True(((SolidColorBrush)button.Background).Color.R < 80));
-        Assert.True(grid.DesiredSize.Height < 520);
         SaveSnapshot(grid, "arrangement");
+
+        var root = Assert.IsType<Border>(Assert.Single(grid.Children));
+        var preview = Assert.IsType<Border>(grid.FindName("YouTubeMiniPlayerArrangementPreviewBar"));
+        var previous = Assert.IsType<Button>(grid.FindName("YouTubeMiniPlayerRestorePreviousArrangementButton"));
+        var initial = Assert.IsType<Button>(grid.FindName("YouTubeMiniPlayerRestoreArrangementButton"));
+        root.MaxHeight = 320;
+        preview.Visibility = Visibility.Visible;
+        previous.Visibility = Visibility.Visible;
+        initial.Visibility = Visibility.Visible;
+        Layout(grid, 420);
+
+        var scroll = Assert.Single(Descendants(root).OfType<ScrollViewer>());
+        Assert.Equal(Visibility.Visible, scroll.ComputedVerticalScrollBarVisibility);
+        Assert.True(scroll.ScrollableHeight > 0);
+        Assert.InRange(root.ActualHeight, 1, root.MaxHeight);
+        var scrollBottom = scroll.TranslatePoint(new(0, scroll.ActualHeight), root).Y;
+        var previewButtons = Descendants(preview).OfType<Button>().ToArray();
+        Assert.Equal(4, previewButtons.Length);
+        Assert.All(previewButtons, button =>
+        {
+            Assert.Equal(Visibility.Visible, button.Visibility);
+            Assert.True(button.ActualHeight > 0);
+            Assert.InRange(button.TranslatePoint(new(), root).Y, scrollBottom, root.ActualHeight);
+            Assert.InRange(button.TranslatePoint(new(0, button.ActualHeight), root).Y, scrollBottom, root.ActualHeight);
+        });
+        Assert.Equal("直前の配置に戻す", previous.Content);
+        Assert.Equal("最初の整列前へ戻す", initial.Content);
+        var previousRight = previous.TranslatePoint(new(previous.ActualWidth, 0), root);
+        var initialLeft = initial.TranslatePoint(new(), root);
+        Assert.Equal(previousRight.Y, initialLeft.Y);
+        Assert.True(previousRight.X <= initialLeft.X);
+        Assert.InRange(initialLeft.Y, preview.TranslatePoint(new(0, preview.ActualHeight), root).Y, root.ActualHeight);
+        Assert.InRange(initial.TranslatePoint(new(0, initial.ActualHeight), root).Y, initialLeft.Y + 1, root.ActualHeight);
         return Task.CompletedTask;
     });
 

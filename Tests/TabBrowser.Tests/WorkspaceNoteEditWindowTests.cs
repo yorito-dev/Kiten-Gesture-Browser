@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using TabBrowser.Services;
 using TabBrowser.Views;
@@ -128,6 +129,105 @@ public sealed class WorkspaceNoteEditWindowTests
             finally
             {
                 window.Close();
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData("元の本文", false, false)]
+    [InlineData(" \r\n元の本文\r\n ", false, false)]
+    [InlineData("編集した本文", false, true)]
+    [InlineData("元の本文", true, true)]
+    public void ClosingOneNoteConfirmsOnlyUnsavedContentOrFontChanges(
+        string content, bool increaseFontSize, bool expectConfirmation)
+    {
+        RunInSta(() =>
+        {
+            var owner = CreateHiddenOwner();
+            var window = new WorkspaceNoteEditWindow("メモを編集", "元の本文")
+            {
+                Owner = owner,
+                Opacity = 0,
+                ShowActivated = false,
+                ShowInTaskbar = false
+            };
+            var closed = false;
+            window.Closed += (_, _) => closed = true;
+            try
+            {
+                window.Show();
+                var root = Assert.IsType<Grid>(window.Content);
+                Assert.Single(root.Children.OfType<TextBox>()).Text = content;
+                var buttons = Assert.Single(root.Children.OfType<DockPanel>());
+                if (increaseFontSize)
+                {
+                    var fontButtons = Assert.Single(buttons.Children.OfType<StackPanel>());
+                    Assert.Single(fontButtons.Children.OfType<Button>(), button => Equals(button.Content, "A＋"))
+                        .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+
+                Assert.Single(buttons.Children.OfType<Button>(), button => Equals(button.Content, "キャンセル"))
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                if (expectConfirmation)
+                {
+                    PumpUntil(() => window.IsCloseConfirmationVisible);
+                    var box = Assert.IsType<Border>(window.CloseConfirmationWindow!.Content);
+                    var scroll = Assert.IsType<ScrollViewer>(box.Child);
+                    var actions = Assert.IsType<StackPanel>(scroll.Content);
+                    var actionRow = actions.Children.OfType<Grid>().Last();
+                    var discard = Assert.Single(actionRow.Children.OfType<Button>(),
+                        button => Equals(button.Content, "保存せずに閉じる"));
+                    discard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+
+                PumpUntil(() => closed);
+                Assert.False(window.IsAccepted);
+                Assert.False(window.IsCloseConfirmationVisible);
+            }
+            finally
+            {
+                window.DiscardAndClose();
+                owner.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void SavingAndContinuingUpdatesBothBaselinesForClose()
+    {
+        RunInSta(() =>
+        {
+            var window = new WorkspaceNoteEditWindow("メモを編集", "元の本文")
+            {
+                Opacity = 0,
+                ShowActivated = false,
+                ShowInTaskbar = false
+            };
+            var closed = false;
+            window.Closed += (_, _) => closed = true;
+            try
+            {
+                window.Show();
+                var root = Assert.IsType<Grid>(window.Content);
+                Assert.Single(root.Children.OfType<TextBox>()).Text = " \n変更した本文\n ";
+                var buttons = Assert.Single(root.Children.OfType<DockPanel>());
+                var fontButtons = Assert.Single(buttons.Children.OfType<StackPanel>());
+                Assert.Single(fontButtons.Children.OfType<Button>(), button => Equals(button.Content, "A＋"))
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var savedFontSize = window.NoteFontSize;
+                window.UpdateWithoutClosingAsync = (content, fontSize) =>
+                    Task.FromResult(content == "変更した本文" && fontSize == savedFontSize);
+
+                Assert.True(window.TrySaveWithoutClosingAsync().GetAwaiter().GetResult());
+                Assert.True(window.IsLoaded);
+                window.Close();
+                PumpUntil(() => closed);
+                Assert.False(window.IsCloseConfirmationVisible);
+            }
+            finally
+            {
+                window.DiscardAndClose();
             }
         });
     }

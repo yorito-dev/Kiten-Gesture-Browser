@@ -1,62 +1,47 @@
-using System.Windows;
-
 namespace TabBrowser.Services;
 
-public sealed class LinkCopyService
+public sealed class LinkCopyService(ClipboardWriteService clipboardWriteService)
 {
-    public LinkCopyResult CopyText(string? text, string successMessage)
+    public async Task<LinkCopyResult> CopyTextAsync(string? text, string successMessage)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
             return LinkCopyResult.Failure("コピーするテキストがありません");
         }
 
-        try
-        {
-            Clipboard.SetText(text);
-            return LinkCopyResult.Success(successMessage);
-        }
-        catch (Exception ex)
-        {
-            return LinkCopyResult.Failure("コピーに失敗しました: " + ex.Message);
-        }
+        var result = await clipboardWriteService.SetTextAsync(text);
+        return result.IsSuccess
+            ? LinkCopyResult.Success(successMessage)
+            : LinkCopyResult.Failure("コピーに失敗しました");
     }
 
-    public LinkCopyResult Copy(LinkCopyTarget target, LinkCopyFormat format)
-    {
-        return Copy(target, format, GetSuccessMessage(format));
-    }
-
-    public LinkCopyResult Copy(LinkCopyTarget target, LinkCopyFormat format, string successMessage)
+    public Task<LinkCopyResult> CopyAsync(LinkCopyTarget target, LinkCopyFormat format, string? successMessage = null)
     {
         try
         {
-            var text = LinkFormatters.Format(target, format);
-            Clipboard.SetText(text);
-            return LinkCopyResult.Success(successMessage);
+            return CopyTextAsync(LinkFormatters.Format(target, format), successMessage ?? GetSuccessMessage(format));
         }
-        catch (Exception ex)
+        catch (ArgumentException)
         {
-            return LinkCopyResult.Failure("コピーに失敗しました: " + ex.Message);
+            return Task.FromResult(LinkCopyResult.Failure("コピーに失敗しました"));
         }
     }
 
-    public LinkCopyResult CopyAllTabsMarkdown(IEnumerable<TabExportItem> items)
+    public Task<LinkCopyResult> CopyAllTabsMarkdownAsync(IEnumerable<TabExportItem> items)
     {
         try
         {
             var exportItems = items.ToList();
             if (exportItems.Count == 0)
             {
-                return LinkCopyResult.Failure("コピーできるタブ URL がありません");
+                return Task.FromResult(LinkCopyResult.Failure("コピーできるタブ URL がありません"));
             }
 
-            Clipboard.SetText(LinkFormatters.FormatMarkdownList(exportItems));
-            return LinkCopyResult.Success("全タブの Markdown リストをコピーしました");
+            return CopyTextAsync(LinkFormatters.FormatMarkdownList(exportItems), "全タブの Markdown リストをコピーしました");
         }
-        catch (Exception ex)
+        catch (ArgumentException)
         {
-            return LinkCopyResult.Failure("コピーに失敗しました: " + ex.Message);
+            return Task.FromResult(LinkCopyResult.Failure("コピーに失敗しました"));
         }
     }
 

@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using TabBrowser.Models;
 using TabBrowser.Services;
 
@@ -230,7 +229,7 @@ internal sealed class TabReorderController : IDisposable
         var targetIndex = visibleTabs.Count > 0
             ? _tabs.IndexOf(visibleTabs[^1]) + 1
             : _tabs.Count;
-        var targetItem = FindVisualParent<ListBoxItem>(originalSource as DependencyObject);
+        var targetItem = VisualTreeTraversal.FindVisualParent<ListBoxItem>(originalSource as DependencyObject);
         if (targetItem is not null
             && !ReferenceEquals(ItemsControl.ItemsControlFromItemContainer(targetItem), tabList))
         {
@@ -526,16 +525,6 @@ internal sealed class TabReorderController : IDisposable
         _externalTabDropPreviewTrailingItem = null;
         _externalTabDropPreviewTrailingItemMargin = default;
         TabStripController.AnimateTabItemMarginTo(item, originalMargin, animate);
-    }
-
-    private static T? FindVisualParent<T>(DependencyObject? source) where T : DependencyObject
-    {
-        while (source is not null)
-        {
-            if (source is T target) return target;
-            source = VisualTreeHelper.GetParent(source);
-        }
-        return null;
     }
 
     public void Dispose()

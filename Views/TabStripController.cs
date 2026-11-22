@@ -166,6 +166,11 @@ internal sealed class TabStripController : IDisposable
 
     private bool TabMatchesVerticalSearch(BrowserTab tab)
     {
+        if (!_host.Settings.ShowTabSearch)
+        {
+            return true;
+        }
+
         var query = VerticalTabSearchBox.Text.Trim();
         return string.IsNullOrWhiteSpace(query)
             || tab.DisplayTitle.Contains(query, StringComparison.CurrentCultureIgnoreCase)

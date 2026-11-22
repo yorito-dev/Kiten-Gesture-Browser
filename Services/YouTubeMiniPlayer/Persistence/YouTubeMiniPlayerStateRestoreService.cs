@@ -161,7 +161,7 @@ internal static class YouTubeMiniPlayerStateRestoreService
             script,
             showStatus: false,
             _ => { });
-        runtime.IsInitialLivePlaybackResolved = !string.IsNullOrWhiteSpace(result);
+        runtime.Restoration.IsInitialLivePlaybackResolved = !string.IsNullOrWhiteSpace(result);
     }
 
     public static async Task<bool> RequestLayoutVerificationAsync(

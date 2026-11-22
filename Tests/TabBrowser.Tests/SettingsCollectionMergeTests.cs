@@ -106,10 +106,10 @@ public sealed class SettingsCollectionMergeTests
     {
         using var files = new Files(); var a = files.Load(); var b = files.Load();
         a.SearchAliases = [new() { Alias = "z", SearchUrlTemplate = "https://z.example/?q={0}" }, new() { Alias = "a", SearchUrlTemplate = "https://a.example/?q={0}" }];
-        b.EnableLinkHoverPreview = false;
+        b.EnableLinkHoverPreview = true;
         files.Save(a); files.Save(b);
         Assert.Equal(new[] { "z", "a" }, files.Load().SearchAliases.Select(x => x.Alias));
-        Assert.False(files.Load().EnableLinkHoverPreview);
+        Assert.True(files.Load().EnableLinkHoverPreview);
     }
 
     private static string Folder(string id) => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Kiten-merge-" + id);

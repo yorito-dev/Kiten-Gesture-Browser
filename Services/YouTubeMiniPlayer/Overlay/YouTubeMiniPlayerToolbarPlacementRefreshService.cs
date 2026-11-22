@@ -26,8 +26,7 @@ internal static class YouTubeMiniPlayerToolbarPlacementRefreshService
             return;
         }
 
-        var placementGeneration = runtime.OverlayPlacementGeneration;
-        var requestGeneration = ++runtime.ToolbarPlacementRequestGeneration;
+        var (placementGeneration, requestGeneration) = runtime.Overlay.BeginToolbarPlacementRequest();
         await ApplyCurrentAsync(
             () => resolvePlacementAsync(
                 core,
@@ -38,8 +37,7 @@ internal static class YouTubeMiniPlayerToolbarPlacementRefreshService
             () => runtimes.TryGetValue(runtime.State.Id, out var latest)
                 && ReferenceEquals(latest, runtime)
                 && runtime.ToolbarPopup.IsOpen
-                && runtime.OverlayPlacementGeneration == placementGeneration
-                && runtime.ToolbarPlacementRequestGeneration == requestGeneration,
+                && runtime.Overlay.IsCurrentToolbarPlacementRequest(placementGeneration, requestGeneration),
             (horizontal, vertical) => setToolbarPlacement(runtime, horizontal, vertical));
     }
 

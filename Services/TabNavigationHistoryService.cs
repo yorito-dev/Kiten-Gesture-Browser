@@ -144,8 +144,6 @@ internal sealed class TabNavigationHistoryService(Func<string?, bool> isPersista
         targetUrl = tab.NavigationHistory[targetIndex];
         tab.PendingSavedNavigationHistoryIndex = targetIndex;
         tab.PreferSavedNavigationHistory = true;
-        tab.NavigationHistoryIndex = targetIndex;
-        tab.Url = targetUrl;
         return true;
     }
 

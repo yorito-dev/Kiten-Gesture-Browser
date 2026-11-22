@@ -16,10 +16,14 @@ public sealed class WorkspaceNoteEditWindow : Window
     private readonly TextBlock _statusText;
     private readonly Border _closeConfirmation;
     private Window? _closeConfirmationWindow;
+    private readonly TextBlock _closeConfirmationMessage;
+    private readonly TextBlock _closeConfirmationDetail;
+    private readonly TextBlock _closeConfirmationHint;
     private readonly TextBlock _closeConfirmationStatus;
     private readonly Button _confirmSaveButton;
     private readonly Button _discardAllButton;
     private bool _isRequestingCloseAll;
+    private bool _confirmingCloseAll;
     private readonly Button _saveAndCloseButton;
     private readonly Button _updateButton;
     private readonly Button _saveAsNewButton;
@@ -27,9 +31,11 @@ public sealed class WorkspaceNoteEditWindow : Window
     private readonly Button _decreaseFontSizeButton;
     private readonly Button _increaseFontSizeButton;
     private double _noteFontSize;
+    private string _savedContent;
+    private double _savedFontSize;
     private Func<string, double, Task<bool>>? _updateWithoutClosingAsync;
     private bool _isSaving;
-    private bool _allowCloseAfterSave;
+    private bool _allowConfirmedClose;
     private bool _hasBeenShown;
 
     public WorkspaceNoteEditWindow(
@@ -62,6 +68,8 @@ public sealed class WorkspaceNoteEditWindow : Window
         Content = root;
 
         _contentBox = CreateTextBox(initialContent);
+        _savedContent = _contentBox.Text.Trim();
+        _savedFontSize = _noteFontSize;
         _contentBox.AcceptsReturn = true;
         _contentBox.AcceptsTab = true;
         _contentBox.FontSize = _noteFontSize;
@@ -89,30 +97,30 @@ public sealed class WorkspaceNoteEditWindow : Window
         Grid.SetColumn(messageText, 1);
         message.Children.Add(messageText);
         closeActions.Children.Add(message);
-        messageText.Children.Add(new TextBlock
+        _closeConfirmationMessage = new TextBlock
         {
-            Text = "終了する前に、メモを確認してください。",
             Foreground = CreateBrush(243, 244, 246),
             FontSize = 22,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap
-        });
-        messageText.Children.Add(new TextBlock
+        };
+        messageText.Children.Add(_closeConfirmationMessage);
+        _closeConfirmationDetail = new TextBlock
         {
-            Text = "保存せずに終了すると、すべてのメモの未保存変更が失われます。\n保存済みの内容は残ります。",
             Foreground = CreateBrush(209, 213, 219),
             FontSize = 16,
             LineHeight = 26,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 22, 0, 16)
-        });
-        messageText.Children.Add(new TextBlock
+        };
+        messageText.Children.Add(_closeConfirmationDetail);
+        _closeConfirmationHint = new TextBlock
         {
-            Text = "保存する場合は、このメモを閉じた後にもう一度終了してください。",
             Foreground = CreateBrush(160, 166, 177),
             FontSize = 14,
             TextWrapping = TextWrapping.Wrap
-        });
+        };
+        messageText.Children.Add(_closeConfirmationHint);
         var actionRow = new Grid();
         actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         actionRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.35, GridUnitType.Star) });
@@ -121,7 +129,6 @@ public sealed class WorkspaceNoteEditWindow : Window
         _confirmSaveButton = CreateButton("このメモを保存して閉じる");
         _confirmSaveButton.Background = CreateBrush(30, 100, 133);
         _confirmSaveButton.BorderBrush = CreateBrush(82, 160, 190);
-        _confirmSaveButton.ToolTip = "このメモを保存します。全ウィンドウの終了は、もう一度操作してください。";
         _confirmSaveButton.Click += async (_, _) =>
         {
             if (IsTargetMissing) await TrySaveAsNewAsync();
@@ -133,7 +140,11 @@ public sealed class WorkspaceNoteEditWindow : Window
         _discardAllButton.Background = CreateBrush(20, 22, 26);
         _discardAllButton.BorderBrush = CreateBrush(244, 193, 94);
         _discardAllButton.Foreground = CreateBrush(244, 193, 94);
-        _discardAllButton.Click += async (_, _) => await RequestCloseAllWithoutSavingAsync();
+        _discardAllButton.Click += async (_, _) =>
+        {
+            if (_confirmingCloseAll) await RequestCloseAllWithoutSavingAsync();
+            else DiscardAndClose();
+        };
         Grid.SetColumn(_discardAllButton, 2);
         actionRow.Children.Add(_discardAllButton);
         var continueEditing = CreateButton("編集に戻る");
@@ -387,10 +398,24 @@ public sealed class WorkspaceNoteEditWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (_isSaving && !_allowCloseAfterSave)
+        if (_isSaving && !_allowConfirmedClose)
         {
             e.Cancel = true;
             ShowStatus("保存中は閉じられません", isError: false);
+            base.OnClosing(e);
+            return;
+        }
+
+        if (!_allowConfirmedClose && RequiresCloseConfirmation && HasUnsavedChanges)
+        {
+            e.Cancel = true;
+            // Closingを抜けてから、所有Windowとして確認画面を表示する。
+            _ = Dispatcher.InvokeAsync(() =>
+            {
+                if (!IsLoaded) return;
+                if (_closeConfirmationWindow is { } confirmation) confirmation.Activate();
+                else ShowCloseConfirmation(closeAll: false);
+            });
             base.OnClosing(e);
             return;
         }
@@ -445,6 +470,10 @@ public sealed class WorkspaceNoteEditWindow : Window
     // 非表示にした編集Windowも保護し、一度も表示されていない未使用Windowは区別する。
     internal bool RequiresCloseConfirmation => _hasBeenShown || IsVisible || IsSaving;
 
+    private bool HasUnsavedChanges
+        => !string.Equals(_contentBox.Text.Trim(), _savedContent, StringComparison.Ordinal)
+            || _noteFontSize != _savedFontSize;
+
     internal bool IsEditorReadOnly => _contentBox.IsReadOnly;
 
     internal string EditorContent => _contentBox.Text;
@@ -484,12 +513,37 @@ public sealed class WorkspaceNoteEditWindow : Window
         _closeConfirmationWindow?.Close();
     }
 
-    internal void ShowRequiredCloseAction()
+    internal void DiscardAndClose()
     {
+        if (_isSaving) return;
+        _allowConfirmedClose = true;
+        try { Close(); }
+        finally { _allowConfirmedClose = false; }
+    }
+
+    internal void ShowRequiredCloseAction() => ShowCloseConfirmation(closeAll: true);
+
+    private void ShowCloseConfirmation(bool closeAll)
+    {
+        _confirmingCloseAll = closeAll;
         _closeConfirmation.Visibility = Visibility.Visible;
-        _discardAllButton.Visibility = CloseAllWithoutSavingAsync is null ? Visibility.Collapsed : Visibility.Visible;
+        _closeConfirmationMessage.Text = closeAll
+            ? "終了する前に、メモを確認してください。"
+            : "閉じる前に、メモの変更を確認してください。";
+        _closeConfirmationDetail.Text = closeAll
+            ? "保存せずに終了すると、すべてのメモの未保存変更が失われます。\n保存済みの内容は残ります。"
+            : "保存せずに閉じると、このメモの未保存変更が失われます。";
+        _closeConfirmationHint.Text = closeAll
+            ? "保存する場合は、このメモを閉じた後にもう一度終了してください。"
+            : string.Empty;
+        _closeConfirmationHint.Visibility = closeAll ? Visibility.Visible : Visibility.Collapsed;
+        _discardAllButton.Content = closeAll ? "保存せずにすべて閉じる" : "保存せずに閉じる";
+        _discardAllButton.Visibility = closeAll && CloseAllWithoutSavingAsync is null ? Visibility.Collapsed : Visibility.Visible;
         _confirmSaveButton.Content = IsTargetMissing ? "新しいメモとして保存して閉じる" : "このメモを保存して閉じる";
-        if (_statusText.Visibility != Visibility.Visible)
+        _confirmSaveButton.ToolTip = closeAll
+            ? "このメモを保存します。全ウィンドウの終了は、もう一度操作してください。"
+            : "このメモを保存して閉じます。";
+        if (closeAll && _statusText.Visibility != Visibility.Visible)
             ShowStatus("全Windowを閉じるには、このメモを保存して閉じるかキャンセルしてください", isError: false);
         if (!IsVisible)
             Show();
@@ -551,6 +605,7 @@ public sealed class WorkspaceNoteEditWindow : Window
             return false;
         }
 
+        var fontSize = NoteFontSize;
         _isSaving = true;
         SetEditorEnabled(enabled: false);
         ShowStatus("保存中です", isError: false);
@@ -559,7 +614,7 @@ public sealed class WorkspaceNoteEditWindow : Window
             bool saved;
             try
             {
-                saved = await saveAsync(content, NoteFontSize);
+                saved = await saveAsync(content, fontSize);
             }
             catch (Exception ex)
             {
@@ -585,10 +640,12 @@ public sealed class WorkspaceNoteEditWindow : Window
             }
 
             NoteContent = content;
+            _savedContent = content;
+            _savedFontSize = fontSize;
             if (closeAfterSuccess)
             {
                 IsAccepted = true;
-                _allowCloseAfterSave = true;
+                _allowConfirmedClose = true;
                 Close();
                 return true;
             }
@@ -599,7 +656,7 @@ public sealed class WorkspaceNoteEditWindow : Window
         }
         finally
         {
-            _allowCloseAfterSave = false;
+            _allowConfirmedClose = false;
             _isSaving = false;
             if (IsLoaded)
             {

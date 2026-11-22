@@ -90,7 +90,7 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
         {
             if (message == WmDpiChanged)
             {
-                runtime.OverlayPlacementGeneration++;
+                runtime.Overlay.InvalidatePlacement();
                 // WPF/WebView2が新しいDPIを受け取った後で下限を再計算する。
                 window.Dispatcher.BeginInvoke((Action)(() => YouTubeMiniPlayerLayoutService.ApplyMinimumSize(runtime)),
                     System.Windows.Threading.DispatcherPriority.Render);
@@ -164,14 +164,14 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
 
         runtime.TaskbarWindow.LocationChanged += (_, _) =>
         {
-            runtime.OverlayPlacementGeneration++;
+            runtime.Overlay.InvalidatePlacement();
             SyncStateFromWindow(state, runtime, callbacks);
             callbacks.QueueOverlayPositionRefresh(runtime);
         };
 
         runtime.TaskbarWindow.SizeChanged += (_, _) =>
         {
-            runtime.OverlayPlacementGeneration++;
+            runtime.Overlay.InvalidatePlacement();
             SyncStateFromWindow(state, runtime, callbacks);
             callbacks.QueueOverlayPositionRefresh(runtime);
         };
@@ -430,13 +430,13 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
         };
         toolbarParts.AbRepeatButton.ContextMenu!.Opened += (_, _) =>
         {
-            runtime.IsToolbarMenuOpen = true;
+            runtime.Overlay.IsToolbarMenuOpen = true;
             YouTubeMiniPlayerChromeFactory.UpdateAbRepeatControls(toolbarParts, state);
             callbacks.SetToolbarVisibility(state, true);
         };
         toolbarParts.AbRepeatButton.ContextMenu.Closed += (_, _) =>
         {
-            runtime.IsToolbarMenuOpen = false;
+            runtime.Overlay.IsToolbarMenuOpen = false;
             callbacks.SetToolbarVisibility(state, false);
         };
         toolbarParts.AbRepeatSetStartMenuItem.Click += async (_, _) =>

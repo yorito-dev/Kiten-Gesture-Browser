@@ -129,7 +129,7 @@ internal sealed class SplitViewDisplayController(
             detail: $"orientation={normalizedOrientation}");
         host.CloseBookmarkPreview();
         host.SelectTab(leftTab);
-        host.SetAddressText(leftTab.Url ?? string.Empty);
+        host.SetAddressText(host.IsNewTabUrl(leftTab.AddressUrl) ? string.Empty : leftTab.AddressUrl ?? string.Empty);
         host.SetLastActiveBrowserTabId(leftTab.Id);
 
         if (!await EnsureTabsLoadedAsync(cancellationToken))
@@ -216,6 +216,7 @@ internal sealed class SplitViewDisplayController(
         }
 
         EnsureHostVisibleForPreparation();
+        host.ResumeInactiveYouTubeTabForDisplay(tab);
         var paneHost = pane == SplitViewPane.Right
             ? elements.RightPaneHost
             : elements.LeftPaneHost;
@@ -371,7 +372,7 @@ internal sealed class SplitViewDisplayController(
 
         host.SelectTab(tabToShow);
         host.ShowSingleTabContent(tabToShow);
-        host.SetAddressText(host.IsNewTabUrl(tabToShow.Url) ? string.Empty : tabToShow.Url ?? string.Empty);
+        host.SetAddressText(host.IsNewTabUrl(tabToShow.AddressUrl) ? string.Empty : tabToShow.AddressUrl ?? string.Empty);
         host.UpdateToolbarState();
         host.SetStatus("分割表示を解除しました", autoClear: true);
     }
@@ -479,7 +480,7 @@ internal sealed class SplitViewDisplayController(
         host.SelectTab(tab);
         host.SetDisplayedTab(tab);
         host.SetLastActiveBrowserTabId(tab.Id);
-        host.SetAddressText(host.IsNewTabUrl(tab.Url) ? string.Empty : tab.Url ?? string.Empty);
+        host.SetAddressText(host.IsNewTabUrl(tab.AddressUrl) ? string.Empty : tab.AddressUrl ?? string.Empty);
         UpdateActivePaneVisuals();
         host.UpdateToolbarState();
         host.FocusFolderTabShortcutScope(tab);
@@ -528,7 +529,7 @@ internal sealed class SplitViewDisplayController(
         if (splitViewService.GetActiveTab(host.Tabs) is { } activeTab)
         {
             host.SelectTab(activeTab);
-            host.SetAddressText(host.IsNewTabUrl(activeTab.Url) ? string.Empty : activeTab.Url ?? string.Empty);
+            host.SetAddressText(host.IsNewTabUrl(activeTab.AddressUrl) ? string.Empty : activeTab.AddressUrl ?? string.Empty);
         }
 
         host.PersistSplitViewState();

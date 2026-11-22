@@ -18,9 +18,12 @@ public sealed class MiniPlayerListPublicContractTests
         var start = code.IndexOf("private void YouTubeMiniPlayerArrangement_KeyDown(", StringComparison.Ordinal);
         var handler = code[start..code.IndexOf("private void YouTubeMiniPlayerOpenLocalVideoButton_Click", start, StringComparison.Ordinal)];
         var cancel = handler.IndexOf("CancelFloatingMediaArrangementPreview(showStatus: true)", StringComparison.Ordinal);
+        var areaDropdown = handler.IndexOf("YouTubeMiniPlayerArrangeAreaComboBox.IsDropDownOpen", StringComparison.Ordinal);
         var close = handler.IndexOf("YouTubeMiniPlayerArrangePopup.IsOpen = false;", StringComparison.Ordinal);
         Assert.Contains("if (e.Key != Key.Escape) return;", handler);
         Assert.True(cancel >= 0 && close > cancel);
+        Assert.True(areaDropdown >= 0 && areaDropdown < cancel);
+        Assert.Contains("YouTubeMiniPlayerArrangeAreaComboBox.IsDropDownOpen = false;", handler);
         Assert.Contains("e.Handled = true;\n            return;", handler.Replace("\r\n", "\n"));
         Assert.Contains("if (!YouTubeMiniPlayerArrangePopup.IsOpen) return;", handler);
         Assert.Contains("YouTubeMiniPlayerArrangeMenuButton.Focus();", handler);

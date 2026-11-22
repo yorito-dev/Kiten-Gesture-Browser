@@ -4,8 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using TabBrowser.Models;
 using TabBrowser.Models.QuickLook;
@@ -240,7 +240,7 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal bool IsCommandPalettePanelHit(MouseButtonEventArgs e)
     {
         if (_disposed) return false;
-        if (FindVisualParent<QuickLookHost>(e.OriginalSource as DependencyObject) is not null)
+        if (VisualTreeTraversal.FindVisualParent<QuickLookHost>(e.OriginalSource as DependencyObject) is not null)
         {
             return true;
         }
@@ -460,12 +460,12 @@ internal sealed class CommandPaletteViewController : IDisposable
     internal void CommandPaletteList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (_disposed) return;
-        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
+        if (VisualTreeTraversal.FindVisualParent<Button>(e.OriginalSource as DependencyObject) is not null)
         {
             return;
         }
 
-        if (FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject) is not { DataContext: CommandPaletteItem item })
+        if (VisualTreeTraversal.FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject) is not { DataContext: CommandPaletteItem item })
         {
             return;
         }
@@ -808,21 +808,5 @@ internal sealed class CommandPaletteViewController : IDisposable
         _commandPaletteQuickLookSource = null;
         CommandPaletteList.ItemsSource = null;
         _commandPaletteItems.Clear();
-    }
-
-    private static T? FindVisualParent<T>(DependencyObject? source)
-        where T : DependencyObject
-    {
-        while (source is not null)
-        {
-            if (source is T target)
-            {
-                return target;
-            }
-
-            source = VisualTreeHelper.GetParent(source);
-        }
-
-        return null;
     }
 }

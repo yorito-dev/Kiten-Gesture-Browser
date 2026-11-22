@@ -22,7 +22,7 @@ public partial class BrowsingHistoryWindow : Window
     private Func<Task<int>>? _pendingDelete;
     private int _offset;
     private bool _hasMore;
-    private bool _isLoading;
+    private bool _isClosed;
 
     public BrowsingHistoryWindow(
         BrowsingHistoryService historyService,
@@ -71,10 +71,12 @@ public partial class BrowsingHistoryWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _isClosed = true;
         _searchTimer.Stop();
         _searchTimer.Tick -= SearchTimer_Tick;
-        _loadCancellation?.Cancel();
-        _loadCancellation?.Dispose();
+        var pending = _loadCancellation;
+        _loadCancellation = null;
+        pending?.Cancel();
         base.OnClosed(e);
     }
 
@@ -115,18 +117,19 @@ public partial class BrowsingHistoryWindow : Window
 
     private async Task LoadAsync(bool reset)
     {
-        if (_isLoading || !reset && !_hasMore)
+        if (_isClosed || !reset && (_loadCancellation is not null || !_hasMore))
         {
             return;
         }
 
-        _loadCancellation?.Cancel();
-        _loadCancellation?.Dispose();
-        _loadCancellation = new CancellationTokenSource();
-        var cancellationToken = _loadCancellation.Token;
-        _isLoading = true;
+        var previous = _loadCancellation;
+        using var request = new CancellationTokenSource();
+        _loadCancellation = request;
+        previous?.Cancel();
+        var cancellationToken = request.Token;
         LoadingText.Visibility = Visibility.Visible;
         EmptyText.Visibility = Visibility.Collapsed;
+        LoadMoreButton.IsEnabled = false;
         StatusText.Text = string.Empty;
 
         try
@@ -134,6 +137,7 @@ public partial class BrowsingHistoryWindow : Window
             if (reset)
             {
                 _offset = 0;
+                _hasMore = false;
                 _loadedItems.Clear();
             }
 
@@ -164,15 +168,21 @@ public partial class BrowsingHistoryWindow : Window
         }
         catch (Exception ex)
         {
-            StatusText.Text = "履歴を読み込めません: " + ex.Message;
+            if (ReferenceEquals(_loadCancellation, request))
+            {
+                StatusText.Text = "履歴を読み込めません: " + ex.Message;
+            }
         }
         finally
         {
-            _isLoading = false;
-            LoadingText.Visibility = Visibility.Collapsed;
-            EmptyText.Visibility = _loadedItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            LoadMoreButton.IsEnabled = _hasMore;
-            UpdateSelectionButtons();
+            if (ReferenceEquals(_loadCancellation, request))
+            {
+                _loadCancellation = null;
+                LoadingText.Visibility = Visibility.Collapsed;
+                EmptyText.Visibility = _loadedItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                LoadMoreButton.IsEnabled = _hasMore;
+                UpdateSelectionButtons();
+            }
         }
     }
 

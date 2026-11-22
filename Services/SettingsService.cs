@@ -34,13 +34,14 @@ public sealed class SettingsService
     private static readonly ConcurrentDictionary<string, object> SaveGates = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConditionalWeakTable<AppSettings, SettingsBaseline> Baselines = new();
 
-    private sealed class SettingsBaseline(string path, JsonObject? value)
+    private sealed class SettingsBaseline(string path, JsonObject? value, bool canConfirmPersisted = false)
     {
         public string Path { get; } = path;
         public JsonObject? Value { get; set; } = value;
         public long Captured { get; set; }
         public long Saved { get; set; }
         public long AppliedMutationVersion { get; set; }
+        public bool CanConfirmPersisted { get; set; } = canConfirmPersisted;
     }
 
     private sealed record CapturedMutation(long Version, JsonNode? Value);
@@ -104,7 +105,7 @@ public sealed class SettingsService
         CopyAutomaticRemovals(mergedTruncations, result);
         CopyMutations(after, result, beforeVersion);
         var baseline = Baselines.GetValue(latest, _ => throw new InvalidOperationException());
-        Baselines.Add(result, new SettingsBaseline(baseline.Path, baseline.Value));
+        Baselines.Add(result, new SettingsBaseline(baseline.Path, baseline.Value, baseline.CanConfirmPersisted));
         return result;
     }
 
@@ -125,15 +126,16 @@ public sealed class SettingsService
         var path = Path.GetFullPath(_settingsFile);
         lock (SaveGates.GetOrAdd(path, static _ => new object()))
         {
-            var settings = LoadCore();
-            Baselines.Add(settings, new SettingsBaseline(path, ToNode(settings)));
+            var settings = LoadCore(out var canConfirmPersisted);
+            Baselines.Add(settings, new SettingsBaseline(path, ToNode(settings), canConfirmPersisted));
             return settings;
         }
     }
 
-    private AppSettings LoadCore()
+    private AppSettings LoadCore(out bool canConfirmPersisted)
     {
         EnsureStorage();
+        canConfirmPersisted = true;
         var primaryExists = true;
         try
         {
@@ -149,12 +151,14 @@ public sealed class SettingsService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // 暫定表示に使っても主ファイルは変更しない。保存時に必ず再読込する。
+            canConfirmPersisted = false;
             return TryLoadBackup() ?? new AppSettings();
         }
 
         var backupSettings = TryLoadBackup();
         if (backupSettings is not null)
         {
+            canConfirmPersisted = false;
             TryRepairPrimaryFromBackup(backupSettings, primaryExists);
             return backupSettings;
         }
@@ -164,7 +168,30 @@ public sealed class SettingsService
             SaveToFile(_settingsFile, defaults, _settingsBackupFile);
             return defaults;
         }
+        canConfirmPersisted = false;
         return LoadRecoveredSettings(_settingsFile);
+    }
+
+    internal static bool CanConfirmPersistedState(AppSettings settings)
+    {
+        if (!Baselines.TryGetValue(settings, out var baseline)
+            || !SaveGates.TryGetValue(baseline.Path, out var gate)
+            || !Monitor.TryEnter(gate))
+        {
+            return false;
+        }
+
+        try
+        {
+            return baseline.CanConfirmPersisted
+                && baseline.Captured == baseline.Saved
+                && LatestMutationVersion(settings) <= baseline.AppliedMutationVersion
+                && JsonNode.DeepEquals(baseline.Value, ToNode(settings));
+        }
+        finally
+        {
+            Monitor.Exit(gate);
+        }
     }
 
     public static Task SaveAsync(AppSettings settings)
@@ -225,6 +252,7 @@ public sealed class SettingsService
                 // Window側の実行状態は書き換えず、このWindowが保存した差分の基点だけ進める。
                 baseline.Value = snapshot;
                 baseline.Saved = sequence;
+                baseline.CanConfirmPersisted = true;
                 baseline.AppliedMutationVersion = Math.Max(baseline.AppliedMutationVersion,
                     mutations.Values.SelectMany(edits => edits.Values).Select(edit => edit.Version).DefaultIfEmpty().Max());
                 // この捕捉が使った一覧だけを確定する。後から作った一覧や失敗した保存には触れない。
@@ -1050,19 +1078,10 @@ public sealed class SettingsService
         try
         {
             var root = Path.GetDirectoryName(settingsFile) ?? AppPaths.Root;
-
             var directory = Path.Combine(root, "diagnostics");
             var logPath = Path.Combine(directory, "settings-recovery.log");
-
             Directory.CreateDirectory(directory);
-            var line = string.Join(
-                " | ",
-                DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz"),
-                "runner=settings",
-                "operation=settings-recovered",
-                "exit=0",
-                "timeout=False",
-                "stderr=" + outcome);
+            var line = DiagnosticLogWriter.BuildLine(["runner=settings", "operation=" + outcome]);
             File.AppendAllText(logPath, line + Environment.NewLine);
         }
         catch

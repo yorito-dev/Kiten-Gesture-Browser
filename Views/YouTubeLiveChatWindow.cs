@@ -34,6 +34,8 @@ internal sealed class YouTubeLiveChatWindow : Window
     private readonly Func<Rect> _getSourceWindowBounds;
     private readonly Func<Task<YouTubeMiniPlayerPlaybackStateSnapshot?>> _getSourcePlaybackStateAsync;
     private readonly Action _queueSave;
+    private readonly Action<Uri> _openLinkInTab;
+    private readonly Action<string> _setStatus;
     private readonly Grid _contentHost = new();
     private readonly Border _statusOverlay;
     private readonly TextBlock _statusText;
@@ -83,7 +85,9 @@ internal sealed class YouTubeLiveChatWindow : Window
         ImageSource? icon,
         Func<Rect> getSourceWindowBounds,
         Func<Task<YouTubeMiniPlayerPlaybackStateSnapshot?>> getSourcePlaybackStateAsync,
-        Action queueSave)
+        Action queueSave,
+        Action<Uri> openLinkInTab,
+        Action<string> setStatus)
     {
         _state = state;
         _environment = environment;
@@ -98,6 +102,8 @@ internal sealed class YouTubeLiveChatWindow : Window
         _getSourceWindowBounds = getSourceWindowBounds;
         _getSourcePlaybackStateAsync = getSourcePlaybackStateAsync;
         _queueSave = queueSave;
+        _openLinkInTab = openLinkInTab;
+        _setStatus = setStatus;
         _isDockAttached = state.IsLiveChatWindowDocked;
 
         Title = YouTubeMiniPlayerNavigationService.NormalizeTitle(state.Title, state.Url)
@@ -591,10 +597,14 @@ internal sealed class YouTubeLiveChatWindow : Window
         }
     }
 
+    internal const double DefaultDockGap = 8;
+    internal double DockGap { get; private set; } = DefaultDockGap;
+
     public void ApplyArrangement(
         Rect bounds,
         bool isDocked,
-        YouTubeLiveChatDockSide side)
+        YouTubeLiveChatDockSide side,
+        bool removeSpacing = false)
     {
         if (_isClosed)
         {
@@ -606,6 +616,7 @@ internal sealed class YouTubeLiveChatWindow : Window
         {
             _state.IsLiveChatWindowDocked = isDocked;
             _state.LiveChatWindowDockSide = side;
+            DockGap = removeSpacing ? 0 : DefaultDockGap;
             _isDockAttached = isDocked;
             Width = Math.Max(YouTubeLiveChatWindowState.MinimumWidth, bounds.Width);
             Height = Math.Max(YouTubeLiveChatWindowState.MinimumHeight, bounds.Height);
@@ -1034,6 +1045,14 @@ internal sealed class YouTubeLiveChatWindow : Window
             }
 
             _core = core;
+            void OpenLinkInCurrentOwner(Uri uri)
+            {
+                if (IsCurrentLoad(generation, webView, expectedVideoId)) _openLinkInTab(uri);
+            }
+
+            YouTubeMiniPlayerWebViewService.AttachCoreEventPolicy(core, OpenLinkInCurrentOwner, _setStatus);
+            webView.NavigationStarting += (_, args) =>
+                YouTubeMiniPlayerWebViewService.ApplyTopLevelNavigationPolicy(core, args, OpenLinkInCurrentOwner);
             _processFailedHandler = (_, _) => Dispatcher.BeginInvoke((Action)(() =>
             {
                 if (IsCurrentLoad(generation, webView, expectedVideoId))
@@ -1044,7 +1063,9 @@ internal sealed class YouTubeLiveChatWindow : Window
             }));
             _navigationCompletedHandler = (_, args) =>
             {
-                if (!IsCurrentLoad(generation, webView, expectedVideoId))
+                var wasBlocked = YouTubeMiniPlayerWebViewService.TakeBlockedNavigationCompletion(core, args.NavigationId);
+                if (!IsCurrentLoad(generation, webView, expectedVideoId)
+                    || (wasBlocked && webView.Visibility == Visibility.Visible))
                 {
                     return;
                 }
@@ -1565,16 +1586,15 @@ internal sealed class YouTubeLiveChatWindow : Window
         return preferred;
     }
 
-    private static Rect CreateDockedBoundsForSide(
+    private Rect CreateDockedBoundsForSide(
         YouTubeLiveChatDockSide side,
         double width,
         double height,
         Rect sourceBounds)
     {
-        const double gap = 8;
         var left = side == YouTubeLiveChatDockSide.Right
-            ? sourceBounds.Right + gap
-            : sourceBounds.Left - width - gap;
+            ? sourceBounds.Right + DockGap
+            : sourceBounds.Left - width - DockGap;
         return new Rect(left, sourceBounds.Top, width, height);
     }
 

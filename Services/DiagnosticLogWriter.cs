@@ -18,6 +18,27 @@ internal sealed class DiagnosticLogWriter(Func<string> getDirectory, Func<string
         return string.Join(" | ", normalizedFields);
     }
 
+    public static string SummarizeDiagnosticUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        var suffix = url.IndexOfAny(['?', '#']);
+        var address = suffix < 0 ? url : url[..suffix];
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri)
+            || uri.Scheme is "tabbrowser" or "about")
+        {
+            return address;
+        }
+
+        var path = uri.AbsolutePath;
+        return string.IsNullOrWhiteSpace(path) || path == "/"
+            ? $"{uri.Scheme}://{uri.Host}"
+            : $"{uri.Scheme}://{uri.Host}{path}";
+    }
+
     public void AppendLines(IReadOnlyList<string> lines)
     {
         if (lines.Count == 0)

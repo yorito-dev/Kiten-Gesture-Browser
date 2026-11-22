@@ -303,59 +303,16 @@ internal sealed class UrlThumbnailCaptureController
 
     private async Task EnsurePreviewCoreAsync(WebView2 webView, CoreWebView2Environment environment)
     {
-        var options = environment.CreateCoreWebView2ControllerOptions();
-        options.ProfileName = _previewProfileName;
-        options.IsInPrivateModeEnabled = true;
+        var options = WebViewLifecycleService.CreatePrivatePreviewOptions(environment, _previewProfileName);
         await webView.EnsureCoreWebView2Async(environment, options);
         var profile = webView.CoreWebView2.Profile;
-        if (!profile.IsInPrivateModeEnabled
-            || !string.Equals(profile.ProfileName, _previewProfileName, StringComparison.Ordinal))
+        if (!WebViewLifecycleService.IsPrivatePreviewProfile(profile.IsInPrivateModeEnabled, profile.ProfileName, _previewProfileName))
         {
             // 未対応Runtimeや初期化設定の不一致で通常プロファイルへ退行した場合は遷移しない。
             throw new InvalidOperationException("サムネイルの分離プロファイルを確認できません。");
         }
-        AttachRestrictions(webView.CoreWebView2);
+        WebViewLifecycleService.UpdatePrivatePreviewRestrictions(ref _restrictedCore, webView.CoreWebView2);
     }
-
-    private void AttachRestrictions(CoreWebView2 core)
-    {
-        if (ReferenceEquals(core, _restrictedCore)) return;
-        DetachRestrictions();
-        _restrictedCore = core;
-        core.DownloadStarting += RejectDownload;
-        core.NewWindowRequested += RejectNewWindow;
-        core.PermissionRequested += RejectPermission;
-        core.LaunchingExternalUriScheme += RejectExternalUri;
-    }
-
-    private void DetachRestrictions()
-    {
-        if (_restrictedCore is not { } core) return;
-        core.DownloadStarting -= RejectDownload;
-        core.NewWindowRequested -= RejectNewWindow;
-        core.PermissionRequested -= RejectPermission;
-        core.LaunchingExternalUriScheme -= RejectExternalUri;
-        _restrictedCore = null;
-    }
-
-    private static void RejectDownload(object? sender, CoreWebView2DownloadStartingEventArgs e)
-    {
-        e.Cancel = true;
-        e.Handled = true;
-    }
-
-    private static void RejectNewWindow(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
-        => e.Handled = true;
-
-    private static void RejectPermission(object? sender, CoreWebView2PermissionRequestedEventArgs e)
-    {
-        e.State = CoreWebView2PermissionState.Deny;
-        e.SavesInProfile = false;
-        e.Handled = true;
-    }
-
-    private static void RejectExternalUri(object? sender, CoreWebView2LaunchingExternalUriSchemeEventArgs e)
-        => e.Cancel = true;
 
     private WebView2 EnsureWebView()
     {
@@ -392,7 +349,7 @@ internal sealed class UrlThumbnailCaptureController
         }
 
         StopPlayback();
-        DetachRestrictions();
+        WebViewLifecycleService.UpdatePrivatePreviewRestrictions(ref _restrictedCore, null);
         _webHost.Children.Remove(webView);
         webView.Dispose();
         _webView = null;

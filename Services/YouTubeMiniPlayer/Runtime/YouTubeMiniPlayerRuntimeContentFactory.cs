@@ -22,6 +22,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
         Func<YouTubeMiniPlayerState, Task<long?>> applyWatchPageModeAsync,
         Func<YouTubeMiniPlayerState, long, Task> applySavedStateAsync,
         Action<string> setStatus,
+        Action<YouTubeMiniPlayerState, Uri> openLinkInTab,
         Action<YouTubeMiniPlayerState, string> requestAutoRecovery,
         Action<YouTubeMiniPlayerState, CoreWebView2ProcessFailedEventArgs> reportProcessFailure,
         Action<YouTubeMiniPlayerState> beginLiveChatTransition,
@@ -47,6 +48,14 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
 
         return YouTubeMiniPlayerWebViewService.CreateWebView(
             state,
+            (currentState, webView, uri) =>
+            {
+                if (isClosing?.Invoke() != true && IsCurrentWebView(currentState, webView, runtimes))
+                {
+                    openLinkInTab(currentState, uri);
+                }
+            },
+            setStatus,
             (currentState, webView) =>
             {
                 if (!IsCurrentWebView(currentState, webView, runtimes))
@@ -130,7 +139,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                     core.CanGoBack,
                     core.CanGoForward);
             },
-            async (currentState, webView, args) =>
+            async (currentState, webView, args, wasBlocked) =>
             {
                 if (!IsCurrentWebView(currentState, webView, runtimes))
                 {
@@ -147,6 +156,13 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                 }
                 runtime.InactiveSuspendGeneration++;
                 runtime.IsNavigationLoading = false;
+                if (wasBlocked)
+                {
+                    ClearLiveContinuation(runtime);
+                    runtime.CompleteRecoveryNavigation(webView, isHealthy: false);
+                    queueInactiveSuspension(currentState, true);
+                    return;
+                }
 
                 bool DocumentAvailable() => documents.IsCurrent(args.NavigationId)
                     && !runtime.IsDisposed && isClosing?.Invoke() != true
@@ -239,7 +255,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
                         }
 
                         currentState.IsPaused = false;
-                        runtime.IsInitialLivePlaybackResolved = false;
+                        runtime.Restoration.IsInitialLivePlaybackResolved = false;
                         if (YouTubeMiniPlayerNavigationService.TryApplyCurrentVideoUrl(currentState,
                                 resolution.NavigationUri?.AbsoluteUri ?? continuationCore.Source))
                         {
@@ -368,7 +384,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
             return null;
         }
 
-        var availability = await runtime.LiveChatRequests.ReadAsync(videoId, webView,
+        var availability = await runtime.LiveChat.ReadAvailabilityAsync(videoId, webView,
             current => ReadLiveChatButtonAvailabilityAsync(state, webView, runtimes, videoId, current));
         if (!IsCurrentWebView(state, webView, runtimes) || !IsCurrentVideo(state, videoId))
         {
@@ -500,7 +516,7 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
         state.IsAtLiveEdge = false;
         state.IsLiveEdgeStateKnown = false;
         state.LiveViewerCountText = null;
-        runtime.LiveChatRequests.Reset();
+        runtime.LiveChat.ResetAvailabilityRequests();
         YouTubeMiniPlayerChromeFactory.UpdateLiveViewerCount(
             runtime,
             isLive: false,
@@ -543,62 +559,5 @@ internal static class YouTubeMiniPlayerRuntimeContentFactory
             completeGestureInteraction,
             close);
         return placeholder.Root;
-    }
-}
-
-// NavigationCompleted／canplay／playingが重なる間の同一問い合わせを共有する。所有UIスレッドで使う。
-internal sealed class YouTubeMiniPlayerLiveChatRequests
-{
-    private string? _videoId;
-    private object? _document;
-    private int _generation;
-    private int _attempts;
-    private Task<YouTubeLiveChatAvailabilityResult?>? _pending;
-
-    public void Reset()
-    {
-        _generation++;
-        _videoId = null;
-        _document = null;
-        _attempts = 0;
-        _pending = null;
-    }
-
-    public Task<YouTubeLiveChatAvailabilityResult?> ReadAsync(string videoId, object document,
-        Func<Func<bool>, Task<YouTubeLiveChatAvailabilityResult?>> read)
-    {
-        if (_videoId != videoId || !ReferenceEquals(_document, document))
-        {
-            Reset();
-            _videoId = videoId;
-            _document = document;
-        }
-        if (_pending is not null) return _pending;
-        if (_attempts >= 2) return Task.FromResult<YouTubeLiveChatAvailabilityResult?>(null);
-
-        var completion = new TaskCompletionSource<YouTubeLiveChatAvailabilityResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var generation = _generation;
-        _pending = completion.Task;
-        _ = CompleteAsync();
-        return completion.Task;
-
-        async Task CompleteAsync()
-        {
-            YouTubeLiveChatAvailabilityResult? result = null;
-            Exception? failure = null;
-            try
-            {
-                result = await read(() => generation == _generation);
-                if (generation != _generation) result = null;
-                else if (result.HasValue) _attempts++;
-            }
-            catch (Exception ex) { failure = ex; }
-            finally
-            {
-                if (generation == _generation && ReferenceEquals(_pending, completion.Task)) _pending = null;
-            }
-            if (failure is not null) completion.TrySetException(failure);
-            else completion.TrySetResult(result);
-        }
     }
 }

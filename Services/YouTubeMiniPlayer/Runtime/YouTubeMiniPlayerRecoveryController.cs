@@ -438,7 +438,7 @@ internal sealed class YouTubeMiniPlayerRecoveryController
         YouTubeMiniPlayerStateService.ApplyPlaybackStateSnapshot(state, snapshot);
         runtime.IsLoadStoppedForInactivity = false;
         runtime.DisplayHealth.Reset();
-        var wait = runtime.BeginRecoveryNavigation(webView);
+        var wait = runtime.Restoration.BeginRecoveryNavigation(webView);
         try
         {
             reload();
@@ -453,7 +453,7 @@ internal sealed class YouTubeMiniPlayerRecoveryController
         }
         finally
         {
-            runtime.CancelRecoveryNavigation(wait);
+            runtime.Restoration.CancelRecoveryNavigation(wait);
         }
     }
 
@@ -472,7 +472,7 @@ internal sealed class YouTubeMiniPlayerRecoveryController
         YouTubeMiniPlayerStateService.ApplyPlaybackStateSnapshot(state, snapshot);
         _host.ResetWebView(runtime);
         RecordRecoveryOperation(state.Id, "webview-recreate-requested");
-        var wait = runtime.BeginRecoveryNavigation(expectedWebView: null);
+        var wait = runtime.Restoration.BeginRecoveryNavigation(expectedWebView: null);
         try
         {
             await _host.LoadRuntimeAsync(state, uri, cancellationToken);
@@ -491,7 +491,7 @@ internal sealed class YouTubeMiniPlayerRecoveryController
         }
         finally
         {
-            runtime.CancelRecoveryNavigation(wait);
+            runtime.Restoration.CancelRecoveryNavigation(wait);
         }
     }
 

@@ -32,7 +32,8 @@ internal sealed record YouTubeMiniPlayerArrangementPreviewItem(
     Rect Bounds,
     string Label,
     YouTubeMiniPlayerArrangementPreviewRole Role,
-    double VideoAspectRatio = 0);
+    double VideoAspectRatio = 0,
+    Size? MinimumSize = null);
 
 internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTubeMiniPlayerArrangementPreview
 {
@@ -51,7 +52,9 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
     private static readonly IntPtr TopmostWindow = new(-1);
 
     private readonly Rect _workArea;
+    private readonly Rect _interactionArea;
     private readonly Canvas _canvas;
+    private readonly Func<Point, bool>? _isWithinArrangementMenu;
     private readonly Dictionary<Guid, PreviewFrameState> _playerFrames = [];
     private HwndSource? _windowSource;
     private PreviewFrameState? _activeFrame;
@@ -62,7 +65,8 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
 
     public YouTubeMiniPlayerArrangementPreviewWindow(
         YouTubeMiniPlayerArrangementPlan plan,
-        IReadOnlyList<YouTubeMiniPlayerArrangementPreviewItem> items)
+        IReadOnlyList<YouTubeMiniPlayerArrangementPreviewItem> items,
+        Func<Point, bool>? isWithinArrangementMenu = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         var workArea = plan.WorkArea;
@@ -74,7 +78,12 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
         ArgumentNullException.ThrowIfNull(items);
 
         Plan = plan;
+        _isWithinArrangementMenu = isWithinArrangementMenu;
         _workArea = workArea;
+        _interactionArea = plan.AreaRequest is { Mode: not YouTubeMiniPlayerArrangementAreaMode.Display }
+            && plan.PlacementArea is { } placement
+            ? new(placement.Left - workArea.Left, placement.Top - workArea.Top, placement.Width, placement.Height)
+            : new(0, 0, workArea.Width, workArea.Height);
         Left = workArea.Left;
         Top = workArea.Top;
         Width = workArea.Width;
@@ -122,6 +131,16 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
         var handle = new WindowInteropHelper(this).Handle;
         if (handle != IntPtr.Zero)
         {
+            if (Plan.AreaRequest?.HostDpi is { } hostDpi)
+            {
+                var physical = YouTubeMiniPlayerArrangementAreaService.ToPhysicalCoordinates(_workArea, hostDpi);
+                if (!SetWindowPos(handle, TopmostWindow, (int)Math.Round(physical.Left), (int)Math.Round(physical.Top),
+                    (int)Math.Round(physical.Width), (int)Math.Round(physical.Height), SetWindowPosNoActivate | SetWindowPosShowWindow))
+                    throw new InvalidOperationException("指定範囲に配置予告を表示できませんでした");
+                UpdateCanvasScale(VisualTreeHelper.GetDpi(this));
+                return;
+            }
+
             _ = SetWindowPos(
                 handle,
                 TopmostWindow,
@@ -131,6 +150,18 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
                 0,
                 SetWindowPosNoMove | SetWindowPosNoSize | SetWindowPosNoActivate | SetWindowPosShowWindow);
         }
+    }
+
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        UpdateCanvasScale(newDpi);
+    }
+
+    private void UpdateCanvasScale(DpiScale currentDpi)
+    {
+        if (Plan?.AreaRequest?.HostDpi is not { } hostDpi || _canvas is null) return;
+        _canvas.LayoutTransform = new ScaleTransform(hostDpi.DpiScaleX / currentDpi.DpiScaleX, hostDpi.DpiScaleY / currentDpi.DpiScaleY);
     }
 
     public void SetEditMode(bool enabled)
@@ -162,7 +193,7 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
 
     public IReadOnlyDictionary<Guid, Rect> GetPlayerBounds()
     {
-        return _playerFrames.ToDictionary(
+        return _playerFrames.Where(pair => pair.Value.Bounds != pair.Value.OriginalBounds).ToDictionary(
             static pair => pair.Key,
             pair => new Rect(
                 _workArea.Left + pair.Value.Bounds.Left,
@@ -173,14 +204,14 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
 
     public bool IsPointOverEditableControl(Point screenPoint)
     {
-        if (!_isEditMode)
+        if (!_isEditMode || _isWithinArrangementMenu?.Invoke(screenPoint) == true)
         {
             return false;
         }
 
         try
         {
-            var localPoint = PointFromScreen(screenPoint);
+            var localPoint = _canvas.PointFromScreen(screenPoint);
             return _playerFrames.Values.Any(frame =>
                 frame.InteractionHandles.Any(handle => IsPointWithinElement(handle, localPoint)));
         }
@@ -269,7 +300,7 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
         var aspectRatio = double.IsFinite(item.VideoAspectRatio) && item.VideoAspectRatio > 0
             ? item.VideoAspectRatio
             : YouTubeMiniPlayerLayoutService.VideoAspectRatio;
-        var frame = new PreviewFrameState(playerId, border, localBounds, aspectRatio);
+        var frame = new PreviewFrameState(playerId, border, localBounds, aspectRatio, item.MinimumSize);
         _playerFrames[playerId] = frame;
         AddMoveHandle(content, frame);
         AddResizeHandle(content, frame, YouTubeMiniPlayerArrangementResizeCorner.TopLeft);
@@ -360,11 +391,11 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
             return;
         }
 
+        if (!Mouse.Capture(frame.Border, CaptureMode.SubTree)) return;
         _activeFrame = frame;
         _activeResizeCorner = corner;
         _interactionStartPoint = e.GetPosition(_canvas);
         _interactionStartBounds = frame.Bounds;
-        _ = Mouse.Capture(frame.Border, CaptureMode.SubTree);
         e.Handled = true;
     }
 
@@ -375,7 +406,18 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
             return;
         }
 
-        var currentPoint = e.GetPosition(_canvas);
+        UpdateInteraction(e.GetPosition(_canvas));
+        e.Handled = true;
+    }
+
+    private void UpdateInteraction(Point currentPoint)
+    {
+        if (_activeFrame is not { } frame) return;
+        if (currentPoint == _interactionStartPoint)
+        {
+            if (frame.Bounds != _interactionStartBounds) SetFrameBounds(frame, _interactionStartBounds);
+            return;
+        }
         var horizontalChange = currentPoint.X - _interactionStartPoint.X;
         var verticalChange = currentPoint.Y - _interactionStartPoint.Y;
         Rect bounds;
@@ -389,10 +431,11 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
                 _interactionStartBounds,
                 horizontalChange,
                 verticalChange,
-                _activeFrame.VideoAspectRatio,
+                frame.VideoAspectRatio,
                 resizeLeft,
                 resizeTop,
-                new Rect(0, 0, _canvas.Width, _canvas.Height));
+                _interactionArea,
+                frame.MinimumSize);
         }
         else
         {
@@ -400,11 +443,10 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
                 _interactionStartBounds,
                 horizontalChange,
                 verticalChange,
-                new Rect(0, 0, _canvas.Width, _canvas.Height));
+                _interactionArea);
         }
 
-        SetFrameBounds(_activeFrame, bounds);
-        e.Handled = true;
+        SetFrameBounds(frame, bounds);
     }
 
     private void PreviewWindow_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -414,21 +456,24 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
             return;
         }
 
+        UpdateInteraction(e.GetPosition(_canvas));
         EndInteraction();
         e.Handled = true;
     }
 
     private void PreviewWindow_LostMouseCapture(object sender, MouseEventArgs e)
     {
+        if (_activeFrame is not { } frame || !ReferenceEquals(e.OriginalSource, frame.Border)) return;
         _activeFrame = null;
         _activeResizeCorner = null;
     }
 
     private void EndInteraction()
     {
+        var captured = _activeFrame?.Border;
         _activeFrame = null;
         _activeResizeCorner = null;
-        if (Mouse.Captured is not null)
+        if (captured is not null && ReferenceEquals(Mouse.Captured, captured))
         {
             Mouse.Capture(null);
         }
@@ -577,7 +622,8 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
         Guid playerId,
         Border border,
         Rect originalBounds,
-        double videoAspectRatio)
+        double videoAspectRatio,
+        Size? minimumSize)
     {
         public Guid PlayerId { get; } = playerId;
 
@@ -588,6 +634,7 @@ internal sealed class YouTubeMiniPlayerArrangementPreviewWindow : Window, IYouTu
         public Rect Bounds { get; set; } = originalBounds;
 
         public double VideoAspectRatio { get; } = videoAspectRatio;
+        public Size? MinimumSize { get; } = minimumSize;
 
         public List<FrameworkElement> InteractionHandles { get; } = [];
     }

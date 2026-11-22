@@ -145,7 +145,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         SessionPersistenceDispatcherBridge.Schedule,
         SessionPersistenceDispatcherBridge.Cancel,
         CaptureLatestSessionPersistenceWorkItemAsync,
-        CaptureLatestSessionPersistenceWorkItem,
         HandleScheduledSessionSaveFailure);
     private readonly ClosedTabLifecycleController _closedTabLifecycleController;
     private readonly Dictionary<Guid, long> _webViewNavigationStartTimestamps = [];
@@ -162,6 +161,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly SettingsService _settingsService = new();
     private readonly SessionService _sessionService = new(s_sessionRecoveryDiagnosticState);
     private readonly BookmarkController _bookmarkController;
+    private BookmarkManagerWindow? _bookmarkManagerWindow;
     private readonly BookmarkMenuController _bookmarkMenuController;
 
     private readonly TabCaptureService _tabCaptureService = new(s_tabRuntimeCoordinator);
@@ -193,7 +193,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly DownloadStore _downloadStore = new();
     private readonly DownloadService _downloadService;
 
-    private readonly LinkCopyService _linkCopyService = new();
+    private readonly LinkCopyService _linkCopyService;
     private readonly ClipboardWriteService _clipboardWriteService;
     private readonly TabExportService _tabExportService = new(s_tabRuntimeCoordinator);
     private readonly ExternalBrowserService _externalBrowserService = new();
@@ -254,7 +254,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly Dictionary<Guid, WorkspaceFolderWindow> _workspaceFolderWindows = [];
 
     private AppSettings _settings = new();
-    private List<ContainerProfile> _containerProfiles = [];
+    private ContainerProfileLoadResult _containerProfiles = new(
+        ContainerProfileLoadStatus.Failed, [ContainerProfile.CreateDefault()]);
     private AddressService _addressService = new(new AppSettings());
     private IReadOnlyList<SessionTabState>? _initialTabs;
     private bool _isInitialized;
@@ -354,6 +355,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         bool restoreWorkspaceSession = false)
     {
         _clipboardWriteService = new ClipboardWriteService(Dispatcher);
+        _linkCopyService = new LinkCopyService(_clipboardWriteService);
         _pageGestureVisualController = new PageGestureVisualController(this, this);
         _nativeWebGestureController = new NativeWebGestureController(this, s_inputInteractionHub, _workspaceWindowId, _pageGestureVisualController);
         _pageContextMenuController = new PageContextMenuController(this, s_inputInteractionHub, _workspaceWindowId);
@@ -471,11 +473,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _youTubeMiniPlayerListWindow.SetBinding(DataContextProperty, new Binding(nameof(DataContext)) { Source = this });
         _youTubeMiniPlayerListViewController = new YouTubeMiniPlayerListViewController(
             new YouTubeMiniPlayerListElements(
-                _youTubeMiniPlayerListWindow, YouTubeMiniPlayerList, YouTubeMiniPlayerListEmptyText, YouTubeMiniPlayerListSummaryText, YouTubeMiniPlayerMuteAllToggleButton, YouTubeMiniPlayerMinimizeRestoreAllButton, YouTubeMiniPlayerGlobalActionsButton, YouTubeMiniPlayerArrangeMenuButton, YouTubeMiniPlayerRestoreArrangementButton, YouTubeMiniPlayerPlayPauseAllButton, YouTubeMiniPlayerRestoreClosedButton, YouTubeMiniPlayerPauseAllButton, YouTubeMiniPlayerLiveEdgeAllButton, YouTubeMiniPlayerCloseAllButton, YouTubeMiniPlayerGlobalActionsRoot, YouTubeMiniPlayerClosedHistoryPopup, YouTubeMiniPlayerClosedHistoryList),
+                _youTubeMiniPlayerListWindow, YouTubeMiniPlayerList, YouTubeMiniPlayerListEmptyText, YouTubeMiniPlayerListSummaryText, YouTubeMiniPlayerMuteAllToggleButton, YouTubeMiniPlayerMinimizeRestoreAllButton, YouTubeMiniPlayerGlobalActionsButton, YouTubeMiniPlayerArrangeMenuButton, YouTubeMiniPlayerRestoreArrangementButton, YouTubeMiniPlayerRestorePreviousArrangementButton, YouTubeMiniPlayerPlayPauseAllButton, YouTubeMiniPlayerRestoreClosedButton, YouTubeMiniPlayerPauseAllButton, YouTubeMiniPlayerLiveEdgeAllButton, YouTubeMiniPlayerCloseAllButton, YouTubeMiniPlayerGlobalActionsRoot, YouTubeMiniPlayerClosedHistoryPopup, YouTubeMiniPlayerClosedHistoryList),
             _youTubeMiniPlayerStateSyncCoordinator, _youTubeMiniPlayerListRefreshTimer, this);
         _youTubeMiniPlayerListPopupController = new YouTubeMiniPlayerListPopupController(
             _youTubeMiniPlayerListWindow, new YouTubeMiniPlayerListPopupElements(
-                YouTubeMiniPlayerListPopupRoot, YouTubeMiniPlayerListPopupRoot, _youTubeMiniPlayerListWindow, YouTubeMiniPlayerAbRepeatPopup, YouTubeMiniPlayerSpeedPopup, YouTubeMiniPlayerVolumePopup, YouTubeMiniPlayerItemMorePopup, YouTubeMiniPlayerArrangePopup, YouTubeMiniPlayerGlobalActionsPopup, YouTubeMiniPlayerLinearPlacementPopup, YouTubeMiniPlayerArrangeDisplayComboBox, YouTubeMiniPlayerArrangeMenuButton, YouTubeMiniPlayerGlobalActionsButton, YouTubeMiniPlayerClosedHistoryPopup, YouTubeMiniPlayerClosedHistoryButton),
+                YouTubeMiniPlayerListPopupRoot, YouTubeMiniPlayerListPopupRoot, _youTubeMiniPlayerListWindow, YouTubeMiniPlayerAbRepeatPopup, YouTubeMiniPlayerSpeedPopup, YouTubeMiniPlayerVolumePopup, YouTubeMiniPlayerItemMorePopup, YouTubeMiniPlayerArrangePopup, YouTubeMiniPlayerGlobalActionsPopup, YouTubeMiniPlayerLinearPlacementPopup, YouTubeMiniPlayerArrangeDisplayComboBox, YouTubeMiniPlayerArrangeMenuButton, YouTubeMiniPlayerGlobalActionsButton, YouTubeMiniPlayerClosedHistoryPopup, YouTubeMiniPlayerClosedHistoryButton,
+                YouTubeMiniPlayerArrangeAreaComboBox: YouTubeMiniPlayerArrangeAreaComboBox),
             _youTubeMiniPlayerListViewController, this);
         _youTubeMiniPlayerListWindow.PresentationChanged += YouTubeMiniPlayerListWindow_PresentationChanged;
         _youTubeMiniPlayerListWindow.KeyDown += YouTubeMiniPlayerArrangement_KeyDown;
@@ -622,42 +625,55 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             QueueDownloadUiUpdate);
         _downloadShelfController.Initialize();
         ComponentDispatcher.ThreadFilterMessage += ComponentDispatcher_ThreadFilterMessage;
-        Closed += (_, _) =>
-        {
-            _windowShutdownInputBlocker?.Dispose();
-            _windowShutdownInputBlocker = null;
-            CancelAllSitePermissionPrompts();
-            ModelessWindowService.CloseOwned<SitePrivacyWindow>(this);
-            s_inputInteractionHub.UnregisterWindow(_workspaceWindowId);
-            s_webViewProcessRecoveryCoordinator.UnregisterWindow(_workspaceWindowId);
-            ComponentDispatcher.ThreadFilterMessage -= ComponentDispatcher_ThreadFilterMessage;
-            _commandPaletteViewController.Dispose();
-            _tabDropController.Dispose();
-            _folderTabFileDropController.Dispose();
-            _tabDragController.Dispose();
-            _statusPresentationController.Dispose();
-            _tabMoveUndoController?.Dispose();
-            _tabReorderController.Dispose();
-            _tabStripController.Dispose();
-            _commandPaletteDataController.Dispose();
-            _addressBarController.Dispose();
-            _bookmarkController.Dispose();
-            _youTubeControlPanelController?.Dispose();
-            _topToolbarController?.Dispose();
-            _streamingPlaybackNoticeController?.Dispose();
-            _windowTaskSupervisor.Dispose();
-            UninstallRightWheelMouseHook();
-            _linkPreviewController.Dispose();
-            _performanceDiagnosticLogController.Dispose();
-            CommandPaletteQuickLookHost.Dispose();
-            DisposeClipboardHistoryIntegration();
-            if (_pendingWindowShutdownContext?.RequestSessionSaveAfterFinalClose == true)
+        Closed += (_, _) => RunWindowClosedSteps(
+            static (operation, exception) => (Application.Current as App)?.RecordUiOperationException(
+                $"closed-{operation}", exception, includeStackTrace: false),
+            ("dispose-input-blocker", () =>
             {
-                s_sessionPersistenceCoordinator.RequestSave();
+                try
+                {
+                    _windowShutdownInputBlocker?.Dispose();
+                }
+                finally
+                {
+                    _windowShutdownInputBlocker = null;
+                }
             }
-
-            ShutdownApplicationIfNoVisibleMainWindowsRemain();
-        };
+        ),
+            ("cancel-permission-prompts", CancelAllSitePermissionPrompts),
+            ("close-site-privacy", () => ModelessWindowService.CloseOwned<SitePrivacyWindow>(this)),
+            ("unregister-input", () => s_inputInteractionHub.UnregisterWindow(_workspaceWindowId)),
+            ("unregister-webview-recovery", () => s_webViewProcessRecoveryCoordinator.UnregisterWindow(_workspaceWindowId)),
+            ("remove-thread-filter", () => ComponentDispatcher.ThreadFilterMessage -= ComponentDispatcher_ThreadFilterMessage),
+            ("dispose-command-palette-view", () => _commandPaletteViewController.Dispose()),
+            ("dispose-tab-drop", () => _tabDropController.Dispose()),
+            ("dispose-folder-tab-file-drop", () => _folderTabFileDropController.Dispose()),
+            ("dispose-tab-drag", () => _tabDragController.Dispose()),
+            ("dispose-status", () => _statusPresentationController.Dispose()),
+            ("dispose-tab-move-undo", () => _tabMoveUndoController?.Dispose()),
+            ("dispose-tab-reorder", () => _tabReorderController.Dispose()),
+            ("dispose-tab-strip", () => _tabStripController.Dispose()),
+            ("dispose-command-palette-data", () => _commandPaletteDataController.Dispose()),
+            ("dispose-address-bar", () => _addressBarController.Dispose()),
+            ("dispose-bookmarks", () => _bookmarkController.Dispose()),
+            ("dispose-youtube-control-panel", () => _youTubeControlPanelController?.Dispose()),
+            ("dispose-top-toolbar", () => _topToolbarController?.Dispose()),
+            ("dispose-streaming-notice", () => _streamingPlaybackNoticeController?.Dispose()),
+            ("dispose-task-supervisor", () => _windowTaskSupervisor.Dispose()),
+            ("uninstall-right-wheel-hook", UninstallRightWheelMouseHook),
+            ("dispose-link-preview", () => _linkPreviewController.Dispose()),
+            ("dispose-performance-log", () => _performanceDiagnosticLogController.Dispose()),
+            ("dispose-command-palette-preview", () => CommandPaletteQuickLookHost.Dispose()),
+            ("dispose-clipboard-history", DisposeClipboardHistoryIntegration),
+            ("request-session-save", () =>
+            {
+                if (_pendingWindowShutdownContext?.RequestSessionSaveAfterFinalClose == true)
+                {
+                    s_sessionPersistenceCoordinator.RequestSave();
+                }
+            }
+        ),
+            ("shutdown-application", ShutdownApplicationIfNoVisibleMainWindowsRemain));
 
         _initialTabs = initialTabs;
         _persistSession = persistSession;
@@ -674,6 +690,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _settings.BrowsingHistory = BrowsingHistorySettingsProfile.Normalize(_settings.BrowsingHistory);
         _settings.SitePrivacy = SitePrivacySettingsProfile.Normalize(_settings.SitePrivacy);
         App.BrowsingHistory.Configure(_settings.BrowsingHistory);
+        App.RecentItems.ConfigureWebVisitRecording(_settings.RecordRecentWebVisits);
         _settings.QuickLook = QuickLookSettingsProfile.Normalize(_settings.QuickLook);
         InitializePageTools();
         CommandPaletteQuickLookHost.PaneLayoutChanged += QuickLookPaneLayoutChanged;
@@ -1870,7 +1887,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
         }
 
-        var finalSave = await FlushWindowSetPersistenceAsync([this], saveSettings: true, checkClosingEditors: false);
+        var finalSave = await FlushWindowSetPersistenceAsync(
+            [this], saveSettings: true, checkClosingEditors: false, applyBookmarkManagerChanges: false);
         if (!finalSave.Succeeded)
         {
             SetStatus("Windowは閉じましたが終了後の状態更新に失敗しました。保存先を確認し、再保存を試してください。", autoClear: false);
@@ -2151,7 +2169,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         _superDragCoordinator.CancelAll();
-        if (_windowShutdownCoordinator.IsCompleted)
+        if (_windowShutdownCoordinator.IsCompleted || Application.Current is App { IsSystemSessionEndApproved: true })
         {
             return;
         }
@@ -2363,7 +2381,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             () => FlushWindowSetPersistenceAsync(windows, saveSettings: true, checkClosingEditors: false),
             () =>
             {
-                foreach (var editor in editors) editor.Close();
+                foreach (var editor in editors) editor.DiscardAndClose();
                 if (Application.Current.Windows.OfType<WorkspaceNoteEditWindow>()
                     .Any(static editor => editor.RequiresCloseConfirmation))
                     throw new InvalidOperationException("閉じられないメモがあります。編集画面を確認してください。");
@@ -2392,7 +2410,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     }
 
     private async Task<WindowPersistenceResult> FlushWindowSetPersistenceAsync(
-        IReadOnlyList<MainWindow> closingWindows, bool saveSettings, bool checkClosingEditors = true)
+        IReadOnlyList<MainWindow> closingWindows,
+        bool saveSettings,
+        bool checkClosingEditors = true,
+        bool applyBookmarkManagerChanges = true)
     {
         if (checkClosingEditors && HasOpenWorkspaceNoteEditor(closingWindows))
             return new([new("メモ編集Window（保存またはキャンセルを確認して閉じてください）", WindowPersistenceStatus.Pending)]);
@@ -2400,7 +2421,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         var windows = Application.Current.Windows.OfType<Window>().ToList();
         var targets = new List<WindowPersistenceTarget>();
         // 明示的なブックマーク編集はプライベートWindowでも共有・永続化する。
-        targets.Add(new("bookmarks", "ブックマーク", () => App.Bookmarks.FlushAsync()));
+        targets.Add(new("bookmarks", "ブックマーク", () => applyBookmarkManagerChanges
+            ? FlushBookmarksBeforeCloseAsync(closingWindows)
+            : App.Bookmarks.FlushAsync()));
         foreach (var window in closingWindows.Where(static window => window._downloadService.HasActiveExternalDownloads))
             targets.Add(new($"download-stop-{window._sessionWindowId}", $"Window {window._workspaceWindowIndex} のダウンロード確定", async () =>
             {
@@ -2436,6 +2459,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         // 入力だけを一時停止し、WPFのIsEnabledは変えない。保存失敗時も表示と操作状態を元へ戻す。
         using var inputBlocker = NativeWindowInputBlocker.Block(windows);
         return await s_applicationWindowCloseCoordinator.SaveBeforeCloseAsync(targets);
+    }
+
+    private static async Task FlushBookmarksBeforeCloseAsync(IReadOnlyList<MainWindow> closingWindows)
+    {
+        foreach (var window in closingWindows)
+        {
+            if (window._bookmarkManagerWindow is { } manager
+                && !await manager.ApplyPendingChangesAsync(window._bookmarkController.ApplyManagerChangesAsync))
+            {
+                throw new IOException("ブックマーク管理の変更を保存できませんでした。");
+            }
+        }
+
+        await App.Bookmarks.FlushAsync();
     }
 
     private void DisposeWindowResources()
@@ -2542,6 +2579,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         {
             AppendSessionDiagnostic("window-shutdown-step-failed", ex, $"operation={operation}");
             return false;
+        }
+    }
+
+    internal static void RunWindowClosedSteps(
+        Action<string, Exception> recordFailure,
+        params (string Operation, Action Run)[] steps)
+    {
+        foreach (var (operation, run) in steps)
+        {
+            try
+            {
+                run();
+            }
+            catch (Exception exception) when (UiOperationExceptionBoundary.IsRecoverableOperationFailure(exception))
+            {
+                recordFailure(operation, exception);
+            }
         }
     }
 
@@ -2686,7 +2740,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private static void ShutdownApplicationIfNoVisibleMainWindowsRemain()
     {
         var application = Application.Current;
-        if (application is null
+        if (application is null or App { IsSystemSessionEndApproved: true }
             || GetApplicationCloseMainWindows().Count > 0)
         {
             return;
@@ -2697,6 +2751,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     }
 
     internal bool IsWindowShutdownCompleted => _windowShutdownCoordinator.IsCompleted;
+
+    internal static bool CanEndSystemSession(IReadOnlyList<MainWindow> pendingWindows)
+        => !s_applicationWindowCloseCoordinator.IsClosingAllWindows
+            && s_sessionPersistenceCoordinator.IsLatestRequestPersisted(requireSavedSnapshot: true)
+            && Views.WorkspaceNoteEditController.ReservationCount == 0
+            && !HasOpenWorkspaceNoteEditor(pendingWindows)
+            && pendingWindows.All(static window => window.IsReadyForSystemSessionEnd());
+
+    private bool IsReadyForSystemSessionEnd()
+        => _isInitialized
+            && ActiveTab is not null
+            && !_isPrivateWindow
+            && !_windowShutdownCoordinator.IsStarted
+            && _pendingWindowShutdownContext is null
+            && !_windowChangeWorkPending
+            && !_isInteractiveWindowMoveResize
+            && _startupWindowRestoreController.PendingCount == 0
+            && _windowTaskSupervisor.ActiveTaskCount == 0
+            && _bookmarkManagerWindow is null
+            && !HasActiveDownloadForMemoryManagement()
+            && !_downloadService.HasActiveExternalDownloads
+            && _downloadService.IsHistoryPersisted
+            && SettingsService.CanConfirmPersistedState(_settings)
+            && _youTubeMiniPlayerPersistenceController.CanConfirmPersistedState()
+            && !_tabs.Any(tab => tab.IsLoading || GetTabHostedContent(tab) is
+                Views.FolderTabView { HasPendingTransfer: true }
+                or Views.WorkspaceOSView { DataContext: ViewModels.WorkspaceOSViewModel { HasPendingSystemSessionWork: true } });
 
     internal void NotifySystemShutdownDeferred()
         => SetStatus("未保存状態の破棄を避けるためOSの終了を中止しました。このアプリを通常の終了操作で保存して閉じてから、OSの終了を再実行してください。", autoClear: false);
@@ -3288,49 +3369,51 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private IntPtr RightWheelMouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0)
+        try
         {
-            var message = wParam.ToInt32();
-            if (message == WmRightButtonDown)
+            if (nCode >= 0)
             {
-                ResetRightClickSuppressionForNewPress();
-                var downData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
-                if (!TryBeginNativeWebGestureCandidate(downData.Point))
+                var message = wParam.ToInt32();
+                if (message == WmRightButtonDown)
                 {
-                    TryBeginPageContextMenuGesture(downData.Point);
+                    ResetRightClickSuppressionForNewPress();
+                    var downData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
+                    if (!TryBeginNativeWebGestureCandidate(downData.Point))
+                    {
+                        TryBeginPageContextMenuGesture(downData.Point);
+                    }
                 }
-            }
-            else if (message == WmMouseMove
-                && (_pageGestureVisualController.IsTracking || _nativeWebGestureController.IsTracking))
-            {
-                var moveData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
-                QueuePageGestureInputPoint(moveData.Point);
-            }
-            else if (message == WmRightButtonUp)
-            {
-                var upData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
-                ReleaseWorkspaceRightClickSuppressionAfterNativeRelease();
-                TryFinishPageContextMenuGesture(upData.Point);
-                FinishNativeWebGesture(upData.Point);
-                EndRightWheelTabCycling();
-                QueueEndPageGestureAfterNativeRelease();
-                QueueEndWorkspaceGestureAfterNativeRelease();
-            }
-
-            if (message == WmMouseWheel)
-            {
-                if (!IsRightMouseButtonDown())
+                else if (message == WmMouseMove
+                    && (_pageGestureVisualController.IsTracking || _nativeWebGestureController.IsTracking))
                 {
-                    return CallNextHookEx(_rightWheelMouseHookHandle, nCode, wParam, lParam);
+                    var moveData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
+                    QueuePageGestureInputPoint(moveData.Point);
+                }
+                else if (message == WmRightButtonUp)
+                {
+                    var upData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
+                    ReleaseWorkspaceRightClickSuppressionAfterNativeRelease();
+                    TryFinishPageContextMenuGesture(upData.Point);
+                    FinishNativeWebGesture(upData.Point);
+                    EndRightWheelTabCycling();
+                    QueueEndPageGestureAfterNativeRelease();
+                    QueueEndWorkspaceGestureAfterNativeRelease();
                 }
 
-                var hookData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
-                var wheelDelta = unchecked((short)((hookData.MouseData >> 16) & 0xffff));
-                if (TryHandleRightWheelFromLowLevelHook(wheelDelta))
+                if (message == WmMouseWheel && IsRightMouseButtonDown())
                 {
-                    return new IntPtr(1);
+                    var hookData = Marshal.PtrToStructure<LowLevelMouseHookData>(lParam);
+                    var wheelDelta = unchecked((short)((hookData.MouseData >> 16) & 0xffff));
+                    if (TryHandleRightWheelFromLowLevelHook(wheelDelta))
+                    {
+                        return new IntPtr(1);
+                    }
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"右ホイールマウスフック: {ex.GetType().Name}");
         }
 
         return CallNextHookEx(_rightWheelMouseHookHandle, nCode, wParam, lParam);
@@ -3787,7 +3870,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         => _tabDragController.MouseLeftButtonDown(sender, e);
 
     private void TabList_PreviewMouseMove(object sender, MouseEventArgs e)
-        => _tabDragController.MouseMove(sender, e);
+    {
+        try
+        {
+            _tabDragController.MouseMove(sender, e);
+        }
+        catch (Exception exception) when (UiOperationExceptionBoundary.IsRecoverableOperationFailure(exception))
+        {
+            (Application.Current as App)?.RecordUiOperationException("tab-drag", exception, includeStackTrace: false);
+        }
+    }
 
     private void TabList_QueryContinueDrag(object sender, QueryContinueDragEventArgs e)
         => _tabDragController.QueryContinueDrag(sender, e);
@@ -3953,20 +4045,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        CopyCurrentPageLink(format);
+        _windowTaskSupervisor.TryRun("copy-current-page-link", _ => CopyCurrentPageLinkAsync(format));
     }
 
     private void CopyAllTabsMarkdownMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        CopyAllTabsMarkdown();
+        _windowTaskSupervisor.TryRun("copy-all-tabs-markdown", _ => CopyAllTabsMarkdownAsync());
     }
 
     private void SetLinkCopyStatus(LinkCopyResult result)
     {
-        SetStatus(result.Message, autoClear: true);
+        if (!_isClosingWindow)
+        {
+            SetStatus(result.Message, autoClear: true);
+        }
     }
 
-    private void CopyCurrentPageLink(LinkCopyFormat format)
+    private async Task CopyCurrentPageLinkAsync(LinkCopyFormat format)
     {
         var target = _tabExportService.CreateLinkCopyTarget(ActiveTab);
         if (target is null)
@@ -3975,13 +4070,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        SetLinkCopyStatus(_linkCopyService.Copy(target, format));
+        SetLinkCopyStatus(await _linkCopyService.CopyAsync(target, format));
     }
 
-    private void CopyAllTabsMarkdown()
+    private async Task CopyAllTabsMarkdownAsync()
     {
         var items = _tabExportService.ExportTabs(_tabs);
-        SetLinkCopyStatus(_linkCopyService.CopyAllTabsMarkdown(items));
+        SetLinkCopyStatus(await _linkCopyService.CopyAllTabsMarkdownAsync(items));
     }
 
     private void DownloadsButton_Click(object sender, RoutedEventArgs e)
@@ -4746,7 +4841,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
 
         var editingBaseline = SettingsService.CloneForEdit(_settings);
-        var dialog = new SettingsWindow(editingBaseline, GetInUseContainerProfileIdsForSettings())
+        var dialog = new SettingsWindow(editingBaseline, GetInUseContainerProfileIdsForSettings)
         {
             Owner = this
         };
@@ -4916,16 +5011,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         if (!_settings.EnableLinkHoverPreview)
         {
             HideLinkPreview(stopPreviewPlayback: true);
+            CloseBookmarkPreview(disposeWebView: true);
         }
 
         RestartTabMemoryManagementTimer();
         _settings.ClipboardHistory = ClipboardHistorySettingsProfile.Normalize(result.ClipboardHistory);
         ApplyClipboardHistorySettings();
         _settings.BrowsingHistory = BrowsingHistorySettingsProfile.Normalize(result.BrowsingHistory);
+        _settings.RecordRecentWebVisits = result.RecordRecentWebVisits;
         _settings.SitePrivacy = SitePrivacySettingsProfile.Normalize(result.SitePrivacy);
         _settings.AdBlocking = AdBlockingSettingsProfile.Normalize(result.AdBlocking);
         RefreshAdSpaceCollapseOnLoadedTabs();
         App.BrowsingHistory.Configure(_settings.BrowsingHistory);
+        App.RecentItems.ConfigureWebVisitRecording(_settings.RecordRecentWebVisits);
         _settings.EnableBrowserExtensions = result.EnableBrowserExtensions;
 
         _settings.PreservedCompatibilitySettings = PublicSettingsCompatibility.Clone(result.PreservedCompatibilitySettings);
@@ -4988,6 +5086,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task NavigateFromAddressBarAsync(string input)
     {
+        _addressBarController.AcceptCurrentAddressText();
         NoteExplorationActivity();
         if (GetTabHostedContent(ActiveTab) is Views.FolderTabView folderTabView
             && Directory.Exists(input.Trim()))
@@ -5013,14 +5112,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         if (target == "about:blank")
         {
+            tab.AddressNavigation.Reset();
             tab.Url = null;
             tab.Title = null;
             ShowBlankView();
+            UpdateAddressConnectionBadge();
             QueueSessionSave();
             return;
         }
 
-        tab.Url = target;
         ResetWebViewLoadFailureForRetry(tab);
         await EnsureTabLoadedAsync(tab, null);
         NavigateCore(tab, target);
@@ -5329,6 +5429,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             .ToList();
     }
 
+    internal IEnumerable<MainWindow> GetSamePrivacyMainWindows(IEnumerable<MainWindow> windows)
+        => windows.Where(window => window._isPrivateWindow == _isPrivateWindow);
+
     private void ApplySessionWindowIdentity(Guid sessionWindowId)
     {
         if (sessionWindowId == Guid.Empty)
@@ -5365,7 +5468,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private IReadOnlyList<ContainerProfile> ReloadContainerProfiles(bool applyToTabs = true)
     {
-        _containerProfiles = _containerProfileStore.Load();
+        var loaded = _containerProfileStore.Load();
+        if (loaded.Status == ContainerProfileLoadStatus.Failed)
+        {
+            _containerProfiles = _containerProfiles with { Status = loaded.Status };
+            return _containerProfiles.Profiles;
+        }
+
+        _containerProfiles = loaded;
         if (applyToTabs)
         {
             foreach (var tab in _tabs)
@@ -5374,26 +5484,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
         }
 
-        return _containerProfiles;
+        return _containerProfiles.Profiles;
     }
 
-    private IReadOnlyCollection<string> GetInUseContainerProfileIdsForSettings()
+    private static IReadOnlyCollection<string> GetInUseContainerProfileIdsForSettings()
     {
         var containerProfileIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ContainerProfile.DefaultId
         };
 
-        foreach (var window in GetOpenMainWindows())
+        foreach (var window in Application.Current.Windows.OfType<MainWindow>())
         {
             foreach (var tab in window._tabs)
             {
                 containerProfileIds.Add(ContainerProfile.NormalizeId(tab.ContainerProfileId));
-            }
-
-            foreach (var closedTab in s_closedTabWindowHistoryStore.ClosedTabs)
-            {
-                containerProfileIds.Add(ContainerProfile.NormalizeId(closedTab.ContainerProfileId));
             }
 
             foreach (var containerProfileId in window._webViewEnvironmentService.GetCreatedContainerProfileIds())
@@ -5402,23 +5507,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
         }
 
+        foreach (var closedTab in s_closedTabWindowHistoryStore.ClosedTabs)
+        {
+            containerProfileIds.Add(ContainerProfile.NormalizeId(closedTab.ContainerProfileId));
+        }
+
         return containerProfileIds;
     }
 
     private ContainerProfile GetContainerProfile(string? containerProfileId)
     {
         var normalizedId = ContainerProfile.NormalizeId(containerProfileId);
-        return _containerProfiles.FirstOrDefault(profile => string.Equals(
-                profile.Id,
-                normalizedId,
-                StringComparison.OrdinalIgnoreCase))
-            ?? _containerProfiles.FirstOrDefault(static profile => profile.IsDefault)
+        return _containerProfiles.FindProfile(normalizedId)
+            ?? _containerProfiles.FindProfile(ContainerProfile.DefaultId)
             ?? ContainerProfile.CreateDefault();
     }
 
     private void ApplyContainerProfileToTab(BrowserTab tab)
+        => ApplyLoadedContainerProfile(tab, _containerProfiles);
+
+    internal static void ApplyLoadedContainerProfile(BrowserTab tab, ContainerProfileLoadResult loaded)
     {
-        tab.ApplyContainerProfile(GetContainerProfile(tab.ContainerProfileId));
+        if (loaded.Status == ContainerProfileLoadStatus.Failed)
+        {
+            return;
+        }
+
+        var profile = loaded.FindProfile(tab.ContainerProfileId);
+        if (profile is null && loaded.IsAuthoritative)
+        {
+            profile = loaded.FindProfile(ContainerProfile.DefaultId);
+        }
+
+        if (profile is not null)
+        {
+            tab.ApplyContainerProfile(profile);
+        }
     }
 
     private BrowserTab AddNewTab(bool activate, string? containerProfileId = null)
@@ -5572,7 +5696,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             : NormalizeYouTubeShortsUrl(args.Uri);
         var popupTab = new BrowserTab
         {
-            Url = initialUrl,
             Title = BrowserUrlRulesService.GetAuthenticationPopupInitialTitle(initialUrl),
             ContainerProfileId = sourceTab.ContainerProfileId
         };
@@ -5582,7 +5705,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _newWindowPopupTabIds.Add(popupTab.Id);
         SelectTab(popupTab);
         ShowBlankView();
-        SetAddressText(initialUrl ?? string.Empty);
+        SetAddressText(string.Empty);
         UpdateToolbarState();
         QueueSessionSave();
         QueueWorkspaceOpenTabsRefresh();
@@ -5928,9 +6051,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 return;
             }
 
-            tab.HasCertificateError = false;
-            tab.ConnectionBadgeNavigationUrl = args.Uri;
-            UpdateAddressConnectionBadgeForNavigation(tab, args.Uri, hasCertificateError: false);
+            if (!tab.AddressNavigation.TryStart(args.NavigationId, args.Uri, args.IsRedirected))
+            {
+                return;
+            }
+
+            UpdateAddressForNavigation(tab);
 
             if (args.IsUserInitiated
                 && !ShouldPreservePendingSavedNavigationHistory(tab, args.Uri, args.IsRedirected))
@@ -5949,17 +6075,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             if (!normalizedUri.Equals(args.Uri, StringComparison.OrdinalIgnoreCase))
             {
                 args.Cancel = true;
-                tab.Url = normalizedUri;
-                if (ActiveTab == tab)
-                {
-                    SetAddressText(normalizedUri);
-                }
-
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (_tabs.Contains(tab))
                     {
-                        NavigateCore(tab, normalizedUri);
+                        NavigateCore(tab, normalizedUri, updateAddressText: false);
                     }
                 }), DispatcherPriority.Normal);
                 return;
@@ -5983,29 +6103,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             tab.IsAudioPanScriptInjected = false;
             _ = s_tabRuntimeCoordinator.SetFavicon(tab, null);
             tab.FaviconPngBase64 = string.Empty;
-            if (IsUserGuideUrl(tab.Url) && IsUserGuideContentUrl(args.Uri))
-            {
-                if (ActiveTab == tab)
-                {
-                    SetAddressText(UserGuideUrl);
-                }
-            }
-            else if (IsNewTabUrl(tab.Url) && IsGeneratedNewTabSource(args.Uri))
-            {
-                if (ActiveTab == tab)
-                {
-                    SetAddressText(string.Empty);
-                }
-            }
-            else if (!IsBlankUrl(args.Uri))
-            {
-                tab.Url = args.Uri;
-                if (ActiveTab == tab)
-                {
-                    SetAddressText(args.Uri);
-                }
-            }
-
             QueueInactiveYouTubeTabCheck(tab, stopStalledLoad: true);
             UpdateToolbarState();
             QueueWorkspaceOpenTabsRefresh();
@@ -6018,6 +6115,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 return;
             }
 
+            if (args.IsSuccess && webView.CoreWebView2 is { } core)
+            {
+                CommitTabNavigation(tab, args.NavigationId, core.Source);
+            }
+
+            var hasCertificateNavigationError = !args.IsSuccess
+                && SitePrivacyService.IsCertificateNavigationError(args.WebErrorStatus);
+            if (!tab.AddressNavigation.TryComplete(args.NavigationId, hasCertificateNavigationError))
+            {
+                return;
+            }
+
             long? elapsedMilliseconds = _webViewNavigationStartTimestamps.Remove(tab.Id, out var navigationStart)
                 ? GetElapsedMilliseconds(navigationStart)
                 : null;
@@ -6025,12 +6134,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             CancelInactiveYouTubeTabCheck(tab);
             _ = s_tabRuntimeCoordinator.SetLoading(tab, false);
             RefreshTabFromCore(tab);
-            var hasCertificateNavigationError = !args.IsSuccess
-                && SitePrivacyService.IsCertificateNavigationError(args.WebErrorStatus);
-            UpdateAddressConnectionBadgeForNavigation(
-                tab,
-                hasCertificateNavigationError ? tab.ConnectionBadgeNavigationUrl : null,
-                tab.HasCertificateError || hasCertificateNavigationError);
             if (args.IsSuccess)
             {
                 ResetYouTubeControlSuppressionAfterNavigation(tab);
@@ -6203,15 +6306,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
             await CoreWebViewDocumentScriptRegistry.EnsureFixedAsync(
                 core,
-                "tab-memory-protection",
-                BuildTabMemoryProtectionScript());
-            if (!IsInitializationCurrent())
-            {
-                return;
-            }
-
-            await CoreWebViewDocumentScriptRegistry.EnsureFixedAsync(
-                core,
                 "streaming-playback-failure-bridge",
                 StreamingPlaybackCompatibilityService.BuildFailureBridgeScript(
                     GetTabWebMessageToken(tab) ?? string.Empty));
@@ -6308,11 +6402,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         EventHandler<CoreWebView2ServerCertificateErrorDetectedEventArgs> serverCertificateErrorDetected = (_, args) =>
         {
             if (_tabs.Contains(tab)
-                && SitePrivacyService.IsCurrentPageCertificateRequest(
-                    tab.ConnectionBadgeNavigationUrl,
-                    args.RequestUri))
+                && tab.AddressNavigation.RecordCertificateError(args.RequestUri))
             {
-                tab.HasCertificateError = true;
+                UpdateAddressForNavigation(tab);
             }
         };
 
@@ -6328,7 +6420,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             QueueWorkspaceOpenTabsRefresh();
         };
 
-        EventHandler<CoreWebView2SourceChangedEventArgs> sourceChanged = (_, _) =>
+        EventHandler<CoreWebView2ContentLoadingEventArgs> contentLoading = (_, args) =>
+        {
+            if (_tabs.Contains(tab) && !args.IsErrorPage)
+            {
+                CommitTabNavigation(tab, args.NavigationId, core.Source);
+            }
+        };
+
+        EventHandler<CoreWebView2SourceChangedEventArgs> sourceChanged = (_, args) =>
         {
             if (!_tabs.Contains(tab))
             {
@@ -6341,12 +6441,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             var normalizedSource = NormalizeYouTubeShortsUrl(core.Source);
             if (!normalizedSource.Equals(core.Source, StringComparison.OrdinalIgnoreCase))
             {
-                tab.Url = normalizedSource;
-                if (ActiveTab == tab)
-                {
-                    SetAddressText(normalizedSource);
-                }
-
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (_tabs.Contains(tab))
@@ -6357,13 +6451,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 return;
             }
 
-            RefreshTabFromCore(tab);
+            if (!args.IsNewDocument)
+            {
+                tab.AddressNavigation.ObserveSameDocumentSource(core.Source);
+                if (!(IsUserGuideUrl(tab.Url) && IsUserGuideContentUrl(core.Source))
+                    && !(IsNewTabUrl(tab.Url) && IsGeneratedNewTabSource(core.Source)))
+                {
+                    tab.Url = core.Source;
+                }
+
+                RefreshTabFromCore(tab);
+                RecordTabNavigation(tab, tab.Url);
+            }
+
             if ((ReferenceEquals(tab, ActiveTab) || IsVisibleOrPreparingSplitPaneNavigation(tab))
                 && IsYouTubeVideoTab(tab))
             {
                 DeferBackgroundWork(YouTubeNavigationBackgroundWorkDeferralMilliseconds);
             }
-            RecordTabNavigation(tab, tab.Url);
             ApplySavedPageZoom(tab, core.Source);
             UpdateToolbarState();
             QueueYouTubePlaybackRestoreAttempt(tab);
@@ -6505,20 +6610,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
 
             var failure = WebViewLifecycleService.FormatProcessFailure(args);
-            var action = WebViewProcessFailurePolicy.GetAction(args.ProcessFailedKind);
+            var action = WebViewProcessFailurePolicy.GetTabAction(args.ProcessFailedKind);
             HandleYouTubePlaybackProcessFailure(
                 "tab",
                 tab.Id,
                 GetCurrentPageUrl(tab) ?? tab.Url,
                 args);
-            ClosePageFindForTab(tab);
-            CancelPageZoomNavigation(tab);
             s_webViewProcessRecoveryCoordinator.RecordProcessFailure(
                 tab.ContainerProfileId,
                 TryGetBrowserProcessId(core),
                 args.ProcessFailedKind,
                 action);
 
+            if (action == WebViewProcessFailureAction.KeepPageForFrameFailure)
+            {
+                if (ActiveTab == tab || (SplitViewHost.Visibility == Visibility.Visible && _splitViewService.Contains(tab)))
+                {
+                    SetStatus("ページ内の一部を表示できません。必要に応じてページを再読み込みしてください。", autoClear: true);
+                }
+
+                return;
+            }
+
+            ClosePageFindForTab(tab);
+            CancelPageZoomNavigation(tab);
             if (action == WebViewProcessFailureAction.ObserveOnly)
             {
                 if (ActiveTab == tab)
@@ -6568,6 +6683,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             frameCreated,
             serverCertificateErrorDetected,
             documentTitleChanged,
+            contentLoading,
             sourceChanged,
             historyChanged,
             faviconChanged,
@@ -8059,44 +8175,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
     }
 
+    private void CommitTabNavigation(BrowserTab tab, ulong navigationId, string source)
+    {
+        if (tab.AddressNavigation.TryCommit(navigationId))
+        {
+            tab.Url = tab.AddressNavigation.InternalDocumentUrl ?? source;
+            UpdateAddressForNavigation(tab);
+            RecordTabNavigation(tab, tab.Url);
+        }
+    }
+
+    private void UpdateAddressForNavigation(BrowserTab tab)
+    {
+        if (ReferenceEquals(tab, GetActiveBrowserCommandTarget()))
+        {
+            var url = tab.AddressUrl;
+            _addressBarController.SetAddressTextForNavigation(IsNewTabUrl(url) ? string.Empty : url ?? string.Empty);
+            UpdateAddressConnectionBadgeForTab(tab);
+        }
+    }
+
     private void RefreshTabFromCore(BrowserTab tab)
     {
         if (IsNewTabUrl(tab.Url))
         {
             tab.Title = "新しいタブ";
-            if (ActiveTab == tab)
-            {
-                SetAddressText(string.Empty);
-            }
-
-            return;
         }
-
-        if (IsUserGuideUrl(tab.Url))
+        else if (IsUserGuideUrl(tab.Url))
         {
             tab.Title = "ユーザーガイド";
-            if (ActiveTab == tab)
-            {
-                SetAddressText(UserGuideUrl);
-            }
-
-            return;
         }
-
-        var source = GetTabWebView(tab)?.CoreWebView2?.Source;
-        if (!string.IsNullOrWhiteSpace(source) && !IsBlankUrl(source))
-        {
-            tab.Url = source;
-            if (ActiveTab == tab)
-            {
-                SetAddressText(source);
-            }
-        }
-
-        if (GetTabWebView(tab)?.CoreWebView2 is { DocumentTitle.Length: > 0 } core)
+        else if (GetTabWebView(tab)?.CoreWebView2 is { DocumentTitle.Length: > 0 } core)
         {
             tab.Title = core.DocumentTitle;
         }
+
+        UpdateAddressForNavigation(tab);
     }
 
     private static void RestoreNavigationHistory(
@@ -8162,7 +8276,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private void NavigateCore(
         BrowserTab tab,
         string url,
-        bool replaceCurrentHistoryEntry = false)
+        bool replaceCurrentHistoryEntry = false,
+        bool updateAddressText = true)
     {
         if (tab.IsNativeContentTab)
         {
@@ -8173,6 +8288,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         var webView = GetTabWebView(tab);
         if (webView?.CoreWebView2 is null || IsBlankUrl(url))
         {
+            UpdateAddressForNavigation(tab);
             return;
         }
 
@@ -8180,12 +8296,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         {
             if (IsNewTabUrl(url))
             {
-                tab.Title = "新しいタブ";
                 AppendWebViewPerformanceDiagnostic(
                     "webview-navigate-request",
                     tab,
                     url,
                     detail: "newTab=true");
+                tab.AddressNavigation.ExpectAppRequest(null, string.Empty, NewTabUrl);
                 webView.CoreWebView2.NavigateToString(BuildNewTabHtml(tab));
                 return;
             }
@@ -8205,7 +8321,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
 
             var navigationUrl = YouTubePlaybackStateService.BuildNavigationUrl(tab, url, isBackgroundNavigation);
-            tab.Url = url;
             AppendWebViewPerformanceDiagnostic(
                 "webview-navigate-request",
                 tab,
@@ -8220,11 +8335,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
             else
             {
+                if (updateAddressText)
+                {
+                    tab.AddressNavigation.ExpectAppRequest(navigationUrl, url);
+                }
+                else
+                {
+                    tab.AddressNavigation.ClearAppRequest();
+                }
+
                 webView.CoreWebView2.Navigate(navigationUrl);
             }
         }
         catch (Exception ex)
         {
+            tab.AddressNavigation.ClearAppRequest();
+            UpdateAddressForNavigation(tab);
             SetStatus("移動できません: " + ex.Message, autoClear: true);
         }
     }
@@ -8236,12 +8362,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        tab.Url = UserGuideUrl;
-        tab.Title = "ユーザーガイド";
         var guideDirectory = Path.Combine(AppContext.BaseDirectory, "Help");
         var guidePath = Path.Combine(guideDirectory, "user-guide.html");
         if (!File.Exists(guidePath))
         {
+            tab.AddressNavigation.ExpectAppRequest(null, UserGuideUrl, UserGuideUrl);
             core.NavigateToString(BuildUserGuideUnavailableHtml());
             return;
         }
@@ -8250,6 +8375,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             UserGuideVirtualHostName,
             guideDirectory,
             CoreWebView2HostResourceAccessKind.DenyCors);
+        tab.AddressNavigation.ExpectAppRequest(UserGuideContentUrl, UserGuideUrl, UserGuideUrl);
         core.Navigate(UserGuideContentUrl);
     }
 
@@ -8625,7 +8751,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 OpenSelectedTextSearch(target, selectedText);
                 break;
             case "CopyUrl":
-                CopyActiveTabUrl(target);
+                await CopyActiveTabUrlAsync(target);
                 break;
             case "AddBookmark":
                 await AddCurrentPageBookmarkAsync(target);
@@ -8750,11 +8876,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
 
         NavigateCore(tab, targetUrl);
-        if (ActiveTab == tab)
-        {
-            SetAddressText(targetUrl);
-        }
-
         UpdateToolbarState();
         QueueSessionSave();
     }
@@ -8926,7 +9047,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private void CloseTabsToSide(bool closeRight, BrowserTab? target = null)
         => _closedTabLifecycleController.CloseTabsToSide(closeRight, target);
 
-    private void CopyActiveTabUrl(BrowserTab? target = null)
+    private async Task CopyActiveTabUrlAsync(BrowserTab? target = null)
     {
         if ((target ?? GetActiveBrowserCommandTarget()) is not { } tab)
         {
@@ -8940,14 +9061,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        try
+        var result = await _clipboardWriteService.SetTextAsync(url);
+        if (!_isClosingWindow)
         {
-            Clipboard.SetText(url);
-            SetStatus("URL をコピーしました", autoClear: true);
-        }
-        catch (Exception ex)
-        {
-            SetStatus("URL をコピーできません: " + ex.Message, autoClear: true);
+            SetStatus(result.IsSuccess ? "URL をコピーしました" : "URL をコピーできません", autoClear: true);
         }
     }
 
@@ -8958,6 +9075,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task ShowBookmarkManagerAsync()
     {
+        if (_isClosingWindow)
+        {
+            return;
+        }
+
+        if (_bookmarkManagerWindow is { } existing)
+        {
+            if (existing.IsLoaded)
+            {
+                if (existing.WindowState == WindowState.Minimized)
+                {
+                    existing.WindowState = WindowState.Normal;
+                }
+
+                existing.Activate();
+            }
+
+            return;
+        }
+
         if (!_bookmarkController.CanPersistChanges)
         {
             SetStatus(_bookmarkController.IsAvailable
@@ -8975,28 +9112,37 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             Owner = this
         };
 
-        var wasShown = await ModelessWindowService.ShowAsync(dialog);
-        if (!wasShown || _isClosingWindow)
+        _bookmarkManagerWindow = dialog;
+        try
         {
-            return;
-        }
+            var wasShown = await ModelessWindowService.ShowAsync(dialog);
+            if (!wasShown || _isClosingWindow)
+            {
+                return;
+            }
 
-        if (dialog.ChangedBookmarks)
-        {
-            await _bookmarkController.ApplyManagerChangesAsync(dialog.CreateChangeSet());
-        }
+            await dialog.ApplyPendingChangesAsync(_bookmarkController.ApplyManagerChangesAsync);
+            if (_isClosingWindow)
+            {
+                return;
+            }
 
-        if (dialog.IsAccepted
-            && dialog.SelectedBookmark is { } selectedBookmark
-            && _bookmarks.FirstOrDefault(item => item.Id == selectedBookmark.Id) is { } bookmark)
-        {
-            await OpenBookmarkAsync(bookmark);
-        }
+            if (dialog.IsAccepted
+                && dialog.SelectedBookmark is { } selectedBookmark
+                && _bookmarks.FirstOrDefault(item => item.Id == selectedBookmark.Id) is { } bookmark)
+            {
+                await OpenBookmarkAsync(bookmark);
+            }
 
-        if (dialog.CapturedWindowSize is { } windowSize)
+            if (dialog.CapturedWindowSize is { } windowSize)
+            {
+                _settings.BookmarkManagerWindowSize = windowSize;
+                SettingsService.Save(_settings);
+            }
+        }
+        finally
         {
-            _settings.BookmarkManagerWindowSize = windowSize;
-            SettingsService.Save(_settings);
+            _bookmarkManagerWindow = null;
         }
     }
 
@@ -9203,32 +9349,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
 
         var inputScopeId = Guid.NewGuid();
+        var (tabs, miniPlayers, windows, thumbnails) = CreateWorkspaceWindowPorts();
         var window = new WorkspaceOSWindow(
             new WorkspaceService(),
             _settings.LastWorkspaceId,
             _settings,
-            OpenWorkspaceUrlAsync,
-            OpenWorkspaceSessionTabsAsync,
-            OpenWorkspaceSessionTabsInNewWindowAsync,
-            CaptureWorkspaceMediaOverlayShelfItems,
-            CaptureWorkspaceMediaOverlaysAsync,
-            OpenWorkspaceMediaSetAsync,
-            CaptureWorkspaceUrlThumbnailAsync,
-            SaveLastWorkspaceId,
-            CaptureWorkspaceOpenTabs,
-            CaptureWorkspaceCurrentTab,
-            CloseWorkspaceTabAsync,
+            tabs,
+            miniPlayers,
+            windows,
+            thumbnails,
             inputScopeId,
             () => TryBeginWorkspaceGesture(inputScopeId),
             () => TryBeginWorkspaceRightWheel(inputScopeId),
             CompleteWorkspaceGesture,
             ExecuteGestureCommandAsync,
-            OpenWorkspaceFolderWindow,
-            OpenShellFolderInTab,
             path => OpenLocalVideoMiniPlayer(path),
             QuickLookPaneLayoutChanged,
-            QuickLookTextDisplayChanged,
-            () => _workspaceSessionController.DeferredRestoreMessage)
+            QuickLookTextDisplayChanged)
         {
             Owner = this
         };
@@ -9270,6 +9407,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         var inputScopeId = Guid.NewGuid();
         _settings.WorkspaceFolderWindowPlacements ??= [];
         _settings.WorkspaceFolderWindowPlacements.TryGetValue(folder.Id, out var initialPlacement);
+        var (tabs, miniPlayers, windows, thumbnails) = CreateWorkspaceWindowPorts();
         var window = new WorkspaceFolderWindow(
             new WorkspaceService(),
             folder.WorkspaceId,
@@ -9277,28 +9415,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             selectedItemId,
             _settings,
             initialPlacement,
-            OpenWorkspaceUrlAsync,
-            OpenWorkspaceSessionTabsAsync,
-            OpenWorkspaceSessionTabsInNewWindowAsync,
-            CaptureWorkspaceMediaOverlayShelfItems,
-            CaptureWorkspaceMediaOverlaysAsync,
-            OpenWorkspaceMediaSetAsync,
-            CaptureWorkspaceUrlThumbnailAsync,
-            SaveLastWorkspaceId,
-            CaptureWorkspaceOpenTabs,
-            CaptureWorkspaceCurrentTab,
-            CloseWorkspaceTabAsync,
+            tabs,
+            miniPlayers,
+            windows,
+            thumbnails,
             inputScopeId,
             () => TryBeginWorkspaceGesture(inputScopeId),
             () => TryBeginWorkspaceRightWheel(inputScopeId),
             CompleteWorkspaceGesture,
             ExecuteGestureCommandAsync,
-            OpenWorkspaceFolderWindow,
-            OpenShellFolderInTab,
             path => OpenLocalVideoMiniPlayer(path),
             QuickLookPaneLayoutChanged,
-            QuickLookTextDisplayChanged,
-            () => _workspaceSessionController.DeferredRestoreMessage)
+            QuickLookTextDisplayChanged)
         {
             Owner = this
         };
@@ -9324,6 +9452,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         _workspaceFolderWindows[folder.Id] = window;
         window.Show();
+    }
+
+    private (
+        WorkspaceTabPort Tabs,
+        WorkspaceMiniPlayerPort MiniPlayers,
+        WorkspaceWindowPort Windows,
+        WorkspaceThumbnailPort Thumbnails) CreateWorkspaceWindowPorts()
+    {
+        return (
+            new WorkspaceTabPort(
+                OpenWorkspaceUrlAsync, OpenWorkspaceSessionTabsAsync,
+                CaptureWorkspaceOpenTabs, CaptureWorkspaceCurrentTab,
+                CloseWorkspaceTabAsync, OpenShellFolderInTab,
+                () => _workspaceSessionController.DeferredRestoreMessage),
+            new WorkspaceMiniPlayerPort(
+                CaptureWorkspaceMediaOverlayShelfItems, CaptureWorkspaceMediaOverlaysAsync, OpenWorkspaceMediaSetAsync),
+            new WorkspaceWindowPort(
+                OpenWorkspaceSessionTabsInNewWindowAsync, OpenWorkspaceFolderWindow, SaveLastWorkspaceId,
+                () => _workspaceSessionController.DeferredRestoreMessage),
+            new WorkspaceThumbnailPort(CaptureWorkspaceUrlThumbnailAsync));
     }
 
     private void RefreshWorkspaceGestureSettings()
@@ -9457,7 +9605,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     Guid IWorkspaceSessionHost.WindowId => _workspaceWindowId;
     string IWorkspaceSessionHost.ResolveUrl(string url) => _addressService.Resolve(url);
     bool IWorkspaceSessionHost.HasContainerProfile(string containerProfileId)
-        => _containerProfiles.Any(profile => string.Equals(profile.Id, containerProfileId, StringComparison.OrdinalIgnoreCase));
+        => _containerProfiles.FindProfile(containerProfileId) is not null;
     BrowserTab IWorkspaceSessionHost.CreateFolderTab(string url, string title, string containerProfileId)
     {
         var tab = CreateFolderTab(url, title: title,
@@ -9485,10 +9633,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private IReadOnlyList<CapturedTabSnapshot> CaptureWorkspaceOpenTabs()
     {
         var result = new List<CapturedTabSnapshot>();
-        foreach (var window in Application.Current.Windows
-            .OfType<MainWindow>()
-            .Where(static x => x.IsVisible)
-            .OrderBy(static x => x._workspaceWindowIndex))
+        foreach (var window in GetSamePrivacyMainWindows(GetOpenMainWindows()))
         {
             result.AddRange(_tabCaptureService.CaptureTabs(
                 window._tabs.ToList(),
@@ -9534,7 +9679,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        foreach (var window in Application.Current.Windows.OfType<MainWindow>().ToList())
+        foreach (var window in GetSamePrivacyMainWindows(Application.Current.Windows.OfType<MainWindow>()).ToList())
         {
             var tab = window._tabs.FirstOrDefault(x => x.Id == tabId);
             if (tab is null)
@@ -9655,7 +9800,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        tab.Url = url;
         tab.Title = title;
         ResetWebViewLoadFailureForRetry(tab);
         await EnsureTabLoadedAsync(tab, null);
@@ -9664,12 +9808,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        NavigateCore(tab, url);
-        if (updateAddressText)
-        {
-            SetAddressText(url);
-        }
-
+        NavigateCore(tab, url, updateAddressText: updateAddressText);
         QueueSessionSave();
     }
 
@@ -10325,6 +10464,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     bool IBookmarkPreviewHost.HasLoadedNewTabPage => _tabs.Any(IsLoadedNewTabPage);
 
+    bool IBookmarkPreviewHost.IsLinkHoverPreviewEnabled => _settings.EnableLinkHoverPreview;
+
     string IBookmarkPreviewHost.ResolveUrl(string input) => _addressService.Resolve(input);
 
     Task<CoreWebView2Environment> IBookmarkPreviewHost.EnsureEnvironmentAsync()
@@ -10560,7 +10701,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private static bool CanPreserveClosedTabRuntime(BrowserTab tab)
     {
-        return s_tabRuntimeCoordinator.CanPreserveRuntime(tab);
+        return !tab.AddressNavigation.HasPendingNavigation
+            && s_tabRuntimeCoordinator.CanPreserveRuntime(tab);
     }
 
     private void QueueRestoredTabBridgeCompatibilityProbe(BrowserTab tab)
@@ -10652,7 +10794,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     void IClosedTabLifecycleHost.RefreshTabFromCore(BrowserTab tab) => RefreshTabFromCore(tab);
     void IClosedTabLifecycleHost.QueueRestoredTabBridgeCompatibilityProbe(BrowserTab tab) => QueueRestoredTabBridgeCompatibilityProbe(tab);
     void IClosedTabLifecycleHost.QueueBackgroundTabLoading() => QueueBackgroundTabLoading();
-    Task<bool> IClosedTabLifecycleHost.TrySuspendTabAsync(BrowserTab tab) => TrySuspendTabAsync(tab);
+    Task<bool> IClosedTabLifecycleHost.TrySuspendTabAsync(BrowserTab tab)
+        => TrySuspendTabAsync(tab, WebViewSuspendRoute.ClosedTab, alreadySuspendedIsSuccess: true);
+    void IClosedTabLifecycleHost.RecordClosedTabSuspendOutcome(ClosedTabSuspendOutcome outcome)
+    {
+        if (!_isPrivateWindow)
+        {
+            _performanceDiagnosticLogController.RecordClosedTabSuspendOutcome(outcome);
+        }
+    }
 
     private void DisposeWindowTabRuntimes()
     {
@@ -10720,6 +10870,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
         }
 
+        tab.AddressNavigation.Reset();
         RunCleanup(() => CancelSitePermissionPromptsForTab(tab.Id));
         RunCleanup(() => ClosePageFindForTab(tab));
         RunCleanup(() => CancelPageZoomNavigation(tab));
@@ -10748,9 +10899,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private void UpdateRightWheelTabSelectionInformation(BrowserTab tab)
     {
-        SetAddressText(tab.IsNativeContentTab || IsNewTabUrl(tab.Url)
+        SetAddressText(tab.IsNativeContentTab || IsNewTabUrl(tab.AddressUrl)
             ? string.Empty
-            : tab.Url ?? string.Empty);
+            : tab.AddressUrl ?? string.Empty);
     }
 
     IList<BrowserTab> ITabSelectionHost.Tabs => _tabs;
@@ -11469,7 +11620,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     BrowserTab? IInactiveTabWorkHost.ActiveTab => ActiveTab;
     IList<BrowserTab> IInactiveTabWorkHost.Tabs => _tabs;
     IReadOnlySet<Guid> IInactiveTabWorkHost.GetGlobalHotTabIds() => GetGlobalHotTabIds();
-    bool IInactiveTabWorkHost.IsYouTubeVideoTab(BrowserTab tab) => IsYouTubeVideoTab(tab);
+    bool IInactiveTabWorkHost.IsYouTubeVideoTab(BrowserTab tab)
+        => tab.AddressNavigation.RequestUrl is { } requestUrl
+            ? IsYouTubeVideoUrl(requestUrl)
+            : IsYouTubeVideoTab(tab);
     bool IInactiveTabWorkHost.IsVisibleSplitTab(BrowserTab tab) => SplitViewHost.Visibility == Visibility.Visible && _splitViewService.Contains(tab);
     bool IInactiveTabWorkHost.HasCore(BrowserTab tab) => GetTabWebView(tab)?.CoreWebView2 is not null;
     bool IInactiveTabWorkHost.IsInitializing(BrowserTab tab) => _webViewLifecycleService.IsInitializing(tab);
@@ -11486,7 +11640,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     bool IInactiveTabWorkHost.CanSuspendInactiveTab(BrowserTab tab, BrowserTab activeTab, bool isVisibleSplitTab)
         => _webViewLifecycleService.CanSuspendInactiveTab(tab, activeTab, isVisibleSplitTab);
     void IInactiveTabWorkHost.ClearLoading(BrowserTab tab) => _ = s_tabRuntimeCoordinator.SetLoading(tab, false);
-    Task<bool> IInactiveTabWorkHost.TrySuspendTabAsync(BrowserTab tab) => TrySuspendTabAsync(tab);
+    Task<bool> IInactiveTabWorkHost.TrySuspendTabAsync(BrowserTab tab, WebViewSuspendRoute route)
+        => TrySuspendTabAsync(tab, route);
     bool IInactiveTabWorkHost.ResumeTabIfSuspended(BrowserTab tab) => ResumeTabIfSuspended(tab);
     void IInactiveTabWorkHost.RunSupervised(string operation, Func<CancellationToken, Task> action)
         => _windowTaskSupervisor.TryRun(operation, action);
@@ -11516,9 +11671,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             : null;
     }
 
-    private async Task<bool> TrySuspendTabAsync(BrowserTab tab)
+    private async Task<bool> TrySuspendTabAsync(
+        BrowserTab tab, WebViewSuspendRoute route, bool alreadySuspendedIsSuccess = false)
     {
-        if (GetTabWebView(tab)?.CoreWebView2 is not { } core)
+        var webView = GetTabWebView(tab);
+        if (webView?.CoreWebView2 is not { } core)
         {
             return false;
         }
@@ -11528,11 +11685,56 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             if (core.IsSuspended)
             {
                 _ = s_tabRuntimeCoordinator.SetSuspended(tab, true);
-                return false;
+                return alreadySuspendedIsSuccess;
             }
 
-            var suspended = await core.TrySuspendAsync();
-            _ = s_tabRuntimeCoordinator.SetSuspended(tab, suspended);
+            Task<bool> SuspendCoreAsync() => WebViewSuspendDiagnostics.TrySuspendAsync(
+                core, webView, route, _isPrivateWindow ? null : _performanceDiagnosticLogController);
+
+            bool suspended;
+            if (route is WebViewSuspendRoute.FocusedViewing or WebViewSuspendRoute.MemoryPressure or WebViewSuspendRoute.Thumbnail)
+            {
+                var lastActivatedAt = tab.LastActivatedAt;
+                var source = core.Source;
+                bool CanHide() => tab.LastActivatedAt == lastActivatedAt
+                    && ReferenceEquals(GetTabWebView(tab)?.CoreWebView2, core)
+                    && string.Equals(core.Source, source, StringComparison.Ordinal)
+                    && CanHideBackgroundWebView(tab, route);
+
+                if (!CanHide() || !await HasNoActivePageMediaAsync(tab, core))
+                {
+                    return false;
+                }
+
+                // 再生確認を待つ間に別の経路から既に休止した可能性がある。
+                if (!CanHide() || core.IsSuspended)
+                {
+                    return false;
+                }
+
+                suspended = await BackgroundWebViewSuspension.For(webView).TrySuspendAsync(
+                    webView,
+                    CanHide,
+                    SuspendCoreAsync,
+                    () => _tabs.Contains(tab) && !CanHide(),
+                    () =>
+                    {
+                        if (ReferenceEquals(GetTabWebView(tab)?.CoreWebView2, core)
+                            && s_tabRuntimeCoordinator.GetOwnershipSnapshot(tab).State == TabRuntimeState.Attached)
+                        {
+                            ResumeTabIfSuspended(tab);
+                        }
+                    });
+            }
+            else
+            {
+                suspended = await SuspendCoreAsync();
+            }
+
+            if (ReferenceEquals(GetTabWebView(tab)?.CoreWebView2, core))
+            {
+                _ = s_tabRuntimeCoordinator.SetSuspended(tab, suspended);
+            }
             return suspended;
         }
         catch
@@ -11541,9 +11743,66 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
     }
 
+    private bool CanHideBackgroundWebView(BrowserTab tab, WebViewSuspendRoute route)
+    {
+        var activeTab = ActiveTab;
+        return activeTab is not null
+            && !_isClosingWindow
+            && _tabs.Contains(tab)
+            && !ReferenceEquals(_displayedTab, tab)
+            && !tab.AddressNavigation.HasPendingNavigation
+            && _webViewLifecycleService.CanSuspendInactiveTab(
+                tab, activeTab, (SplitViewHost.Visibility == Visibility.Visible || _splitViewWindowStateCoordinator.IsPreparing)
+                    && _splitViewService.Contains(tab))
+            && !HasActiveDownloadForMemoryManagement()
+            && (route == WebViewSuspendRoute.Thumbnail || !_tabThumbnailCaptureController.IsCapturing(tab))
+            && (!YouTubeUrlService.TryGetVideoId(tab.Url, out _)
+                || WebViewLifecycleService.IsSafeToSuspendInactiveYouTubePlayback(
+                    TryGetYouTubePlaybackActivity("tab", tab.Id, out var activity) ? activity : null,
+                    TryGetCurrentYouTubePlaybackPaused(tab)));
+    }
+
+    private async Task<bool> HasNoActivePageMediaAsync(BrowserTab tab, CoreWebView2 core)
+    {
+        if (core.IsDocumentPlayingAudio)
+        {
+            return false;
+        }
+
+        // 音にならないミュート動画も確認する。別オリジンのフレームは既存のFrameCreatedで取得したCoreから読む。
+        const string noActiveMediaScript = """
+            (() => {
+                if (navigator.mediaSession?.playbackState === "playing") return false;
+                const roots = [document];
+                while (roots.length > 0) {
+                    const walker = document.createTreeWalker(roots.pop(), NodeFilter.SHOW_ELEMENT);
+                    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                        if (node instanceof HTMLMediaElement && !node.paused && !node.ended) return false;
+                        if (node.shadowRoot) roots.push(node.shadowRoot);
+                    }
+                }
+                return true;
+            })()
+            """;
+        var frames = s_tabAudioPanFrameSubscriptionOwner.CreateFrameSnapshot(tab);
+        var checks = new List<Task<string>>(frames.Count + 1) { core.ExecuteScriptAsync(noActiveMediaScript) };
+        foreach (var frame in frames)
+        {
+            checks.Add(frame.ExecuteScriptAsync(noActiveMediaScript));
+        }
+
+        var results = await Task.WhenAll(checks)
+            .WaitAsync(TimeSpan.FromSeconds(2), _windowTaskSupervisor.LifetimeToken);
+        return results.All(static result => string.Equals(result, "true", StringComparison.Ordinal))
+            && frames.SequenceEqual(s_tabAudioPanFrameSubscriptionOwner.CreateFrameSnapshot(tab))
+            && !core.IsDocumentPlayingAudio;
+    }
+
     private bool ResumeTabIfSuspended(BrowserTab tab)
     {
-        if (GetTabWebView(tab)?.CoreWebView2 is not { } core)
+        var webView = GetTabWebView(tab);
+        var shown = webView is not null && BackgroundWebViewSuspension.Find(webView)?.RestoreForUse(webView) == true;
+        if (webView?.CoreWebView2 is not { } core)
         {
             _ = s_tabRuntimeCoordinator.SetSuspended(tab, false);
             return false;
@@ -11554,7 +11813,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             if (!core.IsSuspended)
             {
                 _ = s_tabRuntimeCoordinator.SetSuspended(tab, false);
-                return false;
+                return shown;
             }
 
             core.Resume();
@@ -11565,6 +11824,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         {
             return false;
         }
+    }
+
+    private async Task<bool> ResumeTabForThumbnailAsync(BrowserTab tab)
+    {
+        var pending = GetTabWebView(tab) is { } webView ? BackgroundWebViewSuspension.Find(webView)?.Pending : null;
+        var resumed = ResumeTabIfSuspended(tab);
+        if (pending is not null)
+        {
+            await pending.WaitAsync(TimeSpan.FromSeconds(2), _windowTaskSupervisor.LifetimeToken);
+        }
+
+        return resumed;
     }
 
     private void ShowWebView(BrowserTab tab)
@@ -12155,7 +12426,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     bool ITabThumbnailCaptureHost.IsActiveTab(BrowserTab tab) => ActiveTab == tab;
     void ITabThumbnailCaptureHost.ClearLoadFailure(BrowserTab tab) => ClearWebViewLoadFailure(tab);
     Task ITabThumbnailCaptureHost.EnsureLoadedAsync(BrowserTab tab, string url) => EnsureTabLoadedAsync(tab, url);
-    bool ITabThumbnailCaptureHost.ResumeIfSuspended(BrowserTab tab) => ResumeTabIfSuspended(tab);
+    Task<bool> ITabThumbnailCaptureHost.ResumeForCaptureAsync(BrowserTab tab) => ResumeTabForThumbnailAsync(tab);
     bool ITabThumbnailCaptureHost.IsInitializing(BrowserTab tab) => _webViewLifecycleService.IsInitializing(tab);
     Task ITabThumbnailCaptureHost.WaitForInitializationAsync(BrowserTab tab) => _webViewLifecycleService.WaitForInitializationAsync(tab);
     Func<string, string?, CancellationToken, Task<WebThumbnailCaptureResult>>? ITabThumbnailCaptureHost.GetCaptureAction(BrowserTab tab)
@@ -12164,7 +12435,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             : null;
     ImageSource ITabThumbnailCaptureHost.CreateFallbackThumbnail(BrowserTab tab) => CreateFallbackThumbnail(tab);
     void ITabThumbnailCaptureHost.SetThumbnail(BrowserTab tab, ImageSource image) => _ = s_tabRuntimeCoordinator.SetThumbnail(tab, image);
-    Task ITabThumbnailCaptureHost.TrySuspendAsync(BrowserTab tab) => TrySuspendTabAsync(tab);
+    Task ITabThumbnailCaptureHost.TrySuspendAsync(BrowserTab tab)
+        => TrySuspendTabAsync(tab, WebViewSuspendRoute.Thumbnail);
     void ITabThumbnailCaptureHost.UpdateRecentThumbnail(BrowserTab tab) => UpdateRecentTabThumbnail(tab);
     void ITabThumbnailCaptureHost.RecordCaptureDiagnostic(BrowserTab tab, string? url, long elapsedMilliseconds, string detail, bool isBackgroundWarmup)
         => AppendWebViewPerformanceDiagnostic("webview-thumbnail-capture", tab, url, elapsedMilliseconds, detail, thumbnailWarmup: isBackgroundWarmup);
@@ -12645,7 +12917,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             "runner=session",
             $"operation={NormalizeSessionDiagnosticToken(operation)}",
             $"type={NormalizeSessionDiagnosticToken(exception.GetType().Name)}",
-            $"message={NormalizeSessionDiagnosticToken(exception.Message)}",
+            // タブ復元の例外本文には、要約前のURLが含まれる場合がある。
+            operation is "tab-restore-failed" or "tab-registration-failed"
+                ? string.Empty
+                : $"message={NormalizeSessionDiagnosticToken(exception.Message)}",
             string.IsNullOrWhiteSpace(detail)
                 ? string.Empty
                 : $"detail={NormalizeSessionDiagnosticToken(detail)}");
@@ -12709,24 +12984,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         return (long)Math.Round(Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds);
     }
 
-    private static string SummarizeDiagnosticUrl(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            return url;
-        }
-
-        if (uri.Scheme.Equals("tabbrowser", StringComparison.OrdinalIgnoreCase)
-            || uri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase))
-        {
-            return uri.ToString();
-        }
-
-        var path = uri.AbsolutePath;
-        return string.IsNullOrWhiteSpace(path) || path == "/"
-            ? $"{uri.Scheme}://{uri.Host}"
-            : $"{uri.Scheme}://{uri.Host}{path}";
-    }
+    private static string SummarizeDiagnosticUrl(string url) => DiagnosticLogWriter.SummarizeDiagnosticUrl(url);
 
     private static string NormalizeSessionDiagnosticToken(string value)
     {
@@ -13656,14 +13914,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     {
         try
         {
-            snapshot = JsonSerializer.Deserialize<TabTransferSnapshot>(json) ?? new TabTransferSnapshot();
-            return !string.IsNullOrWhiteSpace(snapshot.Url);
+            var parsed = JsonSerializer.Deserialize<TabTransferSnapshot>(json);
+            if (parsed?.Url is { } url
+                && (IsNewTabUrl(url) || IsUserGuideUrl(url) || IsWorkspaceTabUrl(url)
+                    || (Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                        && IsAllowedDroppedUrlScheme(uri.Scheme)
+                        && !BrowserUrlRulesService.IsRemoteFileUrl(uri))))
+            {
+                snapshot = parsed;
+                return true;
+            }
         }
-        catch
+        catch (JsonException)
         {
-            snapshot = default!;
-            return false;
+            // 壊れた転送データはタブとして受け取らない。
         }
+
+        snapshot = default!;
+        return false;
     }
 
     [DllImport("user32.dll")]
@@ -14200,6 +14468,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             EventHandler<CoreWebView2FrameCreatedEventArgs> frameCreated,
             EventHandler<CoreWebView2ServerCertificateErrorDetectedEventArgs> serverCertificateErrorDetected,
             EventHandler<object> documentTitleChanged,
+            EventHandler<CoreWebView2ContentLoadingEventArgs> contentLoading,
             EventHandler<CoreWebView2SourceChangedEventArgs> sourceChanged,
             EventHandler<object> historyChanged,
             EventHandler<object> faviconChanged,
@@ -14223,6 +14492,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             FrameCreated = frameCreated;
             ServerCertificateErrorDetected = serverCertificateErrorDetected;
             DocumentTitleChanged = documentTitleChanged;
+            ContentLoading = contentLoading;
             SourceChanged = sourceChanged;
             HistoryChanged = historyChanged;
             FaviconChanged = faviconChanged;
@@ -14246,6 +14516,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         public EventHandler<CoreWebView2ServerCertificateErrorDetectedEventArgs> ServerCertificateErrorDetected { get; }
 
         public EventHandler<object> DocumentTitleChanged { get; }
+
+        public EventHandler<CoreWebView2ContentLoadingEventArgs> ContentLoading { get; }
 
         public EventHandler<CoreWebView2SourceChangedEventArgs> SourceChanged { get; }
 
@@ -14288,6 +14560,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 Core.FrameCreated += FrameCreated;
                 Core.ServerCertificateErrorDetected += ServerCertificateErrorDetected;
                 Core.DocumentTitleChanged += DocumentTitleChanged;
+                Core.ContentLoading += ContentLoading;
                 Core.SourceChanged += SourceChanged;
                 Core.HistoryChanged += HistoryChanged;
                 Core.FaviconChanged += FaviconChanged;
@@ -14325,6 +14598,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             TryDetach(() => Core.ServerCertificateErrorDetected -= ServerCertificateErrorDetected);
             TryDetach(() => Core.DocumentTitleChanged -= DocumentTitleChanged);
             TryDetach(() => Core.SourceChanged -= SourceChanged);
+            TryDetach(() => Core.ContentLoading -= ContentLoading);
             TryDetach(() => Core.HistoryChanged -= HistoryChanged);
             TryDetach(() => Core.FaviconChanged -= FaviconChanged);
             TryDetach(() => Core.IsDocumentPlayingAudioChanged -= IsDocumentPlayingAudioChanged);

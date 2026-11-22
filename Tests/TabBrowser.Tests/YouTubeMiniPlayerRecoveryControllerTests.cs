@@ -530,9 +530,35 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
         Assert.Equal(failure == "cancel" ? 0 : 1, f.Host.SourceCount);
         if (f.Waits.Count > 0) Assert.True(f.Waits[0].Completion.IsCompletedSuccessfully);
         if (f.Waits.Count > 0) Assert.False(await f.Waits[0].Completion);
-        var nextWait = f.Runtime.BeginRecoveryNavigation(f.Runtime.WebView);
+        var nextWait = f.Runtime.Restoration.BeginRecoveryNavigation(f.Runtime.WebView);
         f.Runtime.CompleteRecoveryNavigation(f.Runtime.WebView!, true);
         Assert.True(await nextWait.Completion);
+    }
+
+    [Fact]
+    public async Task RecoveryNavigationWaitRequiresBothCurrentAndExpectedWebView()
+    {
+        using var f = new Fixture();
+        var runtime = f.Runtime;
+        var original = runtime.WebView!;
+        var replacement = WebViewIdentity();
+        var reloadWait = runtime.Restoration.BeginRecoveryNavigation(original);
+
+        runtime.WebView = replacement;
+        runtime.CompleteRecoveryNavigation(original, isHealthy: true);
+        Assert.False(reloadWait.Completion.IsCompleted);
+        runtime.CompleteRecoveryNavigation(replacement, isHealthy: true);
+        Assert.False(reloadWait.Completion.IsCompleted);
+
+        var recreateWait = runtime.Restoration.BeginRecoveryNavigation(expectedWebView: null);
+        Assert.True(reloadWait.Completion.IsCompletedSuccessfully);
+        Assert.False(await reloadWait.Completion);
+
+        runtime.CompleteRecoveryNavigation(original, isHealthy: true);
+        Assert.False(recreateWait.Completion.IsCompleted);
+        runtime.CompleteRecoveryNavigation(replacement, isHealthy: true);
+        Assert.True(recreateWait.Completion.IsCompletedSuccessfully);
+        Assert.True(await recreateWait.Completion);
     }
 
     [Fact]
@@ -541,7 +567,7 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
         using var f = new Fixture();
         YouTubeMiniPlayerRecoveryNavigationWait replacement = default;
         f.State.Url = string.Empty;
-        f.Host.Reload = runtime => replacement = runtime.BeginRecoveryNavigation(runtime.WebView);
+        f.Host.Reload = runtime => replacement = runtime.Restoration.BeginRecoveryNavigation(runtime.WebView);
         Assert.False(await f.Run());
         Assert.False(replacement.Completion.IsCompleted);
         f.Runtime.CompleteRecoveryNavigation(f.Runtime.WebView!, true);
@@ -866,7 +892,7 @@ public sealed class YouTubeMiniPlayerRecoveryControllerTests
         public void ResetWebView(YouTubeMiniPlayerRuntime runtime)
         {
             Trace.Add("reset");
-            runtime.CancelRecoveryNavigation();
+            runtime.Restoration.CancelRecoveryNavigation();
             runtime.DisplayHealth.Reset();
             runtime.WebView = null;
         }

@@ -1826,65 +1826,112 @@
                                     </DockPanel>
                                 </Border>
                             </Popup>
-                            <Popup x:Name="YouTubeMiniPlayerArrangePopup" Closed="YouTubeMiniPlayerArrangePopup_Closed" PreviewKeyDown="YouTubeMiniPlayerArrangement_KeyDown" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerListPopupRoot}" Placement="Left" HorizontalOffset="-12" VerticalOffset="0" StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
+                            <Popup x:Name="YouTubeMiniPlayerArrangePopup" Opened="YouTubeMiniPlayerArrangePopup_Opened" Closed="YouTubeMiniPlayerArrangePopup_Closed" PreviewKeyDown="YouTubeMiniPlayerArrangement_KeyDown" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerListPopupRoot}" Placement="Left" HorizontalOffset="-12" VerticalOffset="0" StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
                                 <Border Width="420" Padding="10" Background="#11141A" BorderBrush="#3A404D" BorderThickness="1" CornerRadius="4">
-                                    <StackPanel>
-                                        <TextBlock x:Name="YouTubeMiniPlayerArrangeTargetText" Text="対象：全0件" Foreground="#67E8F9" TextWrapping="Wrap" Margin="0,0,0,6" />
-                                        <TextBlock Foreground="#9CA3AF" FontSize="12" Text="整列先のディスプレイ" />
-                                        <ComboBox x:Name="YouTubeMiniPlayerArrangeDisplayComboBox" Height="30" Margin="2,4,2,8" DisplayMemberPath="DisplayName" SelectedValuePath="DeviceName" SelectionChanged="YouTubeMiniPlayerArrangeDisplayComboBox_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
-                                        <TextBlock Foreground="#9CA3AF" FontSize="12" Text="基本配置" />
-                                        <UniformGrid Margin="0,4,0,0" Columns="3">
-                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeGridButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}">
+                                    <DockPanel>
+                                        <Thumb x:Name="YouTubeMiniPlayerArrangeDragHandle" DockPanel.Dock="Top" Height="24" Margin="2,0,2,6" Cursor="SizeAll" Focusable="False" AutomationProperties.Name="整列メニューを移動" ToolTip="ドラッグして整列メニューだけを移動" DragStarted="YouTubeMiniPlayerArrangeDragHandle_DragStarted" DragDelta="YouTubeMiniPlayerArrangeDragHandle_DragDelta" DragCompleted="YouTubeMiniPlayerArrangeDragHandle_DragCompleted">
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="{x:Type Thumb}">
+                                                    <Border Background="#151922" BorderBrush="#303744" BorderThickness="1" CornerRadius="3">
+                                                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#D1D5DB" FontSize="11" Text="⋮⋮  ドラッグで移動" />
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                        <StackPanel DockPanel.Dock="Bottom">
+                                            <Border x:Name="YouTubeMiniPlayerArrangementPreviewBar" Margin="2,6,2,0" Padding="8,6" Background="#151B24" BorderBrush="#22D3EE" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
                                                 <StackPanel>
-                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeGridImage}" />
-                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="グリッド" />
+                                                    <TextBlock x:Name="YouTubeMiniPlayerArrangementPreviewText" Foreground="#E5E7EB" FontSize="12" TextWrapping="Wrap" />
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,5,0,0">
+                                                        <Button x:Name="YouTubeMiniPlayerArrangementPreviewEditButton" Width="66" Height="30" Content="調整" ToolTip="予告中の動画枠を移動・四隅リサイズ" Click="YouTubeMiniPlayerArrangementPreviewEditButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                                        <Button x:Name="YouTubeMiniPlayerArrangementPreviewResetButton" Width="104" Height="30" Margin="4,0,0,0" Content="配置案に戻す" ToolTip="手動調整を破棄して最初の配置予告へ戻す" Click="YouTubeMiniPlayerArrangementPreviewResetButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                                        <Button Width="84" Height="30" Margin="4,0,0,0" Content="キャンセル" Click="YouTubeMiniPlayerArrangementPreviewCancelButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
+                                                        <Button Width="74" Height="30" Margin="4,0,0,0" Content="適用" Click="YouTubeMiniPlayerArrangementPreviewApplyButton_Click" Style="{StaticResource YouTubeMiniPlayerPrimaryButtonStyle}" />
+                                                    </StackPanel>
                                                 </StackPanel>
-                                            </Button>
-                                            <Button x:Name="YouTubeMiniPlayerArrangeHorizontalButton" Height="60" Margin="2" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeHorizontalButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="横一列の配置位置を選択">
-                                                <StackPanel>
-                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeHorizontalImage}" />
-                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="横一列" />
-                                                </StackPanel>
-                                            </Button>
-                                            <Button x:Name="YouTubeMiniPlayerArrangeVerticalButton" Height="60" Margin="2" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeVerticalButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="縦一列の配置位置を選択">
-                                                <StackPanel>
-                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeVerticalImage}" />
-                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="縦一列" />
-                                                </StackPanel>
-                                            </Button>
-                                        </UniformGrid>
-                                        <TextBlock Margin="0,7,0,0" Foreground="#9CA3AF" FontSize="12" Text="用途別" />
-                                        <UniformGrid Margin="0,4,0,0" Columns="2">
-                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="選択した動画を大きくし、残りを右側または下側へ配置。複数選択にも対応">
-                                                <StackPanel>
-                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeFocusImage}" />
-                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="フォーカス" />
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeMonitorButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="通常動画とShortsを分けず均等なセルへ配置">
-                                                <StackPanel>
-                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeMonitorImage}" />
-                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="監視" />
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeNormalAndShortsButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="横長動画と縦長動画を別領域へ配置">
-                                                <StackPanel>
-                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeNormalAndShortsImage}" />
-                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="通常＋Shorts" />
-                                                </StackPanel>
-                                            </Button>
-                                            <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeChatButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="開いているチャットWindowを動画の右側へ吸着して配置">
-                                                <StackPanel>
-                                                    <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeChatImage}" />
-                                                    <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="チャット付き" />
-                                                </StackPanel>
-                                            </Button>
-                                        </UniformGrid>
-                                        <Border Height="1" Margin="2,7,2,5" Background="#303744" />
-                                        <Button Height="30" Margin="2" Content="ランダム配置＋再生位置" Click="YouTubeMiniPlayerArrangeRandomButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="配置と、読み込み済み動画の再生位置をランダムに変更" />
-                                        <CheckBox x:Name="YouTubeMiniPlayerArrangeIncludeMinimizedCheckBox" Margin="5,6,0,2" Foreground="#D1D5DB" FontSize="12" Content="最小化したプレイヤーを含む" />
-                                        <Button x:Name="YouTubeMiniPlayerRestoreArrangementButton" Height="30" Margin="2,5,2,2" Content="最初の整列前へ戻す" Click="YouTubeMiniPlayerRestoreArrangementButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="最初の整列前の位置と大きさに戻す" Visibility="Collapsed" />
-                                    </StackPanel>
+                                            </Border>
+                                            <Border x:Name="YouTubeMiniPlayerArrangeFailurePanel" Margin="2,4,2,2" Padding="6,4" Background="#30221F" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
+                                                <TextBlock x:Name="YouTubeMiniPlayerArrangeFailureText" FontSize="12" Foreground="#FBBF24" TextWrapping="Wrap" />
+                                            </Border>
+                                            <UniformGrid Rows="1">
+                                                <Button x:Name="YouTubeMiniPlayerRestorePreviousArrangementButton" Height="30" Margin="2,5,2,2" Content="直前の配置に戻す" Click="YouTubeMiniPlayerRestorePreviousArrangementButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="最後に適用した整列の直前の位置と大きさに戻す" Visibility="Collapsed" />
+                                                <Button x:Name="YouTubeMiniPlayerRestoreArrangementButton" Height="30" Margin="2,5,2,2" Content="最初の整列前へ戻す" Click="YouTubeMiniPlayerRestoreArrangementButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="最初の整列前の位置と大きさに戻す" Visibility="Collapsed" />
+                                            </UniformGrid>
+                                        </StackPanel>
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <StackPanel>
+                                                <TextBlock x:Name="YouTubeMiniPlayerArrangeTargetText" Text="対象：全0件" Foreground="#67E8F9" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                                <TextBlock Foreground="#9CA3AF" FontSize="12" Text="整列先のディスプレイ" />
+                                                <ComboBox x:Name="YouTubeMiniPlayerArrangeDisplayComboBox" Height="30" Margin="2,4,2,8" DisplayMemberPath="DisplayName" SelectedValuePath="DeviceName" SelectionChanged="YouTubeMiniPlayerArrangeDisplayComboBox_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}" />
+                                                <TextBlock Foreground="#9CA3AF" FontSize="12" Text="配置する場所" />
+                                                <Grid Margin="2,4,2,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="108" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ComboBox x:Name="YouTubeMiniPlayerArrangeAreaComboBox" Height="30" SelectedIndex="0" SelectionChanged="YouTubeMiniPlayerArrangeAreaComboBox_SelectionChanged" Style="{StaticResource ReadabilityComboBoxStyle}">
+                                                        <ComboBoxItem Content="ディスプレイ全体" Tag="Display" />
+                                                        <ComboBoxItem Content="空きスペース" Tag="FreeSpace" />
+                                                        <ComboBoxItem Content="指定した範囲" Tag="SelectedRegion" />
+                                                    </ComboBox>
+                                                    <Button x:Name="YouTubeMiniPlayerArrangeRegionButton" Grid.Column="1" Height="30" Margin="4,0,0,0" Content="範囲を指定" IsEnabled="False" Click="YouTubeMiniPlayerArrangeRegionButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="ドラッグして配置範囲を囲みます。別のディスプレイも含められます。Escで中止できます。" />
+                                                </Grid>
+                                                <TextBlock x:Name="YouTubeMiniPlayerArrangeAreaText" Foreground="#9CA3AF" FontSize="11" Text="画面の作業領域を使います" TextWrapping="Wrap" Margin="2,0,2,6" />
+                                                <CheckBox x:Name="YouTubeMiniPlayerArrangeRemoveSpacingCheckBox" Margin="2,0,2,8" FontSize="12" Content="余白なし" Style="{StaticResource DarkCheckBoxStyle}" Click="YouTubeMiniPlayerArrangeRemoveSpacingCheckBox_Click" ToolTip="敷き詰め方を切り替えます。外周とウィンドウ間の余白をなくします。縦横比によって生じる空きは残ります。" />
+                                                <TextBlock Foreground="#9CA3AF" FontSize="12" Text="基本配置" />
+                                                <UniformGrid Margin="0,4,0,0" Columns="3">
+                                                    <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeGridButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}">
+                                                        <StackPanel>
+                                                            <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeGridImage}" />
+                                                            <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="グリッド" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button x:Name="YouTubeMiniPlayerArrangeHorizontalButton" Height="60" Margin="2" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeHorizontalButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="横一列の配置位置を選択">
+                                                        <StackPanel>
+                                                            <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeHorizontalImage}" />
+                                                            <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="横一列" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button x:Name="YouTubeMiniPlayerArrangeVerticalButton" Height="60" Margin="2" Tag="YouTubeMiniPlayerLinearPlacementPopupTrigger" Click="YouTubeMiniPlayerArrangeVerticalButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="縦一列の配置位置を選択">
+                                                        <StackPanel>
+                                                            <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeVerticalImage}" />
+                                                            <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="縦一列" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </UniformGrid>
+                                                <TextBlock Margin="0,7,0,0" Foreground="#9CA3AF" FontSize="12" Text="用途別" />
+                                                <UniformGrid Margin="0,4,0,0" Columns="2">
+                                                    <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeFocusButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="選択した動画を大きくし、残りを右側または下側へ配置。複数選択にも対応">
+                                                        <StackPanel>
+                                                            <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeFocusImage}" />
+                                                            <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="フォーカス" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeMonitorButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="通常動画とShortsを分けず均等なセルへ配置">
+                                                        <StackPanel>
+                                                            <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeMonitorImage}" />
+                                                            <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="監視" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeNormalAndShortsButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="横長動画と縦長動画を別領域へ配置">
+                                                        <StackPanel>
+                                                            <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeNormalAndShortsImage}" />
+                                                            <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="通常＋Shorts" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Height="60" Margin="2" Click="YouTubeMiniPlayerArrangeChatButton_Click" Style="{StaticResource YouTubeMiniPlayerArrangeButtonStyle}" ToolTip="開いているチャットWindowを動画の右側へ吸着して配置">
+                                                        <StackPanel>
+                                                            <Image Width="72" Height="26" Source="{StaticResource YouTubeMiniPlayerArrangeChatImage}" />
+                                                            <TextBlock Margin="0,3,0,0" HorizontalAlignment="Center" Text="チャット付き" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </UniformGrid>
+                                                <Border Height="1" Margin="2,7,2,5" Background="#303744" />
+                                                <Button Height="30" Margin="2" Content="ランダム配置＋再生位置" Click="YouTubeMiniPlayerArrangeRandomButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" ToolTip="配置と、読み込み済み動画の再生位置をランダムに変更" />
+                                                <CheckBox x:Name="YouTubeMiniPlayerArrangeIncludeMinimizedCheckBox" Margin="5,6,0,2" Foreground="#D1D5DB" FontSize="12" Click="YouTubeMiniPlayerArrangeIncludeMinimizedCheckBox_Click" Content="最小化したプレイヤーを含む" />
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </DockPanel>
                                 </Border>
                             </Popup>
                             <Popup x:Name="YouTubeMiniPlayerGlobalActionsPopup" PlacementTarget="{Binding ElementName=YouTubeMiniPlayerListPopupRoot}" Placement="Left" HorizontalOffset="-12" VerticalOffset="0" StaysOpen="True" AllowsTransparency="True" Opened="YouTubeMiniPlayerGlobalActionsPopup_Opened" PopupAnimation="Fade">
@@ -2024,22 +2071,6 @@
                                 </Border>
                             </Popup>
                             <DockPanel x:Name="YouTubeMiniPlayerListBody">
-                                <Border x:Name="YouTubeMiniPlayerArrangementPreviewBar" DockPanel.Dock="Top" Margin="10,0,10,8" Padding="8,6" Background="#151B24" BorderBrush="#22D3EE" BorderThickness="1" CornerRadius="3" Visibility="Collapsed">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="YouTubeMiniPlayerArrangementPreviewText" VerticalAlignment="Center" Foreground="#E5E7EB" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                        <Button x:Name="YouTubeMiniPlayerArrangementPreviewEditButton" Grid.Column="1" Width="66" Height="30" Margin="8,0,0,0" Content="調整" ToolTip="予告中の動画枠を移動・四隅リサイズ" Click="YouTubeMiniPlayerArrangementPreviewEditButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <Button x:Name="YouTubeMiniPlayerArrangementPreviewResetButton" Grid.Column="2" Width="104" Height="30" Margin="4,0,0,0" Content="配置案に戻す" ToolTip="手動調整を破棄して最初の配置予告へ戻す" Click="YouTubeMiniPlayerArrangementPreviewResetButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <Button Grid.Column="3" Width="74" Height="30" Margin="4,0,0,0" Content="適用" Click="YouTubeMiniPlayerArrangementPreviewApplyButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                        <Button Grid.Column="4" Width="84" Height="30" Margin="4,0,0,0" Content="キャンセル" Click="YouTubeMiniPlayerArrangementPreviewCancelButton_Click" Style="{StaticResource YouTubeMiniPlayerListButtonStyle}" />
-                                    </Grid>
-                                </Border>
                                 <Grid x:Name="YouTubeMiniPlayerAudioFocusHost" DockPanel.Dock="Top" Height="42" Margin="10,0,10,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -2102,6 +2133,7 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Foreground="#67E8F9" FontSize="11" Margin="0,1,8,0">
                                             <TextBlock.Style>
@@ -2134,6 +2166,19 @@
                                                 </TextBlock.ToolTip>
                                             </TextBlock>
                                         </Border>
+                                        <Button x:Name="YouTubeMiniPlayerRestorePreviousArrangementFromStatusButton" Grid.Column="2" Height="24" Margin="8,0,0,0" Content="直前に戻す" ToolTip="最後に適用した整列の直前の位置と大きさに戻す" Click="YouTubeMiniPlayerRestorePreviousArrangementFromStatus_Click">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource YouTubeMiniPlayerListButtonStyle}">
+                                                    <Setter Property="BorderBrush" Value="#22606B" />
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanRestorePreviousArrangementFromStatus}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
                                     </Grid>
                                 </Border>
                                 <Grid>

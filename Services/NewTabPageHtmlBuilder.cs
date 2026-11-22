@@ -127,49 +127,6 @@ internal static class NewTabPageHtmlBuilder
                     .bookmark-menu button:hover {
                         background: #2a1b22;
                     }
-                    .bookmark-preview {
-                        position: fixed;
-                        z-index: 18;
-                        display: none;
-                        width: min(520px, calc(100vw - 24px));
-                        height: min(360px, calc(100vh - 24px));
-                        overflow: hidden;
-                        border: 1px solid #3a404d;
-                        background: #11141a;
-                        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42);
-                    }
-                    .bookmark-preview.is-open {
-                        display: grid;
-                        grid-template-rows: auto 1fr;
-                    }
-                    .bookmark-preview-header {
-                        min-width: 0;
-                        padding: 8px 10px;
-                        border-bottom: 1px solid #2a2f3a;
-                        background: #151820;
-                    }
-                    .bookmark-preview-title {
-                        overflow: hidden;
-                        white-space: nowrap;
-                        text-overflow: ellipsis;
-                        color: #f3f4f6;
-                        font-size: 12px;
-                        font-weight: 650;
-                    }
-                    .bookmark-preview-url {
-                        overflow: hidden;
-                        white-space: nowrap;
-                        text-overflow: ellipsis;
-                        margin-top: 2px;
-                        color: #9ca3af;
-                        font-size: 11px;
-                    }
-                    .bookmark-preview-frame {
-                        width: 100%;
-                        height: 100%;
-                        border: 0;
-                        background: #ffffff;
-                    }
                     .title {
                         overflow: hidden;
                         white-space: nowrap;
@@ -216,17 +173,6 @@ internal static class NewTabPageHtmlBuilder
                 <div id="bookmarkContextMenu" class="bookmark-menu">
                     <button id="deleteBookmarkButton" type="button">削除</button>
                 </div>
-                <div id="bookmarkPreview" class="bookmark-preview">
-                    <div class="bookmark-preview-header">
-                        <div id="bookmarkPreviewTitle" class="bookmark-preview-title"></div>
-                        <div id="bookmarkPreviewUrl" class="bookmark-preview-url"></div>
-                    </div>
-                    <iframe id="bookmarkPreviewFrame"
-                            class="bookmark-preview-frame"
-                            loading="lazy"
-                            referrerpolicy="no-referrer"
-                            sandbox="allow-scripts allow-same-origin"></iframe>
-                </div>
                 <script>
                     const webview = window.chrome && window.chrome.webview;
                     const webMessageToken = {{webMessageTokenJson}};
@@ -237,14 +183,9 @@ internal static class NewTabPageHtmlBuilder
                     const bookmarkCount = document.getElementById("bookmarkCount");
                     const bookmarkContextMenu = document.getElementById("bookmarkContextMenu");
                     const deleteBookmarkButton = document.getElementById("deleteBookmarkButton");
-                    const bookmarkPreview = document.getElementById("bookmarkPreview");
-                    const bookmarkPreviewTitle = document.getElementById("bookmarkPreviewTitle");
-                    const bookmarkPreviewUrl = document.getElementById("bookmarkPreviewUrl");
-                    const bookmarkPreviewFrame = document.getElementById("bookmarkPreviewFrame");
                     let visibleBookmarks = [];
                     let selectedBookmarkIndex = -1;
                     let contextBookmarkId = "";
-                    let previewBookmarkId = "";
                     let previewTimer = 0;
 
                     function postWebMessage(message) {
@@ -379,7 +320,6 @@ internal static class NewTabPageHtmlBuilder
                     }
 
                     function hideBookmarkPreview({ clearFrame = false } = {}) {
-                        previewBookmarkId = "";
                         window.clearTimeout(previewTimer);
                         previewTimer = 0;
                         if (webview) {
@@ -390,27 +330,11 @@ internal static class NewTabPageHtmlBuilder
                         }
                     }
 
-                    function positionBookmarkPreview(anchor) {
-                        const rect = anchor.getBoundingClientRect();
-                        const width = Math.min(520, window.innerWidth - 24);
-                        const height = Math.min(360, window.innerHeight - 24);
-                        let left = rect.right + 10;
-                        if (left + width > window.innerWidth - 12) {
-                            left = rect.left - width - 10;
-                        }
-
-                        left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
-                        const top = Math.max(12, Math.min(rect.top, window.innerHeight - height - 12));
-                        bookmarkPreview.style.left = left + "px";
-                        bookmarkPreview.style.top = top + "px";
-                    }
-
                     function showBookmarkPreview(bookmark, anchor) {
                         if (!bookmark || !bookmark.url || contextBookmarkId) {
                             return;
                         }
 
-                        previewBookmarkId = bookmark.id;
                         const rect = anchor.getBoundingClientRect();
                         if (webview) {
                             postWebMessage({

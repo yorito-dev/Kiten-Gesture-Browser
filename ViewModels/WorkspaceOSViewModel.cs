@@ -18,6 +18,11 @@ namespace TabBrowser.ViewModels;
 
 public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceChangeListener, IDisposable, IAsyncDisposable
 {
+    internal bool HasPendingSystemSessionWork => IsWorkspaceSaving
+        || _undoShellOperationInProgress
+        || _pendingThumbnailSaves.Count != 0
+        || _pendingThumbnailSaveTask is { IsCompleted: false };
+
     private const double ArrangeStartMinimum = 24;
     private const double AvoidanceStepX = 32;
     private const double AvoidanceStepY = 40;
@@ -1315,6 +1320,11 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         Items_CollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
     }
 
+    internal bool OwnsVisibleItems(ObservableCollection<WorkspaceItemViewModel> items)
+        => ReferenceEquals(Items, items)
+            || _currentWorkspaceRuntime?.ContainsVisibleItems(items) == true
+            || _workspaceRuntimeCache.Values.Any(runtime => runtime.ContainsVisibleItems(items));
+
     private async Task StartWorkspaceBackfillsAfterStableSelectionAsync(
         Guid workspaceId,
         int activationVersion)
@@ -2407,7 +2417,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
             _allItems.RemoveAll(item => deletedIds.Contains(item.Id));
             RefreshFolderChildCounts();
-            ApplyVisibleItems();
+            ApplyVisibleItems(reuseVisibleItems: true);
             StatusText = deletedIds.Count == 0 ? "対象は既に削除されています"
                 : $"{deletedIds.Count} 件をごみ箱へ移動しました。「最近削除した項目」から復元できます";
         }
@@ -3456,26 +3466,36 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             $"実ファイルをコピーしました: {copied.Title}");
     }
 
-    private Task RecycleShellItemAsync(object? parameter)
+    private async Task RecycleShellItemAsync(object? parameter)
     {
-        if (parameter is not WorkspaceItemViewModel { Item: ShellItem shellItem } item)
+        if (_isDisposed || parameter is not WorkspaceItemViewModel { Item: ShellItem shellItem } item)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         try
         {
-            _shellItemService.MoveToRecycleBin(shellItem);
+            var previousOperation = _lastShellOperation;
+            var result = await _shellItemService.MoveToRecycleBinAsync([shellItem.TargetPath]);
+            if (_isDisposed)
+                return;
+
+            if (result.NotMovedCount > 0)
+            {
+                SetWorkspaceError(ShellRecycleResult.NotMovedMessage);
+                return;
+            }
+
             item.RefreshShellState();
-            SetLastShellOperation(null);
+            if (ReferenceEquals(_lastShellOperation, previousOperation))
+                SetLastShellOperation(null);
             StatusText = "ごみ箱へ移動しました。Workspace カードは参照切れとして残しています";
         }
         catch (Exception ex)
         {
-            SetWorkspaceError("ごみ箱へ移動できません: " + ex.Message);
+            if (!_isDisposed)
+                SetWorkspaceError("ごみ箱への移動結果を確認できません: " + ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     private async Task UndoShellOperationAsync(object? parameter)
@@ -3501,7 +3521,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
                     throw new WorkspaceItemUnavailableException();
                 }
 
-                _shellItemService.Undo(operation.Result);
+                await _shellItemService.UndoAsync(operation.Result);
                 operation.FileUndone = true;
                 operation.ExpectedKind = shell.Kind;
             }
@@ -3670,7 +3690,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
             try
             {
-                _shellItemService.Undo(result);
+                await _shellItemService.UndoAsync(result);
                 SetWorkspaceError($"DB更新に失敗しましたが、実ファイルは安全確認後に元へ戻しました。元: {result.SourcePath} / 変更先: {result.DestinationPath} / DB: 変更前。{dbError.Message}");
             }
             catch (Exception undoError)
@@ -4175,13 +4195,21 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         ApplyVisibleItems();
     }
 
-    private void ApplyVisibleItems()
+    private void ApplyVisibleItems(bool reuseVisibleItems = false)
     {
         SelectedItem = null;
-        var items = new ObservableCollection<WorkspaceItemViewModel>(
-            _allItems.Where(item => item.Item.ParentFolderId == CurrentFolderId));
-        _currentWorkspaceRuntime?.ReplaceVisibleItems(CurrentFolderId, items);
-        SetItemsCollection(items);
+        if (reuseVisibleItems && _currentWorkspaceRuntime is { } runtime)
+        {
+            runtime.RefreshVisibleItems();
+            SetItemsCollection(runtime.GetVisibleItems(CurrentFolderId));
+        }
+        else
+        {
+            var items = new ObservableCollection<WorkspaceItemViewModel>(
+                _allItems.Where(item => item.Item.ParentFolderId == CurrentFolderId));
+            _currentWorkspaceRuntime?.ReplaceVisibleItems(CurrentFolderId, items);
+            SetItemsCollection(items);
+        }
 
         OnPropertyChanged(nameof(HasItems));
         OnPropertyChanged(nameof(CurrentLocationTitle));
@@ -4614,6 +4642,9 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         public Guid WorkspaceId { get; }
 
         public List<WorkspaceItemViewModel> AllItems { get; }
+
+        public bool ContainsVisibleItems(ObservableCollection<WorkspaceItemViewModel> items)
+            => ReferenceEquals(_rootItems, items) || _folderItems.ContainsValue(items);
 
         public ObservableCollection<WorkspaceItemViewModel> GetVisibleItems(Guid? folderId)
         {

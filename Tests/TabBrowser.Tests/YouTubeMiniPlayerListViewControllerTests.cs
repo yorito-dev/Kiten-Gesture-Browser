@@ -374,6 +374,7 @@ public sealed class YouTubeMiniPlayerListViewControllerTests
         Assert.Equal(Visibility.Visible, f.Elements.YouTubeMiniPlayerListEmptyText.Visibility);
         Assert.Equal(Visibility.Collapsed, f.Elements.YouTubeMiniPlayerList.Visibility);
         Assert.False(f.Elements.YouTubeMiniPlayerGlobalActionsButton.IsEnabled);
+        Assert.Equal(Visibility.Collapsed, f.Elements.YouTubeMiniPlayerRestorePreviousArrangementButton.Visibility);
         var a = f.Add(0);
         a.IsPaused = false;
         a.IsMuted = false;
@@ -381,11 +382,17 @@ public sealed class YouTubeMiniPlayerListViewControllerTests
         b.IsPaused = false;
         f.Host.LoadedIds.Add(a.Id);
         f.Host.HasInitialArrangement = true;
+        f.Host.HasPreviousArrangement = true;
         await f.Refresh();
         Assert.Contains("2件｜再生1｜音声1", f.Elements.YouTubeMiniPlayerListSummaryText.Text);
         Assert.True(f.Elements.YouTubeMiniPlayerPlayPauseAllButton.IsEnabled);
         Assert.Equal(Visibility.Visible, f.Elements.YouTubeMiniPlayerRestoreArrangementButton.Visibility);
+        Assert.Equal(Visibility.Visible, f.Elements.YouTubeMiniPlayerRestorePreviousArrangementButton.Visibility);
         Assert.Equal(Visibility.Collapsed, f.Elements.YouTubeMiniPlayerListEmptyText.Visibility);
+        f.Host.HasPreviousArrangement = false;
+        await f.Refresh();
+        Assert.Equal(Visibility.Collapsed, f.Elements.YouTubeMiniPlayerRestorePreviousArrangementButton.Visibility);
+        Assert.Equal(Visibility.Visible, f.Elements.YouTubeMiniPlayerRestoreArrangementButton.Visibility);
         f.States.Clear();
         await f.Refresh();
         Assert.Empty(f.Controller.Items);
@@ -734,6 +741,38 @@ public sealed class YouTubeMiniPlayerListViewControllerTests
     });
 
     [Fact]
+    public void ThumbnailLoadsOnlyForItemsFromScopedOwners() => RunInSta(async () =>
+    {
+        using var f = new Fixture();
+        var caller = SitePrivacyTests.CreateTestWindow(false);
+        var peer = SitePrivacyTests.CreateTestWindow(false);
+        var opposite = SitePrivacyTests.CreateTestWindow(true);
+        var callerState = f.Add(0);
+        var peerState = f.Add(1);
+        var excludedState = f.Add(2);
+        var sources = new Dictionary<MainWindow, YouTubeMiniPlayerListOwnerSource>
+        {
+            [caller] = new(caller, [callerState]),
+            [peer] = new(peer, [peerState]),
+            [opposite] = new(opposite, [excludedState])
+        };
+        f.Host.Sources = caller.GetSamePrivacyMainWindows([caller, opposite, peer])
+            .Select(window => sources[window]).ToArray();
+        var requestedIds = new List<Guid>();
+        f.Load = (state, _) =>
+        {
+            requestedIds.Add(state.Id);
+            return Task.FromResult<ImageSource?>(null);
+        };
+
+        await f.Refresh();
+        f.Controller.BeginYouTubeMiniPlayerThumbnailLoads();
+
+        Assert.Equal([callerState.Id, peerState.Id], f.Controller.Items.Select(item => item.State.Id));
+        Assert.Equal([callerState.Id, peerState.Id], requestedIds);
+    });
+
+    [Fact]
     public void ThumbnailBatchRetriesOnlyOnExplicitNewBatch() => RunInSta(async () =>
     {
         using var f = new Fixture();
@@ -850,7 +889,7 @@ public sealed class YouTubeMiniPlayerListViewControllerTests
             window.ShowInTaskbar = false;
             window.Opacity = 0;
             Elements = new(window, new ListBox { SelectionMode = SelectionMode.Extended }, new TextBlock(), new TextBlock(),
-                new Button(), new Button(), new Button(), new Button(), new Button(), new Button(), new Button(),
+                new Button(), new Button(), new Button(), new Button(), new Button(), new Button(), new Button(), new Button(),
                 new Button(), new Button(), new Button(), new Border(), new Popup { Child = new Border() }, new ItemsControl());
             Host.Sources = [new(Owner, States)];
             Controller = new YouTubeMiniPlayerListViewController(Elements, StateSync, Timer, Host,
@@ -913,12 +952,12 @@ public sealed class YouTubeMiniPlayerListViewControllerTests
         public Guid? PreviewTargetId { get; set; }
         public bool HasArrangementPreview { get; set; }
         public bool HasInitialArrangement { get; set; }
+        public bool HasPreviousArrangement { get; set; }
         public bool HasRestorablePlayer { get; set; }
         public bool IsRestoringClosedPlayer { get; set; }
         public bool IsLiveSeekInProgress { get; set; }
         public ModifierKeys Modifiers { get; set; }
         public bool IsArrangementEditMode { get; set; }
-        internal bool OverEditableControl;
         internal string? TriggerTag;
         internal Rect WorkArea = new(0, 0, 1920, 1080);
         internal Func<Task> StopPreview = () => Task.CompletedTask;
@@ -950,7 +989,6 @@ public sealed class YouTubeMiniPlayerListViewControllerTests
                 YouTubeMiniPlayerNavigationService.CloneState(state))).ToArray();
         }
         public Task RestoreClosedHistoryAsync(Guid id) { RestoredClosedIds.Add(id); return RestoreClosed(id); }
-        public bool IsOverArrangementEditableControl(Point point) => OverEditableControl;
         public Rect GetWorkAreaForDevicePoint(Point devicePoint) => WorkArea;
         public string? GetTriggerTag(DependencyObject? source) => TriggerTag;
     }

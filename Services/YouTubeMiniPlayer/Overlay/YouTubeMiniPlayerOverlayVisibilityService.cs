@@ -42,7 +42,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
     {
         if (runtime.State.SourceKind == MiniPlayerSourceKind.LocalFile)
         {
-            runtime.ToolbarHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
             runtime.ToolbarPopup.IsOpen = false;
             runtime.Toolbar.Visibility = Visibility.Collapsed;
             return;
@@ -50,7 +50,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
 
         if (runtime.IsResizing || runtime.IsInputTransparent)
         {
-            runtime.ToolbarHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
             runtime.ToolbarPopup.IsOpen = false;
             runtime.Toolbar.Visibility = Visibility.Collapsed;
             return;
@@ -58,7 +58,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
 
         if (runtime.State.IsMinimized)
         {
-            runtime.ToolbarHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
             runtime.ToolbarPopup.IsOpen = false;
             runtime.Toolbar.Visibility = Visibility.Collapsed;
             return;
@@ -75,7 +75,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
             return;
         }
 
-        runtime.ToolbarHideTimer?.Stop();
+        runtime.Overlay.ToolbarHideTimer?.Stop();
         runtime.Toolbar.Visibility = Visibility.Visible;
         updateToolbarPlacement(runtime);
         runtime.ToolbarPopup.IsOpen = true;
@@ -93,7 +93,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
     {
         if (runtime.State.SourceKind == MiniPlayerSourceKind.LocalFile)
         {
-            runtime.ToolbarHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
             runtime.ToolbarPopup.IsOpen = false;
             runtime.Toolbar.Visibility = Visibility.Collapsed;
             return;
@@ -101,16 +101,16 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
 
         if (runtime.State.IsMinimized || runtime.IsInputTransparent)
         {
-            runtime.ToolbarHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
             runtime.ToolbarPopup.IsOpen = false;
             runtime.Toolbar.Visibility = Visibility.Collapsed;
-            runtime.TitleBandHideTimer?.Stop();
+            runtime.Overlay.TitleBandHideTimer?.Stop();
             runtime.TitleBandPopup.IsOpen = false;
             runtime.TitleBand.Visibility = Visibility.Collapsed;
             return;
         }
 
-        runtime.ToolbarHideTimer?.Stop();
+        runtime.Overlay.ToolbarHideTimer?.Stop();
         runtime.Toolbar.Visibility = Visibility.Visible;
         updateToolbarPlacement(runtime);
         runtime.ToolbarPopup.IsOpen = true;
@@ -119,7 +119,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
 
     public static void HideToolbarImmediately(YouTubeMiniPlayerRuntime runtime)
     {
-        runtime.ToolbarHideTimer?.Stop();
+        runtime.Overlay.ToolbarHideTimer?.Stop();
         runtime.ToolbarPopup.IsOpen = false;
         runtime.Toolbar.Visibility = Visibility.Collapsed;
     }
@@ -151,7 +151,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
     {
         if (runtime.State.IsMinimized)
         {
-            runtime.TitleBandHideTimer?.Stop();
+            runtime.Overlay.TitleBandHideTimer?.Stop();
             runtime.TitleBandPopup.IsOpen = false;
             runtime.TitleBand.Visibility = Visibility.Collapsed;
             return;
@@ -159,7 +159,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
 
         if (runtime.IsResizing || runtime.IsInputTransparent)
         {
-            runtime.TitleBandHideTimer?.Stop();
+            runtime.Overlay.TitleBandHideTimer?.Stop();
             runtime.TitleBandPopup.IsOpen = false;
             runtime.TitleBand.Visibility = Visibility.Collapsed;
             return;
@@ -171,7 +171,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
             return;
         }
 
-        runtime.TitleBandHideTimer?.Stop();
+        runtime.Overlay.TitleBandHideTimer?.Stop();
         runtime.TitleBand.Visibility = Visibility.Visible;
         updateTitleBandPlacement(runtime);
         runtime.TitleBandPopup.IsOpen = true;
@@ -218,20 +218,20 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
         Action<YouTubeMiniPlayerRuntime> refreshOverlayPosition,
         Action<YouTubeMiniPlayerRuntime> updateTitleBandPlacement)
     {
-        if (IsDragging(runtime) || runtime.IsToolbarMenuOpen)
+        if (IsDragging(runtime) || runtime.Overlay.IsToolbarMenuOpen)
         {
-            runtime.ToolbarHideTimer?.Stop();
+            runtime.Overlay.ToolbarHideTimer?.Stop();
             return;
         }
 
-        runtime.ToolbarHideTimer ??= CreateToolbarHideTimer(
+        runtime.Overlay.ToolbarHideTimer ??= CreateToolbarHideTimer(
             runtime,
             hideDelay,
             updateToolbarPlacement,
             refreshOverlayPosition,
             updateTitleBandPlacement);
-        runtime.ToolbarHideTimer.Stop();
-        runtime.ToolbarHideTimer.Start();
+        runtime.Overlay.ToolbarHideTimer.Stop();
+        runtime.Overlay.ToolbarHideTimer.Start();
     }
 
     private static DispatcherTimer CreateToolbarHideTimer(
@@ -248,7 +248,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (IsDragging(runtime) || runtime.IsToolbarMenuOpen)
+            if (IsDragging(runtime) || runtime.Overlay.IsToolbarMenuOpen)
             {
                 KeepToolbarVisible(
                     runtime,
@@ -268,15 +268,15 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
     {
         if (runtime.State.IsMinimized)
         {
-            runtime.TitleBandHideTimer?.Stop();
+            runtime.Overlay.TitleBandHideTimer?.Stop();
             runtime.TitleBandPopup.IsOpen = false;
             runtime.TitleBand.Visibility = Visibility.Collapsed;
             return;
         }
 
-        runtime.TitleBandHideTimer ??= CreateTitleBandHideTimer(runtime, hideDelay);
-        runtime.TitleBandHideTimer.Stop();
-        runtime.TitleBandHideTimer.Start();
+        runtime.Overlay.TitleBandHideTimer ??= CreateTitleBandHideTimer(runtime, hideDelay);
+        runtime.Overlay.TitleBandHideTimer.Stop();
+        runtime.Overlay.TitleBandHideTimer.Start();
     }
 
     private static DispatcherTimer CreateTitleBandHideTimer(YouTubeMiniPlayerRuntime runtime, TimeSpan hideDelay)
@@ -288,13 +288,6 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (runtime.State.IsMinimized)
-            {
-                runtime.TitleBandPopup.IsOpen = false;
-                runtime.TitleBand.Visibility = Visibility.Collapsed;
-                return;
-            }
-
             runtime.TitleBandPopup.IsOpen = false;
             runtime.TitleBand.Visibility = Visibility.Collapsed;
         };

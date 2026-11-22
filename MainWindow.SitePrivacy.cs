@@ -315,27 +315,12 @@ public partial class MainWindow
     private void UpdateAddressConnectionBadge()
         => UpdateAddressConnectionBadgeForTab(GetActiveBrowserCommandTarget());
 
-    private void UpdateAddressConnectionBadgeForNavigation(
-        BrowserTab tab,
-        string? navigationUrl,
-        bool hasCertificateError)
+    private void UpdateAddressConnectionBadgeForTab(BrowserTab? tab)
     {
-        if (ReferenceEquals(tab, GetActiveBrowserCommandTarget()))
-        {
-            UpdateAddressConnectionBadgeForTab(tab, navigationUrl, hasCertificateError);
-        }
-    }
-
-    private void UpdateAddressConnectionBadgeForTab(
-        BrowserTab? tab,
-        string? navigationUrl = null,
-        bool? navigationCertificateError = null)
-    {
+        var certificateErrorUrl = tab?.AddressNavigation.CertificateErrorUrl;
         var kind = SitePrivacyService.GetAddressConnectionBadgeKind(
-            navigationUrl
-                ?? (tab?.HasCertificateError == true ? tab.ConnectionBadgeNavigationUrl : null)
-                ?? (tab is null ? null : GetCurrentPageUrl(tab) ?? tab.Url),
-            navigationCertificateError ?? (tab?.HasCertificateError == true));
+            certificateErrorUrl ?? tab?.Url,
+            certificateErrorUrl is not null);
         if (kind == AddressConnectionBadgeKind.None)
         {
             AddressConnectionBadge.Visibility = Visibility.Collapsed;

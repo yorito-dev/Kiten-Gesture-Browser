@@ -31,7 +31,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
     }
 
     public static async Task<bool> TrySuspendForInactivityAsync(
-        YouTubeMiniPlayerRuntime runtime)
+        YouTubeMiniPlayerRuntime runtime, PerformanceDiagnosticLogController? diagnostics)
     {
         if (TryGetCoreWebView2(runtime) is not { } core)
         {
@@ -46,7 +46,8 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
                 return false;
             }
 
-            var suspended = await core.TrySuspendAsync();
+            var suspended = await WebViewSuspendDiagnostics.TrySuspendAsync(
+                core, runtime.WebView, WebViewSuspendRoute.YouTubeMiniPlayer, diagnostics);
             runtime.IsSuspendedForInactivity = suspended;
             return suspended;
         }
@@ -103,7 +104,8 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
                 if (!deferReload)
                 {
                     runtime.IsLoadStoppedForInactivity = false;
-                    core.Reload();
+                    YouTubeMiniPlayerWebViewService.RunAppNavigation(
+                        core, CoreWebView2NavigationKind.Reload, core.Source, core.Reload);
                 }
                 reloading = true;
             }
@@ -121,7 +123,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         Action<YouTubeMiniPlayerState, CoreWebView2WebMessageReceivedEventArgs> handleWebMessage)
     {
         if (runtime.IsDisposed
-            || runtime.WebMessageReceived is not null
+            || runtime.Registrations.WebMessageReceived is not null
             || TryGetCoreWebView2(runtime) is not { } core)
         {
             return;
@@ -130,7 +132,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         EventHandler<CoreWebView2WebMessageReceivedEventArgs> handler = (_, args) =>
             handleWebMessage(runtime.State, args);
         core.WebMessageReceived += handler;
-        runtime.WebMessageReceived = handler;
+        runtime.Registrations.WebMessageReceived = handler;
     }
 
     public static void AttachDocumentTitleHandler(
@@ -138,7 +140,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         Action<YouTubeMiniPlayerState> updateTitle)
     {
         if (runtime.IsDisposed
-            || runtime.DocumentTitleChanged is not null
+            || runtime.Registrations.DocumentTitleChanged is not null
             || TryGetCoreWebView2(runtime) is not { } core)
         {
             return;
@@ -146,14 +148,14 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
 
         EventHandler<object> handler = (_, _) => updateTitle(runtime.State);
         core.DocumentTitleChanged += handler;
-        runtime.DocumentTitleChanged = handler;
+        runtime.Registrations.DocumentTitleChanged = handler;
         updateTitle(runtime.State);
     }
 
     public static void AttachFullScreenHandler(YouTubeMiniPlayerRuntime runtime)
     {
         if (runtime.IsDisposed
-            || runtime.ContainsFullScreenElementChanged is not null
+            || runtime.Registrations.ContainsFullScreenElementChanged is not null
             || TryGetCoreWebView2(runtime) is not { } core)
         {
             return;
@@ -162,7 +164,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         EventHandler<object> handler = (_, _) =>
             ApplyFullScreenState(runtime, core.ContainsFullScreenElement);
         core.ContainsFullScreenElementChanged += handler;
-        runtime.ContainsFullScreenElementChanged = handler;
+        runtime.Registrations.ContainsFullScreenElementChanged = handler;
     }
 
     public static void ToggleFullScreen(YouTubeMiniPlayerRuntime runtime)
@@ -170,41 +172,41 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         ApplyFullScreenState(runtime, !runtime.IsFullScreen);
     }
 
-    public static void DetachWebMessageHandler(YouTubeMiniPlayerRuntime runtime)
+    private static void DetachWebMessageHandler(YouTubeMiniPlayerRuntime runtime)
     {
-        if (runtime.WebMessageReceived is null || TryGetCoreWebView2(runtime) is not { } core)
+        if (runtime.Registrations.WebMessageReceived is null || TryGetCoreWebView2(runtime) is not { } core)
         {
-            runtime.WebMessageReceived = null;
+            runtime.Registrations.WebMessageReceived = null;
             return;
         }
 
-        core.WebMessageReceived -= runtime.WebMessageReceived;
-        runtime.WebMessageReceived = null;
+        core.WebMessageReceived -= runtime.Registrations.WebMessageReceived;
+        runtime.Registrations.WebMessageReceived = null;
     }
 
-    public static void DetachDocumentTitleHandler(YouTubeMiniPlayerRuntime runtime)
+    private static void DetachDocumentTitleHandler(YouTubeMiniPlayerRuntime runtime)
     {
-        if (runtime.DocumentTitleChanged is null || TryGetCoreWebView2(runtime) is not { } core)
+        if (runtime.Registrations.DocumentTitleChanged is null || TryGetCoreWebView2(runtime) is not { } core)
         {
-            runtime.DocumentTitleChanged = null;
+            runtime.Registrations.DocumentTitleChanged = null;
             return;
         }
 
-        core.DocumentTitleChanged -= runtime.DocumentTitleChanged;
-        runtime.DocumentTitleChanged = null;
+        core.DocumentTitleChanged -= runtime.Registrations.DocumentTitleChanged;
+        runtime.Registrations.DocumentTitleChanged = null;
     }
 
-    public static void DetachFullScreenHandler(YouTubeMiniPlayerRuntime runtime)
+    private static void DetachFullScreenHandler(YouTubeMiniPlayerRuntime runtime)
     {
-        if (runtime.ContainsFullScreenElementChanged is null
+        if (runtime.Registrations.ContainsFullScreenElementChanged is null
             || TryGetCoreWebView2(runtime) is not { } core)
         {
-            runtime.ContainsFullScreenElementChanged = null;
+            runtime.Registrations.ContainsFullScreenElementChanged = null;
             return;
         }
 
-        core.ContainsFullScreenElementChanged -= runtime.ContainsFullScreenElementChanged;
-        runtime.ContainsFullScreenElementChanged = null;
+        core.ContainsFullScreenElementChanged -= runtime.Registrations.ContainsFullScreenElementChanged;
+        runtime.Registrations.ContainsFullScreenElementChanged = null;
     }
 
     private static void ApplyFullScreenState(
@@ -367,8 +369,8 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
 
     private static void HideOverlays(YouTubeMiniPlayerRuntime runtime)
     {
-        runtime.TitleBandHideTimer?.Stop();
-        runtime.ToolbarHideTimer?.Stop();
+        runtime.Overlay.TitleBandHideTimer?.Stop();
+        runtime.Overlay.ToolbarHideTimer?.Stop();
         runtime.TitleBandPopup.IsOpen = false;
         runtime.ToolbarPopup.IsOpen = false;
         runtime.TitleBand.Visibility = System.Windows.Visibility.Collapsed;
@@ -378,13 +380,13 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
     public static void ResetWebView(YouTubeMiniPlayerRuntime runtime)
     {
         YouTubeMiniPlayerRuntimeLoadService.Cancel(runtime);
-        runtime.LiveChatRequests.Reset();
+        runtime.LiveChat.ResetAvailabilityRequests();
         YouTubeMiniPlayerRuntimeContentFactory.ClearLiveContinuation(runtime);
         runtime.InactiveSuspendGeneration++;
         runtime.IsNavigationLoading = false;
         runtime.IsSuspendedForInactivity = false;
         runtime.IsLoadStoppedForInactivity = false;
-        runtime.CancelRecoveryNavigation();
+        runtime.Restoration.CancelRecoveryNavigation();
         runtime.DisplayHealth.Reset();
         runtime.SizeBasedQualityUpdateTimer?.Stop();
         runtime.SizeBasedQualityAppliedSignature = null;
@@ -392,6 +394,23 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
             runtime,
             canGoBack: false,
             canGoForward: false);
+        ReleaseWebView(runtime);
+    }
+
+    private static void ReleasePopupSurfaces(YouTubeMiniPlayerRuntime runtime)
+    {
+        runtime.Popup.IsOpen = false;
+        runtime.Popup.Child = null;
+        runtime.TitleBandPopup.IsOpen = false;
+        runtime.TitleBandPopup.Child = null;
+        runtime.ToolbarPopup.IsOpen = false;
+        runtime.ToolbarPopup.Child = null;
+        runtime.TitleBand.Visibility = System.Windows.Visibility.Collapsed;
+        runtime.Toolbar.Visibility = System.Windows.Visibility.Collapsed;
+    }
+
+    private static void ReleaseWebView(YouTubeMiniPlayerRuntime runtime)
+    {
         DetachWebMessageHandler(runtime);
         DetachDocumentTitleHandler(runtime);
         DetachFullScreenHandler(runtime);
@@ -408,19 +427,12 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
             return;
         }
 
-        runtime.TransparencyRegistration?.Dispose();
-        runtime.TransparencyRegistration = null;
+        runtime.Registrations.Transparency?.Dispose();
+        runtime.Registrations.Transparency = null;
         runtime.IsDisposed = true;
-        runtime.Popup.IsOpen = false;
-        runtime.Popup.Child = null;
-        runtime.TitleBandPopup.IsOpen = false;
-        runtime.TitleBandPopup.Child = null;
-        runtime.ToolbarPopup.IsOpen = false;
-        runtime.ToolbarPopup.Child = null;
-        runtime.TitleBand.Visibility = System.Windows.Visibility.Collapsed;
-        runtime.Toolbar.Visibility = System.Windows.Visibility.Collapsed;
-        runtime.TitleBandHideTimer?.Stop();
-        runtime.ToolbarHideTimer?.Stop();
+        ReleasePopupSurfaces(runtime);
+        runtime.Overlay.TitleBandHideTimer?.Stop();
+        runtime.Overlay.ToolbarHideTimer?.Stop();
         runtime.WebDragFollowTimer?.Stop();
         runtime.SizeBasedQualityUpdateTimer?.Stop();
         runtime.LocalVideoView?.Dispose();

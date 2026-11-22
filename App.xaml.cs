@@ -32,6 +32,8 @@ public partial class App : Application
 
     internal static BookmarkStateStore Bookmarks { get; } = new(new BookmarkStore(new BookmarkService()));
 
+    internal bool IsSystemSessionEndApproved { get; private set; }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         AppContext.SetSwitch(
@@ -77,8 +79,16 @@ public partial class App : Application
             MenuItem.ClickEvent,
             new RoutedEventHandler(RecordMenuActivityForHangDiagnostics),
             handledEventsToo: true);
+        Action<uint>? recordKeyboardHookProbe = null;
+        if (ApplicationChannelService.Current == ApplicationChannel.Development
+            && Environment.GetEnvironmentVariable("KITEN_DEV_MEASURE_KEYBOARD_HOOK") == "1")
+        {
+            recordKeyboardHookProbe = delay => Windows.OfType<MainWindow>()
+                .FirstOrDefault(static window => window.IsActive && !window.IsPrivateBrowsing)
+                ?.RecordKeyboardHookProbeDelay(delay);
+        }
         _keyboardShortcutHook = new ApplicationKeyboardShortcutHook(
-            () => Windows.OfType<MainWindow>());
+            () => Windows.OfType<MainWindow>(), recordProbeDelay: recordKeyboardHookProbe);
         _keyboardShortcutHook.Start();
         base.OnStartup(e);
         _applicationHangWatchdog = new ApplicationHangWatchdog(Dispatcher);
@@ -98,23 +108,26 @@ public partial class App : Application
             }
             _keyboardShortcutWindows.Clear();
             ClipboardHistory.Dispose();
-            RunExitCleanup(async () =>
+            if (!IsSystemSessionEndApproved)
             {
-                await BrowsingHistory.DisposeAsync().ConfigureAwait(false);
-                await RecentItems.DisposeAsync().ConfigureAwait(false);
-                try
+                RunExitCleanup(async () =>
                 {
-                    await _privateBrowsingStartupCleanupTask
-                        .WaitAsync(TimeSpan.FromSeconds(2))
-                        .ConfigureAwait(false);
-                }
-                catch (TimeoutException ex)
-                {
-                    PrivateBrowsingDataService.RecordStartupCleanupFailure(
-                        "startup-cleanup-exit-timeout",
-                        ex);
-                }
-            });
+                    await BrowsingHistory.DisposeAsync().ConfigureAwait(false);
+                    await RecentItems.DisposeAsync().ConfigureAwait(false);
+                    try
+                    {
+                        await _privateBrowsingStartupCleanupTask
+                            .WaitAsync(TimeSpan.FromSeconds(2))
+                            .ConfigureAwait(false);
+                    }
+                    catch (TimeoutException ex)
+                    {
+                        PrivateBrowsingDataService.RecordStartupCleanupFailure(
+                            "startup-cleanup-exit-timeout",
+                            ex);
+                    }
+                });
+            }
             _applicationHangWatchdog?.Dispose();
             _applicationHangWatchdog = null;
             DispatcherUnhandledException -= App_DispatcherUnhandledException;
@@ -129,15 +142,37 @@ public partial class App : Application
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
-        // OS終了では非同期保存や確認dialogを待たない。破棄前にOS終了を中止する。
+        // OS終了の通知内では、既存の保存状態だけを確かめる。
         var pendingWindows = Windows.OfType<MainWindow>()
             .Where(static window => !window.IsWindowShutdownCompleted).ToList();
-        if (pendingWindows.Count > 0)
+        var mustDefer = pendingWindows.Count > 0 && !CanAllowSystemSessionEnd(pendingWindows);
+        if (mustDefer)
         {
             e.Cancel = true;
             foreach (var window in pendingWindows) window.NotifySystemShutdownDeferred();
         }
         base.OnSessionEnding(e);
+        e.Cancel |= mustDefer;
+        IsSystemSessionEndApproved = pendingWindows.Count > 0 && !e.Cancel;
+    }
+
+    private bool CanAllowSystemSessionEnd(IReadOnlyList<MainWindow> pendingWindows)
+    {
+        try
+        {
+            return _privateBrowsingStartupCleanupTask.IsCompletedSuccessfully
+                && !Windows.OfType<Window>().Any(static window => window is not TabBrowser.MainWindow && window.IsVisible)
+                && System.Windows.Input.Mouse.Captured is null
+                && Bookmarks.CanConfirmPersistedState()
+                && BrowsingHistory.CanConfirmPersistedState()
+                && RecentItems.CanConfirmPersistedState()
+                && TabBrowser.MainWindow.CanEndSystemSession(pendingWindows);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Trace.TraceWarning("Windows終了用の保存状態を確認できません: {0}", exception.GetType().Name);
+            return false;
+        }
     }
 
     internal static void RunExitCleanup(Func<Task> cleanup)
@@ -146,8 +181,8 @@ public partial class App : Application
         Task.Run(cleanup).GetAwaiter().GetResult();
     }
 
-    internal void RecordUiOperationException(string operation, Exception exception)
-        => _applicationStabilityService.RecordException($"ui-{operation}", exception, isTerminating: false);
+    internal void RecordUiOperationException(string operation, Exception exception, bool includeStackTrace = true)
+        => _applicationStabilityService.RecordException($"ui-{operation}", exception, isTerminating: false, includeStackTrace: includeStackTrace);
 
     private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {

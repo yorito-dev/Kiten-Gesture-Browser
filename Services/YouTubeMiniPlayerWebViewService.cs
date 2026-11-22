@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -7,21 +8,29 @@ namespace TabBrowser.Services;
 
 internal static class YouTubeMiniPlayerWebViewService
 {
+    private static readonly ConditionalWeakTable<CoreWebView2, YouTubeMiniPlayerNavigationPolicy> NavigationPolicies = new();
+
     public static WebView2 CreateWebView(
         YouTubeMiniPlayerState state,
+        Action<YouTubeMiniPlayerState, WebView2, Uri> openLinkInTab,
+        Action<string> setStatus,
         Action<YouTubeMiniPlayerState, WebView2> onCoreInitialized,
         Action<YouTubeMiniPlayerState, WebView2, CoreWebView2NavigationStartingEventArgs> onNavigationStarting,
         Action<YouTubeMiniPlayerState, WebView2> onSourceChanged,
         Action<YouTubeMiniPlayerState, WebView2> onHistoryChanged,
-        Func<YouTubeMiniPlayerState, WebView2, CoreWebView2NavigationCompletedEventArgs, Task> onNavigationCompletedAsync,
+        Func<YouTubeMiniPlayerState, WebView2, CoreWebView2NavigationCompletedEventArgs, bool, Task> onNavigationCompletedAsync,
         Action<YouTubeMiniPlayerState, WebView2, CoreWebView2ProcessFailedEventArgs> onProcessFailed)
     {
         var webView = new WebView2();
+        CoreWebView2? initializedCore = null;
+        void OpenLinkInTab(Uri uri) => openLinkInTab(state, webView, uri);
         webView.CoreWebView2InitializationCompleted += (_, _) =>
         {
             onCoreInitialized(state, webView);
             if (webView.CoreWebView2 is { } core)
             {
+                initializedCore = core;
+                AttachCoreEventPolicy(core, OpenLinkInTab, setStatus);
                 core.SourceChanged += (_, _) => onSourceChanged(state, webView);
                 core.HistoryChanged += (_, _) => onHistoryChanged(state, webView);
                 onHistoryChanged(state, webView);
@@ -31,12 +40,84 @@ internal static class YouTubeMiniPlayerWebViewService
                 };
             }
         };
-        webView.NavigationStarting += (_, args) => onNavigationStarting(state, webView, args);
+        webView.NavigationStarting += (_, args) =>
+        {
+            if (ApplyTopLevelNavigationPolicy(initializedCore, args, OpenLinkInTab))
+            {
+                onNavigationStarting(state, webView, args);
+            }
+        };
         webView.NavigationCompleted += async (_, args) =>
         {
-            await onNavigationCompletedAsync(state, webView, args);
+            var wasBlocked = TakeBlockedNavigationCompletion(initializedCore, args.NavigationId);
+            await onNavigationCompletedAsync(state, webView, args, wasBlocked);
         };
         return webView;
+    }
+
+    public static void AttachCoreEventPolicy(CoreWebView2 core, Action<Uri> openLinkInTab, Action<string> setStatus)
+    {
+        var policy = NavigationPolicies.GetOrCreateValue(core);
+        core.NewWindowRequested += (_, args) =>
+        {
+            args.Handled = true;
+            if (YouTubeMiniPlayerNavigationPolicy.TryGetHttpUri(args.Uri, out var uri)) openLinkInTab(uri);
+        };
+        core.DownloadStarting += (_, args) =>
+        {
+            args.Cancel = true;
+            args.Handled = true;
+            setStatus("ミニプレイヤーではダウンロードできません");
+        };
+        core.PermissionRequested += (_, args) =>
+        {
+            args.State = CoreWebView2PermissionState.Deny;
+            args.SavesInProfile = false;
+            args.Handled = true;
+        };
+        core.LaunchingExternalUriScheme += (_, args) =>
+        {
+            // 最上位で止めたURIのOS起動も抑止する。iframeのページ遷移は購読しない。
+            if (policy.IsBlockedExternalUri(args.Uri)) args.Cancel = true;
+        };
+        core.SourceChanged += (_, args) =>
+        {
+            if (!args.IsNewDocument) policy.ClearAppNavigation();
+        };
+    }
+
+    public static bool ApplyTopLevelNavigationPolicy(CoreWebView2? core,
+        CoreWebView2NavigationStartingEventArgs args, Action<Uri> openLinkInTab)
+    {
+        if (args.Cancel) return false;
+        if (core is not null && NavigationPolicies.GetOrCreateValue(core)
+            .TryStart(args.NavigationId, args.Uri, args.NavigationKind, args.IsRedirected))
+        {
+            return true;
+        }
+
+        args.Cancel = true;
+        if (core is not null && YouTubeMiniPlayerNavigationPolicy.TryGetHttpUri(args.Uri, out var uri))
+        {
+            openLinkInTab(uri);
+        }
+        return false;
+    }
+
+    public static bool TakeBlockedNavigationCompletion(CoreWebView2? core, ulong navigationId)
+        => core is not null && NavigationPolicies.TryGetValue(core, out var policy)
+            && policy.TakeBlockedNavigationCompletion(navigationId);
+
+    public static void RunAppNavigation(CoreWebView2 core, CoreWebView2NavigationKind kind, string? url, Action navigate)
+    {
+        var policy = NavigationPolicies.GetOrCreateValue(core);
+        policy.ExpectAppNavigation(kind, url);
+        try { navigate(); }
+        catch
+        {
+            policy.ClearAppNavigation();
+            throw;
+        }
     }
 
     public static void NavigateWithYouTubeReferer(CoreWebView2 core, Uri uri)
@@ -46,7 +127,8 @@ internal static class YouTubeMiniPlayerWebViewService
             "GET",
             postData: null,
             "Referer: https://www.youtube.com/\r\n");
-        core.NavigateWithWebResourceRequest(request);
+        RunAppNavigation(core, CoreWebView2NavigationKind.NewDocument, uri.AbsoluteUri,
+            () => core.NavigateWithWebResourceRequest(request));
     }
 
     public static bool TryCreateLiveChatUri(string sourceUrl, out Uri uri)
@@ -853,5 +935,57 @@ internal static class YouTubeMiniPlayerWebViewService
                 return true;
             })();
             """;
+    }
+}
+
+internal sealed class YouTubeMiniPlayerNavigationPolicy
+{
+    private readonly Dictionary<ulong, string> _blockedNavigations = [];
+    private (CoreWebView2NavigationKind Kind, string? Url)? _appNavigation;
+
+    public void ExpectAppNavigation(CoreWebView2NavigationKind kind, string? url)
+        => _appNavigation = (kind, url);
+
+    public void ClearAppNavigation() => _appNavigation = null;
+
+    public bool TryStart(ulong navigationId, string url, CoreWebView2NavigationKind kind, bool isRedirected)
+    {
+        if (!isRedirected)
+        {
+            var pending = _appNavigation;
+            ClearAppNavigation();
+            if (pending is { } app && app.Kind == kind
+                && (app.Url is null || (Uri.TryCreate(url, UriKind.Absolute, out var actual)
+                    && string.Equals(app.Url, actual.AbsoluteUri, StringComparison.Ordinal))))
+            {
+                return true;
+            }
+        }
+
+        if (AdBlockService.IsYouTubeUrl(url)
+            || (AdBlockService.TryGetHost(url, out var host)
+                && host is "accounts.google.com" or "consent.google.com"))
+        {
+            return true;
+        }
+
+        _blockedNavigations[navigationId] = url;
+        return false;
+    }
+
+    public bool IsBlockedExternalUri(string uri) => _blockedNavigations.ContainsValue(uri);
+
+    public bool TakeBlockedNavigationCompletion(ulong navigationId) => _blockedNavigations.Remove(navigationId);
+
+    public static bool TryGetHttpUri(string? url, out Uri uri)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var value) && value.Scheme is "http" or "https")
+        {
+            uri = value;
+            return true;
+        }
+
+        uri = null!;
+        return false;
     }
 }

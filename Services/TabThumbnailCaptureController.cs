@@ -13,7 +13,7 @@ internal interface ITabThumbnailCaptureHost
     bool IsActiveTab(BrowserTab tab);
     void ClearLoadFailure(BrowserTab tab);
     Task EnsureLoadedAsync(BrowserTab tab, string url);
-    bool ResumeIfSuspended(BrowserTab tab);
+    Task<bool> ResumeForCaptureAsync(BrowserTab tab);
     bool IsInitializing(BrowserTab tab);
     Task WaitForInitializationAsync(BrowserTab tab);
     Func<string, string?, CancellationToken, Task<WebThumbnailCaptureResult>>? GetCaptureAction(BrowserTab tab);
@@ -45,6 +45,8 @@ internal sealed class TabThumbnailCaptureController
 
     // 移管／rollback時の既存claim解除を維持する。実行中Taskの取消は追加しない。
     public void ForgetCapture(Guid tabId) => _capturingThumbnails.Remove(tabId);
+
+    public bool IsCapturing(BrowserTab tab) => _capturingThumbnails.ContainsKey(tab.Id);
 
     public async Task PrewarmAsync(BrowserTab tab)
     {
@@ -94,7 +96,7 @@ internal sealed class TabThumbnailCaptureController
             }
 
             shouldResuspendAfterCapture = !_host.IsActiveTab(tab)
-                && _host.ResumeIfSuspended(tab);
+                && await _host.ResumeForCaptureAsync(tab);
 
             await WaitForTabNavigationToSettleAsync(tab);
 
