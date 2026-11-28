@@ -22,6 +22,7 @@ public partial class MouseGestureSettingsWindow : Window
     private readonly ICollectionView _quickCommandView;
     private readonly IReadOnlyList<GestureCommandOption> _commandOptions;
     private string? _pendingTargetCommand;
+    private GestureMappingSettings? _unassignedTargetMapping;
     private bool _isGestureRecording;
     private bool _isGestureRecorderArmed;
     private string _recordedRoute = string.Empty;
@@ -98,25 +99,25 @@ public partial class MouseGestureSettingsWindow : Window
         }
 
         MappingSearchBox.Text = string.Empty;
+        MappingScopeFilterBox.SelectedValue = AllScopeFilter;
+        if (_unassignedTargetMapping is { } draft && draft.Command != command && string.IsNullOrWhiteSpace(draft.Route))
+        {
+            GestureMappings.Remove(draft);
+            _unassignedTargetMapping = null;
+        }
+
         var mapping = GestureMappings.FirstOrDefault(candidate =>
             candidate.Command.Equals(command, StringComparison.Ordinal));
         if (mapping is null)
         {
-            var scope = commandOption.Scopes.FirstOrDefault() ?? GestureCommandScope.Any;
-            var usedRoutes = GestureMappings
-                .Where(candidate => GestureCommandScope.Normalize(candidate.Scope).Equals(
-                    scope,
-                    StringComparison.Ordinal))
-                .Select(static candidate => candidate.Route)
-                .ToHashSet(StringComparer.Ordinal);
-            var route = RouteOptions.FirstOrDefault(candidate => !usedRoutes.Contains(candidate)) ?? string.Empty;
             mapping = new GestureMappingSettings
             {
-                Route = route,
+                Route = string.Empty,
                 Command = command,
                 Label = commandOption.Label,
-                Scope = scope
+                Scope = commandOption.Scopes.FirstOrDefault() ?? GestureCommandScope.Any
             };
+            _unassignedTargetMapping = mapping;
             GestureMappings.Add(mapping);
             _mappingView.Refresh();
         }
@@ -125,7 +126,9 @@ public partial class MouseGestureSettingsWindow : Window
         QuickCommandSearchBox.Text = string.Empty;
         _quickCommandView.Refresh();
         QuickCommandList.SelectedItem = commandOption;
-        SetRecordedRoute(mapping.Route, "現在の割り当てを読み込みました。");
+        SetRecordedRoute(mapping.Route, string.IsNullOrWhiteSpace(mapping.Route)
+            ? "この機能に割り当てる入力を選んでください。"
+            : "現在の割り当てを読み込みました。");
         MappingsGrid.SelectedItem = mapping;
         MappingsGrid.ScrollIntoView(mapping);
         MappingsGrid.Focus();
@@ -498,6 +501,13 @@ public partial class MouseGestureSettingsWindow : Window
                 $"{GestureCommandScope.GetLabel(scope)} / {_recordedRoute} の機能を置き換えました。";
         }
 
+        if (_unassignedTargetMapping is { } draft && draft.Command == commandOption.Command
+            && string.IsNullOrWhiteSpace(draft.Route))
+        {
+            GestureMappings.Remove(draft);
+            _unassignedTargetMapping = null;
+        }
+
         _mappingView.Refresh();
         MappingsGrid.SelectedItem = existing;
         MappingsGrid.ScrollIntoView(existing);
@@ -718,45 +728,39 @@ public partial class MouseGestureSettingsWindow : Window
             var scope = GestureCommandScope.Normalize(mapping.Scope);
             if (string.IsNullOrWhiteSpace(route))
             {
-                SetError("入力が空の行があります。");
-                return false;
+                return RejectMapping(mapping, "入力が空の行があります。");
             }
 
             if (!IsValidRoute(route))
             {
-                SetError(
+                return RejectMapping(mapping,
                     $"入力は異なる矢印を最大{GestureSettingsCatalog.MaximumDirectionCount}方向まで、"
                     + "または wheelUp / wheelDown にしてください。");
-                return false;
             }
 
             if (scope.Equals(GestureCommandScope.MiniPlayer, StringComparison.Ordinal)
                 && route.StartsWith("wheel", StringComparison.Ordinal))
             {
-                SetError("ミニプレイヤーの右ボタン＋ホイールは動画ズーム専用です。");
-                return false;
+                return RejectMapping(mapping, "ミニプレイヤーの右ボタン＋ホイールは動画ズーム専用です。");
             }
 
             if (!commandSet.Contains(command))
             {
-                SetError("動作が未設定の行があります。");
-                return false;
+                return RejectMapping(mapping, "動作が未設定の行があります。");
             }
 
             var commandOption = GetCommandOption(command);
             if (commandOption is null || !commandOption.SupportsScope(scope))
             {
-                SetError(
+                return RejectMapping(mapping,
                     $"{GetCommandLabel(command)} は {GestureCommandScope.GetLabel(scope)} では使用できません。");
-                return false;
             }
 
             var routeKey = scope + "\0" + route;
             if (!seenRoutes.Add(routeKey))
             {
-                SetError(
+                return RejectMapping(mapping,
                     $"入力が重複しています: {GestureCommandScope.GetLabel(scope)} / {route}");
-                return false;
             }
 
             mappings.Add(new GestureMappingSettings
@@ -770,6 +774,18 @@ public partial class MouseGestureSettingsWindow : Window
 
         SetError(string.Empty);
         return true;
+    }
+
+    private bool RejectMapping(GestureMappingSettings mapping, string message)
+    {
+        MappingSearchBox.Text = string.Empty;
+        MappingScopeFilterBox.SelectedValue = AllScopeFilter;
+        _mappingView.Refresh();
+        MappingsGrid.SelectedItem = mapping;
+        MappingsGrid.ScrollIntoView(mapping);
+        MappingsGrid.Focus();
+        SetError(message);
+        return false;
     }
 
     private void SetError(string message)

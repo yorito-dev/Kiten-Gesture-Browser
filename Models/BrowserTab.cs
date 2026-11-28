@@ -51,6 +51,8 @@ public sealed class BrowserTab : INotifyPropertyChanged
     private string _containerProfileId = ContainerProfile.DefaultId;
     private string _containerProfileName = ContainerProfile.DefaultName;
     private string _containerProfileColor = ContainerProfile.DefaultColor;
+    private Brush? _containerProfileBrush;
+    private Brush? _containerProfilePatternBrush;
     private string? _splitViewId;
     private int _splitViewAccentIndex = -1;
     private bool _isActiveSplitViewTab;
@@ -445,6 +447,8 @@ public sealed class BrowserTab : INotifyPropertyChanged
             }
 
             _containerProfileColor = normalized;
+            _containerProfileBrush = null;
+            _containerProfilePatternBrush = null;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ContainerProfileBrush));
             OnPropertyChanged(nameof(ContainerProfilePatternBrush));
@@ -460,9 +464,11 @@ public sealed class BrowserTab : INotifyPropertyChanged
         ? Visibility.Visible
         : Visibility.Collapsed;
 
-    public Brush ContainerProfileBrush => CreateFrozenBrush(ParseContainerProfileColor(ContainerProfileColor));
+    public Brush ContainerProfileBrush
+        => _containerProfileBrush ??= CreateFrozenBrush(ParseContainerProfileColor(ContainerProfileColor));
 
-    public Brush ContainerProfilePatternBrush => CreateContainerProfilePatternBrush(ParseContainerProfileColor(ContainerProfileColor));
+    public Brush ContainerProfilePatternBrush
+        => _containerProfilePatternBrush ??= CreateContainerProfilePatternBrush(ParseContainerProfileColor(ContainerProfileColor));
 
     public string ContainerProfileToolTip => IsDefaultContainerProfile
         ? "コンテナ: 既定"

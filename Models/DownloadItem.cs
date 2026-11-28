@@ -54,6 +54,9 @@ public sealed class DownloadItem : INotifyPropertyChanged
     private string _failureSuggestion = string.Empty;
     private bool _isLiveStreamDownload;
     private bool _isFinalizingExternalSegment;
+    private static readonly SemaphoreSlim FileAvailabilitySlots = new(4);
+    private bool? _fileAvailable;
+    private int _fileAvailabilityVersion;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -85,9 +88,14 @@ public sealed class DownloadItem : INotifyPropertyChanged
         get => _filePath;
         set
         {
-            if (SetField(ref _filePath, value ?? string.Empty))
+            var path = value ?? string.Empty;
+            if (!string.Equals(_filePath, path, StringComparison.Ordinal))
+                ResetFileAvailability();
+
+            if (SetField(ref _filePath, path))
             {
                 OnPropertyChanged(nameof(CanOpen));
+                OnPropertyChanged(nameof(OpenFileToolTip));
                 OnPropertyChanged(nameof(CanOpenFolder));
             }
         }
@@ -122,6 +130,9 @@ public sealed class DownloadItem : INotifyPropertyChanged
         get => _state;
         set
         {
+            if (_state != value)
+                ResetFileAvailability();
+
             if (SetField(ref _state, value))
             {
                 OnPropertyChanged(nameof(StateText));
@@ -131,6 +142,7 @@ public sealed class DownloadItem : INotifyPropertyChanged
                 OnPropertyChanged(nameof(CanCancel));
                 OnPropertyChanged(nameof(CanPauseOrResume));
                 OnPropertyChanged(nameof(CanOpen));
+                OnPropertyChanged(nameof(OpenFileToolTip));
                 OnPropertyChanged(nameof(CanOpenFolder));
                 OnPropertyChanged(nameof(CanRetry));
                 OnPropertyChanged(nameof(CanRemoveHistory));
@@ -482,8 +494,53 @@ public sealed class DownloadItem : INotifyPropertyChanged
 
     public string PauseResumeButtonText => State == DownloadItemState.Paused ? "再開" : "一時停止";
 
-    public bool CanOpen => State is DownloadItemState.Completed or DownloadItemState.Canceled
-        && File.Exists(FilePath);
+    internal bool CanCheckFile => State is DownloadItemState.Completed or DownloadItemState.Canceled
+        && !string.IsNullOrWhiteSpace(FilePath);
+
+    public bool CanOpen => CanCheckFile && _fileAvailable != false;
+
+    public string? OpenFileToolTip => CanCheckFile ? _fileAvailable switch
+    {
+        false => "ファイルが見つかりません",
+        null => "ファイルの存在を確認してから開きます",
+        _ => null
+    } : null;
+
+    private void ResetFileAvailability()
+    {
+        _fileAvailabilityVersion++;
+        _fileAvailable = null;
+    }
+
+    internal async Task<bool?> RefreshFileAvailabilityAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanCheckFile)
+            return false;
+
+        var version = ++_fileAvailabilityVersion;
+        var path = FilePath;
+        bool available;
+        await FileAvailabilitySlots.WaitAsync(cancellationToken);
+        try
+        {
+            available = await Task.Run(() => File.Exists(path), cancellationToken);
+        }
+        finally
+        {
+            FileAvailabilitySlots.Release();
+        }
+
+        if (version != _fileAvailabilityVersion || cancellationToken.IsCancellationRequested)
+            return null;
+
+        if (_fileAvailable != available)
+        {
+            _fileAvailable = available;
+            OnPropertyChanged(nameof(CanOpen));
+            OnPropertyChanged(nameof(OpenFileToolTip));
+        }
+        return available;
+    }
 
     public bool CanOpenFolder => !string.IsNullOrWhiteSpace(FilePath);
 

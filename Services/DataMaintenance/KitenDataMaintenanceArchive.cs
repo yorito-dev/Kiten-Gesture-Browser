@@ -983,6 +983,74 @@ internal static class KitenDataMaintenanceArchive
         MaxDepth = 256
     };
 
+    internal static string DescribeExecutableSettingsChanges(string dataRoot, string extractedRoot)
+    {
+        var changed = new List<string>();
+        var unreadable = new List<string>();
+        foreach (var settingsFile in new[] { "settings.json", "settings.backup.json" })
+        {
+            var current = ReadExecutableSettings(ResolveManagedPath(dataRoot, settingsFile));
+            var restored = ReadExecutableSettings(ResolveManagedPath(extractedRoot, settingsFile));
+            if (current is null || restored is null)
+            {
+                unreadable.Add(settingsFile);
+            }
+            else if (current.Value != restored.Value)
+            {
+                changed.Add(settingsFile);
+            }
+        }
+
+        var changes = changed.Count == 0 ? string.Empty
+            : " 復元で外部プログラムの実行ファイル設定が変わります（" + string.Join("、", changed) + "）。";
+        var unknown = unreadable.Count == 0 ? string.Empty
+            : " 実行ファイル設定の変更を確認できませんでした（" + string.Join("、", unreadable) + "）。";
+        return changed.Count == 0 && unreadable.Count == 0 ? string.Empty
+            : changes + unknown + "利用前に設定と実行ファイルの配布元を確認してください。";
+    }
+
+    private static (string? PasswordCli, string? VideoDownloader)? ReadExecutableSettings(string path)
+    {
+        try
+        {
+            EnsureExistingPathHasNoReparsePoint(path);
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var document = JsonDocument.Parse(stream, JsonDocumentOptions);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            return (
+                ReadPath(document.RootElement, "onePasswordCliPath"),
+                ReadPath(document.RootElement, "ytDlpPath"));
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return (null, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            return null;
+        }
+
+        static string? ReadPath(JsonElement settings, string name)
+        {
+            if (!settings.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+
+            if (value.ValueKind != JsonValueKind.String)
+            {
+                throw new InvalidDataException("実行ファイル設定の形式を確認できません。");
+            }
+
+            var pathValue = value.GetString()?.Trim();
+            return string.IsNullOrEmpty(pathValue) ? null : pathValue;
+        }
+    }
+
     private static int? ReadAndValidateJson(
         string path,
         int? maximumFormatVersion,

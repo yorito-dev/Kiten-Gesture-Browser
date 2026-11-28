@@ -11,6 +11,8 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
 
     private readonly object _syncRoot = new();
     private readonly BrowsingHistoryRepository _repository;
+    private readonly TimeProvider _timeProvider;
+    private readonly Func<DateTimeOffset, Func<Action, bool>, CancellationToken, Task<int>> _deleteExpiredAsync;
     private readonly Dictionary<(Guid SourceId, BrowsingHistorySourceKind SourceKind, string Url, string ContainerId), BrowsingHistoryVisit> _pending = [];
     private readonly Dictionary<(Guid SourceId, BrowsingHistorySourceKind SourceKind, string Url, string ContainerId), DateTimeOffset> _recentVisits = [];
     private readonly SemaphoreSlim _flushLock = new(1, 1);
@@ -18,6 +20,8 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
     private BrowsingHistorySettings _settings = new();
     private bool _disposed;
     private int _pendingDeletes;
+    private long _retentionVersion;
+    private DateTimeOffset _nextExpirationCheck;
 
     public BrowsingHistoryService()
         : this(new BrowsingHistoryRepository())
@@ -25,8 +29,18 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
     }
 
     public BrowsingHistoryService(BrowsingHistoryRepository repository)
+        : this(repository, TimeProvider.System)
+    {
+    }
+
+    internal BrowsingHistoryService(
+        BrowsingHistoryRepository repository,
+        TimeProvider timeProvider,
+        Func<DateTimeOffset, Func<Action, bool>, CancellationToken, Task<int>>? deleteExpiredAsync = null)
     {
         _repository = repository;
+        _timeProvider = timeProvider;
+        _deleteExpiredAsync = deleteExpiredAsync ?? repository.DeleteExpiredAsync;
         _flushTimer = new Timer(
             static state => ((BrowsingHistoryService)state!).OnFlushTimer(),
             this,
@@ -57,7 +71,14 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
     {
         lock (_syncRoot)
         {
-            _settings = BrowsingHistorySettingsProfile.Normalize(settings);
+            var normalized = BrowsingHistorySettingsProfile.Normalize(settings);
+            if (_settings.RetentionDays != normalized.RetentionDays || _settings.IsEnabled != normalized.IsEnabled)
+            {
+                _retentionVersion++;
+                _nextExpirationCheck = default;
+            }
+
+            _settings = normalized;
         }
     }
 
@@ -133,6 +154,13 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
         return await _repository.GetHostSummaryAsync(host, cancellationToken);
     }
 
+    internal async Task<(IReadOnlyList<long> Ids, BrowsingHistoryDeleteSummary Summary)> PlanHostDeletionAsync(
+        string host, BrowsingHistoryQuery query, CancellationToken cancellationToken = default)
+    {
+        await FlushAsync(cancellationToken);
+        return await _repository.PlanHostDeletionAsync(host, query, cancellationToken);
+    }
+
     public async Task<BrowsingHistoryDeleteSummary> GetRangeSummaryAsync(
         DateTimeOffset from,
         DateTimeOffset to,
@@ -140,6 +168,37 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
     {
         await FlushAsync(cancellationToken);
         return await _repository.GetRangeSummaryAsync(from, to, cancellationToken);
+    }
+
+    internal async Task<int> CountExpiredAsync(int retentionDays, CancellationToken cancellationToken = default)
+    {
+        await FlushAsync(cancellationToken, pruneExpired: false);
+        var cutoff = _timeProvider.GetUtcNow().AddDays(-retentionDays);
+        var result = await Task.Run(() => _repository.GetRangeSummaryAsync(
+            DateTimeOffset.MinValue, cutoff, cancellationToken), cancellationToken);
+        return result.Count;
+    }
+
+    internal async Task CompactAsync(CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _pendingDeletes);
+        try
+        {
+            await _flushLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await Task.Run(() => _repository.CompactAsync(cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _flushLock.Release();
+            }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingDeletes);
+        }
     }
 
     public Task<int> DeleteIdsAsync(
@@ -177,7 +236,10 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
         return DeleteAsync(() => _repository.DeleteAllAsync(cancellationToken));
     }
 
-    public async Task FlushAsync(CancellationToken cancellationToken = default)
+    public Task FlushAsync(CancellationToken cancellationToken = default)
+        => FlushAsync(cancellationToken, pruneExpired: true);
+
+    private async Task FlushAsync(CancellationToken cancellationToken, bool pruneExpired)
     {
         await _flushLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -192,44 +254,93 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
                 _pending.Clear();
             }
 
-            if (visits.Count == 0)
+            if (visits.Count > 0)
             {
-                return;
-            }
-
-            try
-            {
-                await Task.Run(
-                        () => _repository.AddVisitsAsync(visits, cancellationToken),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                HistoryChanged?.Invoke(this, EventArgs.Empty);
-            }
-            catch
-            {
-                lock (_syncRoot)
+                try
                 {
-                    foreach (var visit in visits)
-                    {
-                        _pending[(
-                            visit.SourceId,
-                            visit.SourceKind,
-                            visit.Url,
-                            visit.ContainerProfileId)] = visit;
-                    }
-
-                    if (!_disposed)
-                    {
-                        _flushTimer.Change(FlushDelayMilliseconds, Timeout.Infinite);
-                    }
+                    await Task.Run(() => _repository.AddVisitsAsync(visits, cancellationToken), cancellationToken)
+                        .ConfigureAwait(false);
+                    HistoryChanged?.Invoke(this, EventArgs.Empty);
                 }
+                catch
+                {
+                    lock (_syncRoot)
+                    {
+                        foreach (var visit in visits)
+                        {
+                            _pending[(
+                                visit.SourceId,
+                                visit.SourceKind,
+                                visit.Url,
+                                visit.ContainerProfileId)] = visit;
+                        }
 
-                throw;
+                        if (!_disposed)
+                        {
+                            _flushTimer.Change(FlushDelayMilliseconds, Timeout.Infinite);
+                        }
+                    }
+
+                    throw;
+                }
+            }
+
+            if (pruneExpired)
+            {
+                await PruneExpiredAsync(cancellationToken).ConfigureAwait(false);
             }
         }
         finally
         {
             _flushLock.Release();
+        }
+    }
+
+    private async Task PruneExpiredAsync(CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+        int retentionDays;
+        long version;
+        lock (_syncRoot)
+        {
+            if (_disposed || !_settings.IsEnabled || _settings.RetentionDays is not { } days || now < _nextExpirationCheck)
+            {
+                return;
+            }
+
+            retentionDays = days;
+            version = _retentionVersion;
+            _nextExpirationCheck = now.AddMinutes(1);
+        }
+
+        var deleted = await Task.Run(() => _deleteExpiredAsync(
+            now.AddDays(-retentionDays), TryCommit, cancellationToken), cancellationToken).ConfigureAwait(false);
+        if (deleted > 0)
+        {
+            HistoryChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        bool TryCommit(Action commit)
+        {
+            lock (_syncRoot)
+            {
+                if (_disposed || version != _retentionVersion)
+                {
+                    return false;
+                }
+            }
+
+            // 履歴の書込みとは _flushLock で直列化し、訪問の受付は確定を待たない。
+            commit();
+            lock (_syncRoot)
+            {
+                if (version == _retentionVersion)
+                {
+                    _nextExpirationCheck = now.AddDays(1);
+                }
+            }
+
+            return true;
         }
     }
 
@@ -318,7 +429,8 @@ public sealed class BrowsingHistoryService : IAsyncDisposable
         out BrowsingHistoryVisit normalized)
     {
         normalized = visit;
-        if (!Uri.TryCreate(visit.Url?.Trim(), UriKind.Absolute, out var uri)
+        if (BrowserUrlRulesService.IsSelectedTextTranslationUrl(visit.Url)
+            || !Uri.TryCreate(visit.Url?.Trim(), UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
             || string.IsNullOrWhiteSpace(uri.Host))
         {

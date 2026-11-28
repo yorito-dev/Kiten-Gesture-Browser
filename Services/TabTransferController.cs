@@ -313,21 +313,36 @@ internal sealed class TabTransferController(
             _host.CloseTabContextMenuForTab(tab);
         }
 
-        var createWindow = _host.CaptureNewTransferWindowFactory();
-        var newWindow = createWindow();
-        if (!newWindow.TryPrepareTransferredTabGroup(
+        TabTransferController? newWindow = null;
+        IReadOnlyDictionary<Guid, BrowserTab> transferredTabs;
+        TabTransferTransaction transferTransaction;
+        IReadOnlyList<PendingTabRuntimeTransfer> runtimeTransfers;
+        bool prepared;
+        try
+        {
+            var createWindow = _host.CaptureNewTransferWindowFactory();
+            newWindow = createWindow();
+            prepared = newWindow.TryPrepareTransferredTabGroup(
                 this,
                 draggedTabs,
                 sourceSplitView,
                 0,
-                out var transferredTabs,
-                out var transferTransaction,
-                out var runtimeTransfers,
-                newWindow._host.CaptureDefaultTransferLayoutAnimation))
+                out transferredTabs,
+                out transferTransaction,
+                out runtimeTransfers,
+                newWindow._host.CaptureDefaultTransferLayoutAnimation,
+                rollbackOnLayoutFailure: true);
+        }
+        catch (Exception ex)
         {
-            newWindow._host.CloseWindow();
-            _host.SelectTab(draggedTab);
-            _host.SetTransferStatus("分割ペアを新しいウィンドウへ移動できませんでした");
+            _host.RecordRollbackErrors("target-prepare-detach-group", [ex]);
+            ReportFailedGroupDetach(newWindow, draggedTab, ": " + ex.Message);
+            return;
+        }
+
+        if (!prepared)
+        {
+            ReportFailedGroupDetach(newWindow, draggedTab, string.Empty);
             return;
         }
 
@@ -339,23 +354,39 @@ internal sealed class TabTransferController(
         }
         catch (Exception ex)
         {
-            newWindow.RollbackPreparedTransferredTabs(this, transferTransaction, runtimeTransfers);
-            newWindow._host.CloseWindow();
-            _host.SelectTab(draggedTab);
-            _host.SetTransferStatus("分割ペアを新しいウィンドウへ移動できませんでした: " + ex.Message);
+            var rollbackSucceeded = false;
+            try
+            {
+                rollbackSucceeded = newWindow.RollbackPreparedTransferredTabs(this, transferTransaction, runtimeTransfers);
+            }
+            catch (Exception rollbackException)
+            {
+                newWindow._host.RecordRollbackErrors("target-rollback-detach-group", [rollbackException]);
+            }
+
+            ReportFailedGroupDetach(newWindow, draggedTab, ": " + ex.Message, rollbackSucceeded);
             return;
         }
 
         FinalizeTransferredSourceTabs(transferTransaction);
-        newWindow.CompleteTransferredTabGroup(
-            transferredTabs,
-            transferredDraggedTab,
-            sourceSplitView);
-        newWindow._host.PositionNearDragCursor();
-        newWindow._host.ShowWindow();
-        if (_host.IsLeftMouseButtonDown())
+        try
         {
-            newWindow._host.StartFollowingDragCursor();
+            newWindow.CompleteTransferredTabGroup(
+                transferredTabs,
+                transferredDraggedTab,
+                sourceSplitView);
+            newWindow._host.PositionNearDragCursor();
+            newWindow._host.ShowWindow();
+            if (_host.IsLeftMouseButtonDown())
+            {
+                newWindow._host.StartFollowingDragCursor();
+            }
+        }
+        catch (Exception ex)
+        {
+            newWindow._host.RecordRollbackErrors("target-show-after-commit", [ex]);
+            _host.SetTransferStatus("分割ペアは移動しましたが、新しいウィンドウを表示できませんでした: " + ex.Message);
+            return;
         }
         dragPayload.UpdateSource(newWindow._host, transferredDraggedTab);
         newWindow._host.RegisterExternalTabMoveUndo(
@@ -367,6 +398,38 @@ internal sealed class TabTransferController(
         {
             _host.SetTransferStatus("分割ペアを新しいウィンドウで開きました");
         }
+    }
+
+    private void ReportFailedGroupDetach(
+        TabTransferController? newWindow, BrowserTab draggedTab, string detail, bool rollbackSucceeded = true)
+    {
+        if (newWindow is not null && rollbackSucceeded)
+        {
+            if (newWindow._host.Tabs.Count == 0)
+            {
+                try
+                {
+                    newWindow._host.CloseWindow();
+                }
+                catch (Exception ex)
+                {
+                    rollbackSucceeded = false;
+                    newWindow._host.RecordRollbackErrors("target-close", [ex]);
+                }
+            }
+            else
+            {
+                rollbackSucceeded = false;
+            }
+        }
+
+        if (_host.Tabs.Contains(draggedTab))
+        {
+            _host.SelectTab(draggedTab);
+        }
+
+        _host.SetTransferStatus("分割ペアを新しいウィンドウへ移動できませんでした" + detail
+            + (rollbackSucceeded ? string.Empty : "（元の状態を完全には復元できませんでした）"));
     }
 
     internal bool InsertAcceptedExternalTabAtIndex(
@@ -529,7 +592,8 @@ internal sealed class TabTransferController(
         out IReadOnlyDictionary<Guid, BrowserTab> transferredTabs,
         out TabTransferTransaction transferTransaction,
         out IReadOnlyList<PendingTabRuntimeTransfer> runtimeTransfers,
-        Func<Action> captureAnimation)
+        Func<Action> captureAnimation,
+        bool rollbackOnLayoutFailure = false)
     {
         transferredTabs = new Dictionary<Guid, BrowserTab>();
         transferTransaction = null!;
@@ -595,10 +659,12 @@ internal sealed class TabTransferController(
             sourceSplitView,
             source._host.ActiveTab,
             _host.ActiveTab);
-        var animate = captureAnimation();
-        var targetIndex = _host.ClampNormalTabInsertionIndex(insertionIndex);
+        var preparingLayout = true;
         try
         {
+            var animate = captureAnimation();
+            var targetIndex = _host.ClampNormalTabInsertionIndex(insertionIndex);
+            preparingLayout = false;
             foreach (var preparedTab in preparedTabs)
             {
                 InsertPreservedTab(
@@ -614,7 +680,7 @@ internal sealed class TabTransferController(
                 static preparedTab => preparedTab.TransferredTab);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (rollbackOnLayoutFailure || !preparingLayout)
         {
             RollbackPreparedTransferredTabs(source, transferTransaction, runtimeTransfers);
             transferredTabs = new Dictionary<Guid, BrowserTab>();

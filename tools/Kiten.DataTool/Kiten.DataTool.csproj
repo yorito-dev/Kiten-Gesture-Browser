@@ -7,8 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Kiten.DataTool</AssemblyName>
     <RootNamespace>Kiten.DataTool</RootNamespace>
-    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.2.0-preview.2</KitenReleaseVersion>
-    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.2.0-preview.3</KitenReleaseVersion>
+    <RuntimeFrameworkVersion>10.0.15</RuntimeFrameworkVersion>
     <Version>$(KitenReleaseVersion)</Version>
     <Product>Kiten Gesture Browser Data Maintenance Tool</Product>
     <Company>ヨリト</Company>
@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.30" />
+    <PackageReference Include="SQLite" Version="3.54.1" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 

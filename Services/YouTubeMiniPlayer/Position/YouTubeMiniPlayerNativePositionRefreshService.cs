@@ -10,10 +10,8 @@ internal static class YouTubeMiniPlayerNativePositionRefreshService
         YouTubeMiniPlayerRuntime runtime,
         IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
         Dispatcher dispatcher,
-        Action<YouTubeMiniPlayerRuntime> forceNativePosition,
         Action<YouTubeMiniPlayerRuntime> refreshOverlayPosition)
     {
-        _ = forceNativePosition;
         if (runtime.Overlay.IsNativePositionRefreshQueued)
         {
             return;

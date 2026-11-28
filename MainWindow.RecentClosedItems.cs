@@ -170,7 +170,7 @@ public partial class MainWindow : IClosedItemThumbnailHost, IRecentClosedItemsHo
                 || HasClosedYouTubeMiniPlayer());
     }
 
-    private static ImageSource? CreateClosedTabRuntimeThumbnail(BrowserTab tab)
+    private ImageSource? CreateClosedTabRuntimeThumbnail(BrowserTab tab)
     {
         if (GetTabHostedContent(tab) is FolderTabView folderTabView)
         {
@@ -221,7 +221,7 @@ public partial class MainWindow : IClosedItemThumbnailHost, IRecentClosedItemsHo
     ImageSource IClosedItemThumbnailHost.RenderFolder(
         string title, string folderPath, IReadOnlyList<FolderTabThumbnailEntry> entries,
         int itemCount, bool isTruncated, string? statusText)
-        => s_previewThumbnailRenderer.CreateFolderTabThumbnail(title, folderPath, entries, itemCount, isTruncated, statusText);
+        => _previewThumbnailRenderer.CreateFolderTabThumbnail(title, folderPath, entries, itemCount, isTruncated, statusText);
 
     private static bool TryGetPreservedClosedTabRuntime(
         ClosedTabState closedTab,
@@ -246,17 +246,17 @@ public partial class MainWindow : IClosedItemThumbnailHost, IRecentClosedItemsHo
     private Task<ImageSource> GetOrCreateFolderTabThumbnailAsync(ClosedTabState closedTab, string title)
         => _closedItemThumbnailController.GetOrCreateFolderTabThumbnailAsync(closedTab, title);
 
-    private static ImageSource CreateFolderTabThumbnail(
+    private ImageSource CreateFolderTabThumbnail(
         string title,
         string folderPath,
         IReadOnlyList<FolderTabThumbnailEntry> entries,
         int itemCount,
         bool isTruncated,
         string? statusText = null)
-        => s_previewThumbnailRenderer.CreateFolderTabThumbnail(
+        => _previewThumbnailRenderer.CreateFolderTabThumbnail(
             title, folderPath, entries, itemCount, isTruncated, statusText);
 
-    private static ImageSource CreateClosedWindowThumbnail(ClosedWindowState closedWindow)
-        => s_previewThumbnailRenderer.CreateClosedWindowThumbnail(closedWindow.WindowState.Tabs);
+    private ImageSource CreateClosedWindowThumbnail(ClosedWindowState closedWindow)
+        => _previewThumbnailRenderer.CreateClosedWindowThumbnail(closedWindow.WindowState.Tabs);
 
 }

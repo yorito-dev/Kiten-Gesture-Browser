@@ -30,6 +30,7 @@ public partial class BookmarkManagerWindow : Window
     private readonly BookmarkService _bookmarkService = new();
     private BookmarkData _appliedData;
     private Task<bool>? _applyChangesTask;
+    private readonly BookmarkDeletionUndo _bookmarkDeletionUndo = new();
 
     public BookmarkManagerWindow(
         ObservableCollection<BookmarkItem> bookmarks,
@@ -341,6 +342,7 @@ public partial class BookmarkManagerWindow : Window
             Bookmarks.Remove(bookmark);
         }
 
+        ForgetDeletedBookmarkBatch();
         RemoveFolderRecords(folder.FolderPath ?? string.Empty);
         DeletedBookmarks = true;
         _isAllFoldersSelected = true;
@@ -701,6 +703,7 @@ public partial class BookmarkManagerWindow : Window
             return;
         }
 
+        ForgetDeletedBookmarkBatch();
         Bookmarks.Clear();
         foreach (var bookmark in data.Bookmarks)
         {
@@ -733,10 +736,15 @@ public partial class BookmarkManagerWindow : Window
             return;
         }
 
-        foreach (var bookmark in bookmarks)
-        {
-            Bookmarks.Remove(bookmark);
-        }
+        DeleteBookmarks(bookmarks);
+    }
+
+    private void DeleteBookmarks(IReadOnlyList<BookmarkItem> bookmarks)
+    {
+        if (_bookmarkDeletionUndo.DeleteSelection(Bookmarks, bookmarks) == 0)
+            return;
+
+        UndoDeleteButton.IsEnabled = true;
 
         DeletedBookmarks = true;
         RefreshBookmarkFolders();
@@ -744,6 +752,60 @@ public partial class BookmarkManagerWindow : Window
         StatusText.Text = bookmarks.Count == 1
             ? $"{bookmarks[0].Title} を削除しました"
             : $"{bookmarks.Count} 件のブックマークを削除しました";
+    }
+
+    private void UndoDeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        var restored = _bookmarkDeletionUndo.Undo(Bookmarks);
+        UndoDeleteButton.IsEnabled = false;
+        RefreshBookmarkFolders();
+        BookmarkView.Refresh();
+        StatusText.Text = $"{restored} 件のブックマークの削除を取り消しました";
+    }
+
+    private void ForgetDeletedBookmarkBatch()
+    {
+        _bookmarkDeletionUndo.Clear();
+        UndoDeleteButton.IsEnabled = false;
+    }
+
+    internal sealed class BookmarkDeletionUndo
+    {
+        private IReadOnlyList<(BookmarkItem Bookmark, int Index)> _deleted = [];
+
+        public int DeleteSelection(IList<BookmarkItem> all, IReadOnlyList<BookmarkItem> selection)
+        {
+            var deleted = selection.Distinct().Select(bookmark => (Bookmark: bookmark, Index: all.IndexOf(bookmark)))
+                .Where(static entry => entry.Index >= 0)
+                .OrderBy(static entry => entry.Index)
+                .ToArray();
+            if (deleted.Length == 0)
+                return 0;
+
+            _deleted = deleted;
+            foreach (var entry in deleted)
+                all.Remove(entry.Bookmark);
+
+            return deleted.Length;
+        }
+
+        public int Undo(IList<BookmarkItem> all)
+        {
+            var restored = 0;
+            foreach (var (bookmark, index) in _deleted)
+            {
+                if (all.Any(existing => existing.Id == bookmark.Id
+                    || BookmarkService.UrlComparer.Equals(existing.Url, bookmark.Url)))
+                    continue;
+
+                all.Insert(Math.Min(index, all.Count), bookmark);
+                restored++;
+            }
+            Clear();
+            return restored;
+        }
+
+        public void Clear() => _deleted = [];
     }
 
     private async void MoveSelectedButton_Click(object sender, RoutedEventArgs e)

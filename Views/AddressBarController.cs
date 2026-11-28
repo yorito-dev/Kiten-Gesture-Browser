@@ -214,6 +214,16 @@ internal sealed class AddressBarController : IDisposable
         _elements.AddressPasteAndNavigateMenuItem.IsEnabled = _addressBarInteractionCoordinator.PasteNavigationText is not null;
     }
 
+    internal void InvalidateFolderNavigation()
+        => _addressBarInteractionCoordinator.InvalidateFolderNavigation();
+
+    internal async Task<bool?> CheckFolderNavigationAsync(string input)
+    {
+        var version = _addressBarInteractionCoordinator.BeginFolderNavigation();
+        var useFolderTab = await FolderTabPlacesService.ShouldNavigateAddressInFolderTabAsync(input, CancellationToken.None);
+        return _addressBarInteractionCoordinator.IsFolderNavigationCurrent(version) ? useFolderTab : null;
+    }
+
     internal void CloseContextMenu()
     {
         _addressBarInteractionCoordinator.ClearPasteNavigationText();

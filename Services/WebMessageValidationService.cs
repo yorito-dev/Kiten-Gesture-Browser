@@ -60,6 +60,7 @@ public static class WebMessageValidationService
         return messageType is "newTabSearch"
             or "openBookmark"
             or "deleteBookmark"
+            or "undoBookmarkDelete"
             or "showBookmarkPreview"
             or "hideBookmarkPreview";
     }

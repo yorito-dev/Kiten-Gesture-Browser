@@ -61,10 +61,16 @@
                       Margin="0,0,8,0"
                       DisplayMemberPath="Name"
                       SelectionChanged="Filter_SelectionChanged" />
-            <Button Grid.Column="3"
-                    Content="更新"
-                    Style="{StaticResource HistoryButtonStyle}"
-                    Click="RefreshButton_Click" />
+            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                <Button Content="更新"
+                        Style="{StaticResource HistoryButtonStyle}"
+                        Click="RefreshButton_Click" />
+                <Button x:Name="CompactHistoryButton"
+                        Content="空き領域を整理"
+                        ToolTip="履歴を残したままデータベースの空き領域を整理します"
+                        Style="{StaticResource HistoryButtonStyle}"
+                        Click="CompactHistoryButton_Click" />
+            </StackPanel>
         </Grid>
 
         <Border x:Name="DeleteConfirmationPanel"
@@ -110,13 +116,20 @@
                                                       IsExpanded="{Binding IsExpanded}">
                                                 <Expander.Header>
                                                     <DockPanel>
-                                                        <Button DockPanel.Dock="Right"
-                                                                Margin="10,0,0,0"
-                                                                Padding="7,2"
-                                                                Tag="{Binding Host}"
-                                                                Content="サイト履歴を削除"
-                                                                Style="{StaticResource HistoryButtonStyle}"
-                                                                Click="DeleteSiteButton_Click" />
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                            <Button Margin="8,0,0,0"
+                                                                    Padding="7,2"
+                                                                    Tag="{Binding Host}"
+                                                                    Content="絞り込み内を削除"
+                                                                    Style="{StaticResource HistoryButtonStyle}"
+                                                                    Click="DeleteFilteredSiteButton_Click" />
+                                                            <Button Margin="4,0,0,0"
+                                                                    Padding="7,2"
+                                                                    Tag="{Binding Host}"
+                                                                    Content="サイト全体を削除"
+                                                                    Style="{StaticResource HistoryButtonStyle}"
+                                                                    Click="DeleteSiteButton_Click" />
+                                                        </StackPanel>
                                                         <TextBlock VerticalAlignment="Center"
                                                                    Foreground="#9CC7FF">
                                                             <Run Text="{Binding Host, Mode=OneWay}" />

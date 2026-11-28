@@ -3,8 +3,13 @@ namespace TabBrowser.Services;
 internal static class NewTabPageHtmlBuilder
 {
     // 呼出元でJSON化した値を受け取り、表示本文だけを生成する。
-    public static string Build(string bookmarkDataJson, string webMessageTokenJson)
+    public static string Build(string bookmarkDataJson, string webMessageTokenJson, string? undoBookmarkIdJson = null)
     {
+        var undoButton = undoBookmarkIdJson is null ? string.Empty
+            : "\n            <button id=\"undoBookmarkDelete\" type=\"button\">削除を取り消す</button>";
+        var undoScript = undoBookmarkIdJson is null ? string.Empty
+            : $"\n        document.getElementById(\"undoBookmarkDelete\").addEventListener(\"click\", () => " +
+                $"postWebMessage({{ type: \"undoBookmarkDelete\", id: {undoBookmarkIdJson} }}));";
         return $$"""
             <!doctype html>
             <html lang="ja">
@@ -166,7 +171,7 @@ internal static class NewTabPageHtmlBuilder
                     </form>
                     <div class="section-title">
                         <span>ブックマーク</span>
-                        <span id="bookmarkCount" class="section-count"></span>
+                        <span id="bookmarkCount" class="section-count"></span>{{undoButton}}
                     </div>
                     <div id="bookmarkList" class="bookmarks"></div>
                 </main>
@@ -182,7 +187,7 @@ internal static class NewTabPageHtmlBuilder
                     const bookmarkList = document.getElementById("bookmarkList");
                     const bookmarkCount = document.getElementById("bookmarkCount");
                     const bookmarkContextMenu = document.getElementById("bookmarkContextMenu");
-                    const deleteBookmarkButton = document.getElementById("deleteBookmarkButton");
+                    const deleteBookmarkButton = document.getElementById("deleteBookmarkButton");{{undoScript}}
                     let visibleBookmarks = [];
                     let selectedBookmarkIndex = -1;
                     let contextBookmarkId = "";

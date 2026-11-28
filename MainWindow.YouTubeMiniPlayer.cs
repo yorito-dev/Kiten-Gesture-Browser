@@ -46,7 +46,10 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
         _youTubeMiniPlayerController.States;
     private IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> _youTubeMiniPlayerRuntimes =>
         _youTubeMiniPlayerController.Runtimes;
-    private readonly YouTubeMiniPlayerStore _youTubeMiniPlayerStore = new();
+    private YouTubeMiniPlayerOverlayVisibilityCallbacks? _youTubeMiniPlayerOverlayVisibilityCallbacks;
+    private YouTubeMiniPlayerOverlayPlacementCallbacks? _youTubeMiniPlayerOverlayPlacementCallbacks;
+    private YouTubeMiniPlayerPositionCallbacks? _youTubeMiniPlayerPositionCallbacks;
+    private static readonly YouTubeMiniPlayerStore s_youTubeMiniPlayerStore = new();
     private readonly OwnedDispatcherTimer _youTubeMiniPlayerSaveTimer = new(
         DispatcherTimerOwner.FloatingMediaHost,
         DispatcherTimerTerminationPhase.StopFloatingMediaTimers);
@@ -174,7 +177,7 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
                 [state], _workspaceWindowIndex,
                 player => CreateYouTubeMiniPlayerRuntime(player, loadImmediately: false),
                 positionCallbacks.ClampToHost,
-                id => commandCallbacks.BringToFront(id, true), commandCallbacks.ApplyMinimizedState),
+                commandCallbacks.ApplyMinimizedState),
             id => commandCallbacks.BringToFront(id, true));
     }
     void IYouTubeMiniPlayerLifetimeOwner.LoadLocalMedia(Guid id) => _youTubeMiniPlayerRuntimes[id].LocalVideoView?.LoadMedia();
@@ -203,6 +206,9 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
     void IYouTubeMiniPlayerLifetimeHost.ResumeDeferredBackgroundWork() => ResumeDeferredAutomaticBackgroundWorkIfPlaybackStopped();
     void IYouTubeMiniPlayerLifetimeHost.QueueSessionSave() => QueueSessionSave();
     void IYouTubeMiniPlayerLifetimeHost.RefreshClosedHistory() => RefreshClosedTabHistoryViews();
+    void IYouTubeMiniPlayerLifetimeHost.RecordExplicitClose(Guid id) => s_youTubeMiniPlayerStore.RecordExplicitClose(id);
+
+    void IYouTubeMiniPlayerLifetimeHost.RecordReopened(Guid id) => s_youTubeMiniPlayerStore.RecordReopened(id);
     void IYouTubeMiniPlayerLifetimeHost.UpdateRestoreButton() => UpdateYouTubeMiniPlayerRestoreClosedButtonState();
     Task IYouTubeMiniPlayerLifetimeHost.RefreshListAsync() => RefreshYouTubeMiniPlayerListAsync(capturePlaybackState: false);
     void IYouTubeMiniPlayerLifetimeHost.SetStatus(string message) => SetYouTubeMiniPlayerStatus(message, autoClear: true);
@@ -212,6 +218,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
     int IYouTubeMiniPlayerPersistenceOwner.WindowIndex => _workspaceWindowIndex;
     IReadOnlyList<YouTubeMiniPlayerState> IYouTubeMiniPlayerPersistenceOwner.States => _youTubeMiniPlayers;
     Task<bool> IYouTubeMiniPlayerPersistenceOwner.CaptureLoadedAsync() => CaptureYouTubeMiniPlayerStatesForLoadedAsync();
+    Action? IYouTubeMiniPlayerPersistenceOwner.CapturePendingSaveConfirmation()
+        => _youTubeMiniPlayerPersistenceController.CapturePendingSaveConfirmation();
     int IYouTubeMiniPlayerPersistenceOwner.RestoreWindowMemoryPlaceholders(
         Guid savedSessionWindowId, IEnumerable<YouTubeMiniPlayerState> players, HashSet<Guid> unavailableIds)
         => _youTubeMiniPlayerPersistenceController.RestoreWindowMemoryYouTubeMiniPlayerPlaceholders(
@@ -228,13 +236,22 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
         var positionCallbacks = CreateYouTubeMiniPlayerPositionCallbacks();
         return players => _youTubeMiniPlayerController.RestorePlaceholders(
             players, _workspaceWindowIndex, player => CreateYouTubeMiniPlayerRuntime(player, loadImmediately: false),
-            positionCallbacks.ClampToHost, id => commandCallbacks.BringToFront(id, true), commandCallbacks.ApplyMinimizedState);
+            positionCallbacks.ClampToHost, commandCallbacks.ApplyMinimizedState);
     }
-    IEnumerable<YouTubeMiniPlayerState> IYouTubeMiniPlayerPersistenceHost.LoadStoredPlayers() => _youTubeMiniPlayerStore.Load();
-    void IYouTubeMiniPlayerPersistenceHost.SaveSnapshot(IReadOnlyList<YouTubeMiniPlayerState> players)
-        => YouTubeMiniPlayerTimerService.SaveNow(
-            _youTubeMiniPlayerSaveTimer, _youTubeMiniPlayerStore, players, _isClosingWindow,
+    IEnumerable<YouTubeMiniPlayerState> IYouTubeMiniPlayerPersistenceHost.LoadStoredPlayers()
+        => s_youTubeMiniPlayerStore.LoadForStartup();
+    bool IYouTubeMiniPlayerPersistenceHost.SaveSnapshot(IReadOnlyList<YouTubeMiniPlayerState> players, bool beforeClose)
+    {
+        if (beforeClose)
+        {
+            YouTubeMiniPlayerPersistenceService.SaveSnapshot(s_youTubeMiniPlayerStore, players);
+            return true;
+        }
+
+        return YouTubeMiniPlayerTimerService.SaveNow(
+            _youTubeMiniPlayerSaveTimer, s_youTubeMiniPlayerStore, players, _isClosingWindow,
             message => SetYouTubeMiniPlayerStatus(message, autoClear: true));
+    }
     bool IYouTubeMiniPlayerPersistenceHost.RemoveOpenPlayersFromClosedHistory() => RemoveOpenYouTubeMiniPlayersFromClosedHistory();
     void IYouTubeMiniPlayerPersistenceHost.QueueSessionSave() => QueueSessionSave();
     void IYouTubeMiniPlayerPersistenceHost.RefreshClosedHistory() => RefreshClosedTabHistoryViews();
@@ -363,7 +380,7 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
     bool IYouTubeMiniPlayerActivityHost.IsQualityEnabled => _settings.EnableYouTubeMiniPlayerSizeBasedQuality;
     int IYouTubeMiniPlayerActivityHost.LowQualityWidthThreshold => _settings.YouTubeMiniPlayerQualityLowWidthThreshold;
     int IYouTubeMiniPlayerActivityHost.HighQualityWidthThreshold => _settings.YouTubeMiniPlayerQualityHighWidthThreshold;
-    bool IYouTubeMiniPlayerActivityHost.IsCpuSaverEnabled => _settings.EnableFocusedViewingCpuSaver;
+    bool IYouTubeMiniPlayerActivityHost.IsCpuSaverEnabled => CurrentTabResourceSettings.FocusedViewingCpuSaverEnabled;
     TimeSpan IYouTubeMiniPlayerActivityHost.CpuSaverDelay => GetFocusedViewingCpuSaverDelay();
     bool IYouTubeMiniPlayerActivityHost.IsClosingWindow => _isClosingWindow;
     CancellationToken IYouTubeMiniPlayerActivityHost.LifetimeToken => _windowTaskSupervisor.LifetimeToken;
@@ -408,6 +425,13 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
         => QueueYouTubeMiniPlayerLayoutVerification(state);
     void IYouTubeMiniPlayerActivityHost.CancelPendingRecovery(Guid id) => _youTubeMiniPlayerRecoveryController.CancelPending(id);
     void IYouTubeMiniPlayerActivityHost.QueueDiagnosticLogLine(IReadOnlyList<string> fields) => QueuePerformanceDiagnosticLogLine(fields);
+    void IYouTubeMiniPlayerActivityHost.RecordInactiveSuspension(bool stopStalledLoad, MiniPlayerSuspendScheduleEvent scheduleEvent)
+    {
+        if (!_isPrivateWindow)
+        {
+            _performanceDiagnosticLogController.RecordMiniPlayerSuspendSchedule(stopStalledLoad, scheduleEvent);
+        }
+    }
 
     bool IYouTubeLiveChatHost.IsClosingWindow => _isClosingWindow;
     bool IYouTubeLiveChatHost.ContainsState(YouTubeMiniPlayerState state) => _youTubeMiniPlayers.Contains(state);
@@ -469,6 +493,20 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
     IReadOnlyList<MainWindow> IYouTubeMiniPlayerAudioHost.GetOwners() => GetYouTubeMiniPlayerOwnerWindows();
     Task IYouTubeMiniPlayerAudioHost.CaptureStatesAsync(MainWindow owner)
         => owner.CaptureYouTubeMiniPlayerStatesForLoadedAsync();
+    void IYouTubeMiniPlayerAudioHost.RecordAudioStateCapture(
+        int ownerCount, int capturedOwnerCount, TimeSpan elapsed, bool completed)
+    {
+        if (!_isPrivateWindow)
+        {
+            QueuePerformanceDiagnosticLogLine(
+            [
+                "runner=youtube-audio", "operation=audio-state-capture",
+                $"owners={ownerCount}", $"captured={capturedOwnerCount}",
+                $"elapsedMs={Math.Round(elapsed.TotalMilliseconds)}", $"completed={completed}"
+            ]);
+        }
+    }
+
     IEnumerable<YouTubeMiniPlayerListItem> IYouTubeMiniPlayerAudioHost.GetLoadedItems(IReadOnlyList<MainWindow> owners)
         => owners.SelectMany(window => window._youTubeMiniPlayers
                 .Where(state => window._youTubeMiniPlayerRuntimes.TryGetValue(state.Id, out var runtime)
@@ -920,16 +958,8 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
         {
             runtime.InteractiveResizeStateChanged = isActive =>
                 SetYouTubeMiniPlayerInteractiveResize(runtime, isActive);
-            runtime.TitleBandBackButton.Click += (_, e) =>
-            {
-                e.Handled = true;
-                NavigateYouTubeMiniPlayerHistory(runtime, goForward: false);
-            };
-            runtime.TitleBandForwardButton.Click += (_, e) =>
-            {
-                e.Handled = true;
-                NavigateYouTubeMiniPlayerHistory(runtime, goForward: true);
-            };
+            YouTubeMiniPlayerRuntimeWiringService.AttachTitleBandHistoryNavigation(
+                runtime, NavigateYouTubeMiniPlayerHistory);
             runtime.TitleBandLiveViewerCountButton.Click += async (_, e) =>
             {
                 e.Handled = true;
@@ -1071,6 +1101,43 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
             !runtime.IsDisposed
             && runtime.TaskbarWindow.IsActive);
     }
+
+    bool IApplicationKeyboardShortcutWindow.TryQueueMiniPlayerResizeCancellation()
+    {
+        foreach (var runtime in _youTubeMiniPlayerRuntimes.Values)
+        {
+            var cancel = runtime.CancelSurfaceCtrlResize
+                ?? (runtime.WebDrag.IsDragging ? runtime.WebDrag.CancelCtrlResize : null);
+            if (cancel is null || !CanCancelForegroundMiniPlayerResize(runtime)) continue;
+
+            // フック内ではWindowの寸法を更新せず、同じリサイズが続いている場合にだけ取り消す。
+            Dispatcher.BeginInvoke(DispatcherPriority.Send, (Action)(() =>
+            {
+                if (CanCancelForegroundMiniPlayerResize(runtime)
+                    && (ReferenceEquals(cancel, runtime.CancelSurfaceCtrlResize)
+                        || ReferenceEquals(cancel, runtime.WebDrag.CancelCtrlResize)))
+                {
+                    cancel();
+                }
+            }));
+            return true;
+        }
+        return false;
+    }
+
+    private static bool CanCancelForegroundMiniPlayerResize(YouTubeMiniPlayerRuntime runtime)
+    {
+        if (runtime.IsDisposed || runtime.IsClosingTaskbarWindow || runtime.IsFullScreen || runtime.IsInputTransparent)
+            return false;
+
+        var foreground = GetForegroundWindow();
+        return foreground != IntPtr.Zero
+            && (foreground == new WindowInteropHelper(runtime.TaskbarWindow).Handle
+                || PresentationSource.FromVisual(runtime.Root) is HwndSource source && foreground == source.Handle);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
 
     private bool HasActiveYouTubeLiveChatWindow()
         => _youTubeLiveChatController.HasActiveYouTubeLiveChatWindow();
@@ -1445,8 +1512,13 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
 
     private YouTubeMiniPlayerOverlayVisibilityCallbacks CreateYouTubeMiniPlayerOverlayVisibilityCallbacks()
     {
+        if (_youTubeMiniPlayerOverlayVisibilityCallbacks is not null)
+        {
+            return _youTubeMiniPlayerOverlayVisibilityCallbacks;
+        }
+
         var overlayPlacementCallbacks = CreateYouTubeMiniPlayerOverlayPlacementCallbacks();
-        return YouTubeMiniPlayerOverlayVisibilityCallbackFactory.Create(
+        return _youTubeMiniPlayerOverlayVisibilityCallbacks = YouTubeMiniPlayerOverlayVisibilityCallbackFactory.Create(
             _youTubeMiniPlayerRuntimes,
             TimeSpan.FromMilliseconds(YouTubeMiniPlayerToolbarHideDelayMilliseconds),
             overlayPlacementCallbacks.UpdateToolbarPlacement,
@@ -1457,7 +1529,7 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
 
     private YouTubeMiniPlayerOverlayPlacementCallbacks CreateYouTubeMiniPlayerOverlayPlacementCallbacks()
     {
-        return YouTubeMiniPlayerOverlayPlacementCallbackFactory.Create(
+        return _youTubeMiniPlayerOverlayPlacementCallbacks ??= YouTubeMiniPlayerOverlayPlacementCallbackFactory.Create(
             _youTubeMiniPlayerRuntimes,
             YouTubeMiniPlayerMinimizedWidth,
             YouTubeControlPopupFallbackWidth,
@@ -1471,7 +1543,7 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
 
     private YouTubeMiniPlayerPositionCallbacks CreateYouTubeMiniPlayerPositionCallbacks()
     {
-        return YouTubeMiniPlayerPositionCallbackFactory.Create(
+        return _youTubeMiniPlayerPositionCallbacks ??= YouTubeMiniPlayerPositionCallbackFactory.Create(
             _youTubeMiniPlayerRuntimes,
             Dispatcher,
             GetYouTubeMiniPlayerHostScreenOrigin,
@@ -2220,9 +2292,36 @@ public partial class MainWindow : IYouTubeMiniPlayerListHost, IYouTubeMiniPlayer
     private void RestoreYouTubeMiniPlayerPlaceholders()
         => _youTubeMiniPlayerPersistenceController.RestoreYouTubeMiniPlayerPlaceholders();
 
+    private bool _hasCompletedStartupFloatingMediaRestore;
+
     private void RestoreFloatingMediaPlaceholders()
     {
-        RestoreYouTubeMiniPlayerPlaceholders();
+        try
+        {
+            RestoreYouTubeMiniPlayerPlaceholders();
+        }
+        finally
+        {
+            CompleteStartupFloatingMediaRestore();
+        }
+    }
+
+    private void CompleteStartupFloatingMediaRestore()
+    {
+        if (!_restoreFloatingMediaPlaceholders || _isPrivateWindow || _hasCompletedStartupFloatingMediaRestore)
+        {
+            return;
+        }
+
+        _hasCompletedStartupFloatingMediaRestore = true;
+        // 起動元のセッション復元中は、これから開く Window がまだ残っている。
+        if (s_hasCompletedStartupSplitViewRestore
+            && !GetYouTubeMiniPlayerOwnerWindows().Any(static window =>
+                !window._isPrivateWindow && window._restoreFloatingMediaPlaceholders
+                && !window._hasCompletedStartupFloatingMediaRestore))
+        {
+            s_youTubeMiniPlayerStore.CompleteStartupRestore();
+        }
     }
 
     private static Task AttachFloatingMediaWindowMemorySnapshotAsync(

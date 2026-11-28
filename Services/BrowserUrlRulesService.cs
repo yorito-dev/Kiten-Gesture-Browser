@@ -65,6 +65,33 @@ public static class BrowserUrlRulesService
         return builder.Uri.AbsoluteUri;
     }
 
+    internal static bool IsSelectedTextTranslationUrl(string? url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && uri.IdnHost.Equals("translate.google.com", StringComparison.OrdinalIgnoreCase)
+            && uri.AbsolutePath == "/"
+            && (HasTextParameter(uri.Query) || HasTextParameter(uri.Fragment));
+
+        static bool HasTextParameter(string parameters)
+        {
+            return parameters.TrimStart('?', '#').Split('&', StringSplitOptions.RemoveEmptyEntries).Any(static parameter =>
+            {
+                var separator = parameter.IndexOf('=');
+                return separator >= 0 && separator < parameter.Length - 1
+                    && Uri.UnescapeDataString(parameter[..separator]).Equals("text", StringComparison.OrdinalIgnoreCase);
+            });
+        }
+    }
+
+    internal static bool IsBlankPopupFromCurrentWebPage(string? currentSource, string? requestFrameSource)
+    {
+        return Uri.TryCreate(currentSource, UriKind.Absolute, out var current)
+            && current.Scheme is "http" or "https"
+            && Uri.TryCreate(requestFrameSource, UriKind.Absolute, out var source)
+            && string.Equals(current.AbsoluteUri, source.AbsoluteUri, StringComparison.Ordinal);
+    }
+
     public static bool IsAuthenticationPopupUrl(string? url, bool isUserInitiated = true)
     {
         if (string.IsNullOrWhiteSpace(url)

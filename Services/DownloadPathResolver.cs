@@ -111,8 +111,23 @@ public sealed class DownloadPathResolver
         }
 
         normalized = normalized.TrimEnd('.', ' ');
+        if (IsReservedWindowsFileName(normalized))
+        {
+            return "_" + normalized;
+        }
+
         return string.IsNullOrWhiteSpace(normalized)
             ? "download.bin"
             : normalized;
+    }
+
+    private static bool IsReservedWindowsFileName(string fileName)
+    {
+        var firstDot = fileName.IndexOf('.');
+        var name = (firstDot < 0 ? fileName : fileName[..firstDot]).TrimEnd(' ').ToUpperInvariant();
+        return name is "CON" or "PRN" or "AUX" or "NUL"
+            || (name.Length == 4
+                && (name[..3] is "COM" or "LPT")
+                && name[3] is (>= '1' and <= '9') or '¹' or '²' or '³');
     }
 }

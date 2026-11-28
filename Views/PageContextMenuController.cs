@@ -10,6 +10,8 @@ internal sealed record PageContextMenuTarget(
     string? PageUri, string? LinkUri, string? MiniPlayerLinkUri,
     string? LinkText, string? SelectedText, bool IsEditable, bool IsYouTubeVideo = false);
 
+internal sealed record PageContextMenuNativePaste(Action? Select, Action? Complete);
+
 internal interface IPageContextMenuHost
 {
     void OpenPageInYouTubeMiniPlayer(BrowserTab sourceTab);
@@ -69,8 +71,8 @@ internal sealed class PageContextMenuController
         _createSurface = createSurface;
     }
 
-    public void Show(BrowserTab sourceTab, UIElement placementTarget, Point contextMenuPoint,
-        Func<PageContextMenuTarget> resolveTarget)
+    public bool Show(BrowserTab sourceTab, UIElement placementTarget, Point contextMenuPoint,
+        Func<PageContextMenuTarget> resolveTarget, PageContextMenuNativePaste? nativePaste = null)
     {
         var now = _now();
         if (ReferenceEquals(_lastPageContextMenuTab, sourceTab)
@@ -78,7 +80,7 @@ internal sealed class PageContextMenuController
             && Math.Abs(_lastPageContextMenuPoint.X - contextMenuPoint.X)
                 + Math.Abs(_lastPageContextMenuPoint.Y - contextMenuPoint.Y) < 4)
         {
-            return;
+            return false;
         }
 
         _lastPageContextMenuTab = sourceTab;
@@ -150,7 +152,9 @@ internal sealed class PageContextMenuController
         {
             menu.Items.Add(CreateContextCommand(
                 "ペースト",
-                () => _host.QueueWebContextPagePaste(sourceTab, menu)));
+                nativePaste is null ? () => _host.QueueWebContextPagePaste(sourceTab, menu)
+                    : nativePaste.Select ?? (() => { }),
+                isEnabled: nativePaste is null || nativePaste.Select is not null));
         }
 
         menu.Items.Add(CreateContextCommand(
@@ -179,7 +183,7 @@ internal sealed class PageContextMenuController
         if (!interaction.Accepted || interaction.Current is not { } currentInteraction)
         {
             menu.Items.Clear();
-            return;
+            return false;
         }
 
         var menuInteractionId = currentInteraction.Id;
@@ -191,6 +195,7 @@ internal sealed class PageContextMenuController
             && YouTubeMiniPlayerOpenRequestService.TryCreateFromTab(normalizedPageUri, null, out _);
         surface.Closed += (_, _) =>
         {
+            nativePaste?.Complete?.Invoke();
             menu.Items.Clear();
             _inputHub.TryComplete(menuInteractionId);
             if (ReferenceEquals(_activePageContextMenu, surface))
@@ -202,6 +207,7 @@ internal sealed class PageContextMenuController
             }
         };
         surface.IsOpen = true;
+        return true;
     }
 
     public bool TryGetOpenMenu(out ContextMenu menu, out BrowserTab sourceTab)

@@ -465,7 +465,10 @@ internal static class TabAudioScriptService
                     document.addEventListener("keydown", resumeContext, true);
                 }
 
-                if (state.targetPan !== 0 && !state.observer) {
+                if (state.targetPan === 0 && state.targetBoostDecibels === 0) {
+                    state.observer?.disconnect();
+                    state.observer = null;
+                } else if (state.targetPan !== 0 && !state.observer) {
                     state.observer = new MutationObserver(mutations => {
                         for (const mutation of mutations) {
                             for (const node of mutation.addedNodes) {
@@ -494,7 +497,9 @@ internal static class TabAudioScriptService
                 }
                 if (state.targetPan !== 0) {
                     for (const delay of [100, 500, 1500, 3000]) {
-                        window.setTimeout(() => applyAll(document), delay);
+                        window.setTimeout(() => {
+                            if (state.targetPan !== 0) applyAll(document);
+                        }, delay);
                     }
                 }
                 await resumeContext();

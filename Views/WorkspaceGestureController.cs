@@ -132,6 +132,7 @@ internal sealed class WorkspaceGestureController : IDisposable
 
     private void Target_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        _suppressContextMenuOnce = false;
         ResetGesture();
         CompleteRightWheelInteraction();
         StopCancellationFeedback();

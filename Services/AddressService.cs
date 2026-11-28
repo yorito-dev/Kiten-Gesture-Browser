@@ -39,7 +39,9 @@ public sealed class AddressService
         return !LooksLikeHost(value);
     }
 
-    public string Resolve(string input)
+    public string Resolve(string input) => ResolveNavigationInput(input) ?? "about:blank";
+
+    internal string? ResolveNavigationInput(string input)
     {
         var value = input.Trim();
         if (string.IsNullOrWhiteSpace(value))
@@ -66,8 +68,19 @@ public sealed class AddressService
         return CreateSearchUrl(value);
     }
 
-    public string CreateSearchUrl(string text)
-        => FormatSearchUrl(_settings.SearchUrlTemplate, text);
+    public string? CreateSearchUrl(string text)
+    {
+        var template = _settings.SearchUrlTemplate;
+        if (!SearchAliasSettingsProfile.IsValidSearchUrlTemplate(template))
+        {
+            return null;
+        }
+
+        var url = FormatSearchUrl(template.Trim(), text);
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? url
+            : null;
+    }
 
     internal static string FormatSearchUrl(string template, string text)
     {

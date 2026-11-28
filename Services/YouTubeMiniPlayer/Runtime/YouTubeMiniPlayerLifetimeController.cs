@@ -39,6 +39,8 @@ internal interface IYouTubeMiniPlayerLifetimeHost : IYouTubeMiniPlayerLifetimeOw
     void ResumeDeferredBackgroundWork();
     void QueueSessionSave();
     void RefreshClosedHistory();
+    void RecordExplicitClose(Guid id);
+    void RecordReopened(Guid id);
     void UpdateRestoreButton();
     Task RefreshListAsync();
     void SetStatus(string message);
@@ -86,6 +88,7 @@ internal sealed class YouTubeMiniPlayerLifetimeController(
 
         if (closedState is not null && host.States.All(state => state.Id != id))
         {
+            host.RecordExplicitClose(id);
             RememberClosed(closedState);
         }
 
@@ -113,9 +116,16 @@ internal sealed class YouTubeMiniPlayerLifetimeController(
             audioSession.RemoveFocusPlayer(id);
         }
 
-        foreach (var state in closedStates.Where(state => host.States.All(current => current.Id != state.Id)))
+        var removed = closedStates.Where(state => host.States.All(current => current.Id != state.Id)).ToList();
+        foreach (var state in removed)
         {
+            host.RecordExplicitClose(state.Id);
             RememberClosed(state);
+        }
+
+        if (removed.Count > 0)
+        {
+            host.QueueSave();
         }
 
         host.CloseHiddenHostIfEmpty();
@@ -139,6 +149,7 @@ internal sealed class YouTubeMiniPlayerLifetimeController(
         {
             if (host.FindOpenOwner(closedState.Id) is { } existingOwner)
             {
+                host.RecordReopened(closedState.Id);
                 existingOwner.BringToFront(closedState.Id);
                 existingOwner.QueueSave();
                 host.SetStatus("対象のミニプレイヤーは既に開いているため前面に表示しました");
@@ -176,6 +187,11 @@ internal sealed class YouTubeMiniPlayerLifetimeController(
             {
                 await restoreOwner.LoadRuntimeAsync(closedState, uri);
             }
+            if (restoreOwner.HasRuntime(closedState.Id))
+            {
+                host.RecordReopened(closedState.Id);
+            }
+
             restoreOwner.UpdateStateCaptureTimer();
             restoreOwner.QueueSave();
             operations.BringToFront(closedState.Id);

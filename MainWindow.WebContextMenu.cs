@@ -187,31 +187,39 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
         bool isEditable,
         double? clientX,
         double? clientY,
-        bool isYouTubeVideo = false)
+        bool isYouTubeVideo = false,
+        PageContextMenuNativePaste? nativePaste = null)
     {
-        if (!_tabs.Contains(sourceTab) || GetTabWebView(sourceTab) is not { } webView)
+        var opened = false;
+        try
         {
-            return;
-        }
+            if (!_tabs.Contains(sourceTab) || GetTabWebView(sourceTab) is not { } webView)
+                return;
 
-        var contextMenuPoint = new Point(Math.Max(0, clientX ?? 0), Math.Max(0, clientY ?? 0));
-        _pageContextMenuController.Show(sourceTab, webView, contextMenuPoint, () =>
+            var contextMenuPoint = new Point(Math.Max(0, clientX ?? 0), Math.Max(0, clientY ?? 0));
+            opened = _pageContextMenuController.Show(sourceTab, webView, contextMenuPoint, () =>
+            {
+                var targetPageUri = !string.IsNullOrWhiteSpace(pageUri)
+                    ? pageUri
+                    : GetCurrentPageUrl(sourceTab);
+                var normalizedPageUri = CanUseContextPageUrl(targetPageUri)
+                    ? NormalizeYouTubeShortsUrl(targetPageUri!)
+                    : null;
+                var normalizedLinkUri = IsSplitViewLinkUrl(linkUri)
+                    ? NormalizeYouTubeShortsUrl(linkUri!)
+                    : null;
+                var miniPlayerLinkUri = IsSplitViewLinkUrl(linkUri)
+                    ? linkUri
+                    : null;
+                return new PageContextMenuTarget(
+                    normalizedPageUri, normalizedLinkUri, miniPlayerLinkUri, linkText, selectedText, isEditable, isYouTubeVideo);
+            }, nativePaste);
+        }
+        finally
         {
-            var targetPageUri = !string.IsNullOrWhiteSpace(pageUri)
-                ? pageUri
-                : GetCurrentPageUrl(sourceTab);
-            var normalizedPageUri = CanUseContextPageUrl(targetPageUri)
-                ? NormalizeYouTubeShortsUrl(targetPageUri!)
-                : null;
-            var normalizedLinkUri = IsSplitViewLinkUrl(linkUri)
-                ? NormalizeYouTubeShortsUrl(linkUri!)
-                : null;
-            var miniPlayerLinkUri = IsSplitViewLinkUrl(linkUri)
-                ? linkUri
-                : null;
-            return new PageContextMenuTarget(
-                normalizedPageUri, normalizedLinkUri, miniPlayerLinkUri, linkText, selectedText, isEditable, isYouTubeVideo);
-        });
+            if (!opened)
+                nativePaste?.Complete?.Invoke();
+        }
     }
 
     private bool TryBeginPageContextMenuGesture(NativePoint screenPoint)
@@ -626,6 +634,10 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
                 : null;
 
             args.Handled = true;
+            var nativePaste = target.IsEditable
+                ? CreateNativePagePaste(tab, args)
+                    ?? (target.IsRequestedForMainFrame ? null : new PageContextMenuNativePaste(null, null))
+                : null;
             ShowPageContextMenu(
                 tab,
                 pageUri,
@@ -634,8 +646,61 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
                 selectionText,
                 target.IsEditable,
                 args.Location.X,
-                args.Location.Y);
+                args.Location.Y,
+                nativePaste: nativePaste);
         };
+    }
+
+    private PageContextMenuNativePaste? CreateNativePagePaste(BrowserTab tab, CoreWebView2ContextMenuRequestedEventArgs args)
+    {
+        if (GetTabWebView(tab)?.CoreWebView2 is not { } core
+            || args.MenuItems.FirstOrDefault(static item => item.Kind == CoreWebView2ContextMenuItemKind.Command
+                && item.Name == "paste") is not { } paste)
+            return null;
+
+        if (!paste.IsEnabled)
+            return new PageContextMenuNativePaste(null, null);
+
+        var commandId = paste.CommandId;
+        var source = core.Source;
+        var deferral = args.GetDeferral();
+        var completed = false;
+        return new PageContextMenuNativePaste(Select, Complete);
+
+        void Select()
+        {
+            try
+            {
+                if (!completed && !_isClosingWindow && IsActive && _tabs.Contains(tab)
+                    && GetTabWebView(tab) is { IsVisible: true } webView
+                    && ReferenceEquals(webView.CoreWebView2, core)
+                    && string.Equals(core.Source, source, StringComparison.Ordinal)
+                    && (ReferenceEquals(ActiveTab, tab)
+                        || (SplitViewHost.Visibility == Visibility.Visible && _splitViewService.Contains(tab))))
+                {
+                    args.SelectedCommandId = commandId;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or COMException)
+            {
+                SetStatus("貼り付け先が変わったため、貼り付けを中止しました。", autoClear: true);
+            }
+        }
+
+        void Complete()
+        {
+            if (completed)
+                return;
+            completed = true;
+            try
+            {
+                deferral.Complete();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or COMException)
+            {
+                // 元のWebView2が終了済みなら、結果を渡す先は残っていない。
+            }
+        }
     }
 
     private EventHandler<CoreWebView2ContextMenuRequestedEventArgs> CreateWebContextMenuRequestedHandler(BrowserTab tab, CoreWebView2 core)
@@ -917,6 +982,9 @@ public partial class MainWindow : IPageContextMenuHost, IPageContextMenuItemsHos
         }
 
         var searchUrl = _addressService.CreateSearchUrl(query);
+        if (!CanOpenSearchTarget(searchUrl))
+            return;
+
         var openedTab = sourceTab is not null && _tabs.Contains(sourceTab)
             ? OpenBackgroundTabNextTo(sourceTab, searchUrl, title: query)
             : OpenTab(searchUrl, activate: false, title: query);

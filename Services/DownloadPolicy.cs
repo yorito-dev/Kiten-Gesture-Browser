@@ -51,6 +51,12 @@ public sealed class DownloadPolicy
         ".psd1",
         ".ws",
         ".wsh",
+        ".scf",
+        ".sct",
+        ".wsc",
+        ".inf",
+        ".gadget",
+        ".py",
         ".diagcab",
         ".theme",
         ".themepack"

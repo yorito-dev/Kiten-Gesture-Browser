@@ -446,7 +446,7 @@ public sealed class YouTubeControlScriptServiceTests
         var script = YouTubeControlScriptService.BuildMiniPlayerWatchPageScript("test-token");
 
         Assert.Contains("__tabBrowserYouTubeMiniPlayerLayoutBridge", script);
-        Assert.Contains("layoutBridgeVersion = 21", script);
+        Assert.Contains("layoutBridgeVersion = 26", script);
         Assert.Contains("(player || document).querySelectorAll(\"video\")", script);
         Assert.Contains("playingVideos.includes(activeVideo)", script);
         Assert.Contains("layoutState.activeVideo = video", script);
@@ -454,7 +454,7 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("parent !== player", script);
         Assert.Contains("layoutState.verificationAttemptsRemaining = 3", script);
         Assert.Contains("--layoutState.verificationAttemptsRemaining > 0", script);
-        Assert.Contains("layoutState.layoutVerified = Boolean(getPlayer() && getVideo()) && !hasLayoutStyleDrift()", script);
+        Assert.Contains("layoutState.layoutVerified = failure === null", script);
         Assert.Contains("window.cancelAnimationFrame(layoutState.verificationFrame)", script);
         Assert.Contains("window.cancelAnimationFrame(layoutState.applyFrame)", script);
         Assert.Contains("for (const delay of [2000, 5000])", script);
@@ -495,7 +495,11 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("document.removeEventListener(\"yt-navigate-start\", handleNavigateStart, true)", script);
         Assert.DoesNotContain("observe(document.documentElement, {", script);
         Assert.DoesNotContain("setInterval(() =>", script);
-        Assert.Contains("hoverBridgeVersion = 7", script);
+        Assert.Contains("hoverBridgeVersion = 8", script);
+        Assert.Contains("dragBridgeVersion = 4", script);
+        Assert.Matches("""type: "youtubeMiniPlayerHover",\s*token: fullScreenMessageToken,""", script);
+        Assert.Matches("""type: "youtubeMiniPlayerDrag",\s*token: fullScreenMessageToken,\s*phase,""", script);
+        Assert.Matches("""type: "youtubeMiniPlayerDrag",\s*token: fullScreenMessageToken,\s*phase: "end",""", script);
         Assert.Contains("const isYouTubeNativeMenuOpen = () =>", script);
         Assert.Contains("type: \"youtubeMiniPlayerHideToolbar\"", script);
         Assert.Contains("!isYouTubeNativeMenuOpen()", script);
@@ -515,7 +519,7 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("isShortsPage", script);
         Assert.Contains("link[rel=\"canonical\"]", script);
         Assert.Contains("viewportWidth: window.innerWidth || document.documentElement.clientWidth || 0", script);
-        Assert.Contains("window.addEventListener(\"dblclick\"", script);
+        Assert.Contains("listenForDrag(window, \"dblclick\"", script);
         Assert.Contains("window.addEventListener(\"pointermove\", handleHoverMove, true)", script);
         Assert.DoesNotContain(
             "document.addEventListener(\"mousemove\", event => sendHover",
@@ -531,7 +535,7 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("type: \"youtubeMiniPlayerSideButton\"", script);
         Assert.Contains("event.button === 3 ? \"xButton1\" : \"xButton2\"", script);
         Assert.Contains("pressedMiniPlayerSideButton === event.button", script);
-        Assert.Contains("document.addEventListener(\"auxclick\"", script);
+        Assert.Contains("listenForDrag(document, \"auxclick\"", script);
         Assert.Contains("deltaX < dragGestureThreshold && deltaY < dragGestureThreshold", script);
         Assert.Contains("const isYouTubeInteractiveTarget = (target, includeControlsBackground = true) =>", script);
         Assert.Contains("const isYouTubeEndScreenTarget = target =>", script);
@@ -544,17 +548,17 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains(
             "!isYouTubeEndScreenTarget(event.target) && isYouTubeControlsTarget(event)",
             script);
-        Assert.Contains("window.addEventListener(\"click\", suppressVideoSurfaceClick, true)", script);
+        Assert.Contains("listenForDrag(window, \"click\", suppressVideoSurfaceClick, true)", script);
         Assert.Contains("isYouTubeInteractiveTarget(event.target)", script);
         Assert.Contains("if (isYouTubeControlsTarget(event) && !resizeEdges)", script);
         Assert.Contains("isYouTubeNativeMenuOpen() || isYouTubeInteractiveTarget(event.target, false)", script);
         Assert.Contains("event.preventDefault();", script);
         Assert.Contains("event.stopImmediatePropagation();", script);
         var dragPointerDownStart = script.IndexOf(
-            "document.addEventListener(\"pointerdown\", (event) =>",
+            "listenForDrag(document, \"pointerdown\", (event) =>",
             StringComparison.Ordinal);
         var dragPointerMoveStart = script.IndexOf(
-            "document.addEventListener(\"pointermove\", (event) =>",
+            "listenForDrag(document, \"pointermove\", (event) =>",
             dragPointerDownStart,
             StringComparison.Ordinal);
         var pointerCaptureStart = script.IndexOf(
@@ -591,9 +595,9 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("holdSeekState.direction > 0 && directionDeltaX < 0", script);
         Assert.Contains("holdSeekState.direction < 0 && directionDeltaX > 0", script);
         Assert.Contains("switchHoldSeekDirection(directionDeltaX > 0 ? 1 : -1, event)", script);
-        Assert.Contains("document.addEventListener(\"contextmenu\"", script);
+        Assert.Contains("listenForDrag(document, \"contextmenu\"", script);
         var contextMenuStart = script.IndexOf(
-            "document.addEventListener(\"contextmenu\"",
+            "listenForDrag(document, \"contextmenu\"",
             StringComparison.Ordinal);
         var contextMenuEnd = script.IndexOf("}, true);", contextMenuStart, StringComparison.Ordinal);
         Assert.True(contextMenuStart >= 0);
@@ -603,7 +607,7 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("event.preventDefault();", contextMenuHandler);
         Assert.Contains("event.stopImmediatePropagation();", contextMenuHandler);
         Assert.DoesNotContain("return;", contextMenuHandler);
-        Assert.Contains("document.addEventListener(\"wheel\"", script);
+        Assert.Contains("listenForDrag(document, \"wheel\"", script);
         Assert.Contains("youtubeMiniPlayerHoldSeek", script);
         Assert.Contains("youtubeMiniPlayerRightWheel", script);
         Assert.Contains("youtubeMiniPlayerContentTransform", script);
@@ -916,6 +920,7 @@ public sealed class YouTubeControlScriptServiceTests
         Assert.Contains("if (looping && isEnded)", script);
         Assert.Contains("savedStateRestoreGuard.playback = true;", script);
         Assert.Contains("pausedResumeGuard.enabled = false;", script);
+        Assert.Contains("pausedResumeGuard.dispose?.();", script);
         Assert.Contains("player.seekTo(0, true);", script);
         Assert.Contains("player.playVideo();", script);
         Assert.Contains("Promise.resolve(video.play()).catch(() => { });", script);

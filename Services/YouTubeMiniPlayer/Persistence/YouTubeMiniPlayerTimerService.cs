@@ -25,7 +25,7 @@ internal static class YouTubeMiniPlayerTimerService
         saveTimer.Start();
     }
 
-    public static void SaveNow(
+    public static bool SaveNow(
         DispatcherTimer saveTimer,
         YouTubeMiniPlayerStore store,
         IEnumerable<YouTubeMiniPlayerState> players,
@@ -36,6 +36,7 @@ internal static class YouTubeMiniPlayerTimerService
         try
         {
             YouTubeMiniPlayerPersistenceService.SaveSnapshot(store, players);
+            return true;
         }
         catch (Exception ex)
         {
@@ -43,6 +44,8 @@ internal static class YouTubeMiniPlayerTimerService
             {
                 setStatus("YouTubeミニプレイヤー状態の保存に失敗しました: " + ex.Message);
             }
+
+            return false;
         }
     }
 

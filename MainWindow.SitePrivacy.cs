@@ -238,7 +238,7 @@ public partial class MainWindow
                 var after = SettingsService.CloneForEdit(before);
                 if (excluded) after.AdBlocking.ExcludedHosts.Remove(host);
                 else after.AdBlocking.ExcludedHosts[host] = true;
-                await ApplySettingsToOpenWindowsAsync(SettingsService.MergeEditingResult(before, after));
+                await ApplySettingsToOpenWindowsAsync(before, after);
             }
             if (_sitePrivacyInteractionCoordinator.IsCurrentSiteInformationContext(tab.Id, information.Url))
                 UpdateSiteAdBlockingInformation(tab, information);

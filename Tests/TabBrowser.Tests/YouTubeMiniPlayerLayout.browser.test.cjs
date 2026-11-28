@@ -31,8 +31,11 @@ const frames = async (count = 8) => evaluate(`new Promise(resolve => {
 })`);
 let script;
 let startPositionScript;
+let layoutVerificationScript;
 before(async () => {
     const source = await readFile(resolve(__dirname, '../../Services/YouTubeControlScriptService.cs'), 'utf8');
+    layoutVerificationScript = source.slice(source.indexOf('public static string BuildMiniPlayerLayoutVerificationScript()'))
+        .match(/return """\r?\n([\s\S]*?)\r?\n\s*""";/)[1];
     startPositionScript = source.slice(source.indexOf('public static string BuildMiniPlayerStartPositionReadScript('))
         .match(/return """\r?\n([\s\S]*?)\r?\n\s*"""\.Replace\(/)[1]
         .replaceAll('__VIDEO_ID__', JSON.stringify('abc123'))
@@ -232,6 +235,43 @@ async function resizeInputAt(x, y, { ctrl = false, release = true, dx = 24, dy =
     if (release) await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + dx, y: y + dy, button: 'left', clickCount: 1 });
     return { cursor, messages: await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`) };
 }
+
+test('動画面のCtrlリサイズ中のEscは取消を1回だけ通知し、次のドラッグは使える', async () => {
+    await reset();
+    const held = await resizeInputAt(400, 180, { ctrl: true, release: false });
+    assert.deepEqual(held.messages.map(m => m.phase), ['start', 'move']);
+    await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 450, y: 220, button: 'left', buttons: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 450, y: 220, button: 'left', clickCount: 1 });
+    const cancelled = await evaluate(`window.__miniPlayerMessages.filter(m => m.type === 'youtubeMiniPlayerDrag')`);
+    assert.deepEqual(cancelled.map(m => m.phase), ['start', 'move', 'cancel']);
+    assert.ok(cancelled.at(-1).resize && cancelled.at(-1).resizeEdges === 0);
+    const next = await resizeInputAt(400, 180, { ctrl: true });
+    assert.deepEqual(next.messages.slice(3).map(m => m.phase), ['start', 'move', 'end']);
+});
+
+test('入力ブリッジは同じ版を保持し、版が違うと旧ドラッグを取り消して一度だけ登録する', async () => {
+    await reset();
+    await evaluate('window.previousDragBridge = window.__tabBrowserYouTubeMiniPlayerDragBridge;');
+    await evaluate(script);
+    assert.equal(await evaluate('window.previousDragBridge === window.__tabBrowserYouTubeMiniPlayerDragBridge'), true);
+
+    const before = await resizeInputAt(480, 532, { release: false });
+    assert.deepEqual(before.messages.map(message => message.phase), ['start', 'move']);
+    await evaluate('window.previousDragBridge.version -= 1;');
+    await evaluate(script);
+    assert.equal(await evaluate('window.previousDragBridge === window.__tabBrowserYouTubeMiniPlayerDragBridge'), false);
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 504, y: 552, button: 'left', clickCount: 1 });
+    const ended = await evaluate('window.__miniPlayerMessages.filter(m => m.type === "youtubeMiniPlayerDrag")');
+    assert.deepEqual(ended.map(message => message.phase), ['start', 'move', 'end']);
+    assert.equal(ended.at(-1).cancelled, true);
+
+    await evaluate('window.previousDragBridge.dispose(); window.__miniPlayerMessages = [];');
+    const after = await resizeInputAt(480, 532);
+    assert.deepEqual(after.messages.map(message => message.phase), ['start', 'move', 'end']);
+    assert.equal(after.messages.at(-1).cancelled, false);
+});
 
 for (const [x, edges, cursor] of [[480, 8, 'ns-resize'], [8, 9, 'nesw-resize'], [952, 12, 'nwse-resize']]) {
     test(`下側10 DIPの空き領域から外へ直接引ける: ${edges}`, async () => {
@@ -800,6 +840,28 @@ test('大きさが同じでも配置だけがずれた場合は実表示座標�
     assert.deepEqual(await bounds(), fitted);
 });
 
+for (const [property, value] of [['min-height', '288px'], ['max-height', '46px']]) {
+    test(`動画と親要素の ${property} が停止中に書き戻されても表示領域に収める`, async () => {
+        await reset({ width: 480, height: 270 });
+        await evaluate(`(() => {
+            const player = document.getElementById('movie_player');
+            const video = player.querySelector('video');
+            const host = player.closest('ytd-player');
+            for (const element of [host, player, video.parentElement, video]) {
+                element.style.setProperty(${JSON.stringify(property)}, ${JSON.stringify(value)}, 'important');
+            }
+        })()`);
+        await frames();
+        assert.deepEqual(await evaluate(`(() => {
+            const player = document.getElementById('movie_player');
+            const video = player.querySelector('video');
+            return [player.closest('ytd-player'), player, video.parentElement, video]
+                .map(element => element.getBoundingClientRect().height);
+        })()`), [270, 270, 270, 270]);
+        assert.equal(await evaluate("document.querySelector('video').paused"), true);
+    });
+}
+
 test('囲み要素ごとの交換後と縦長リサイズ後も補正する', async () => {
     await reset();
     await evaluate(`const oldContainer = document.querySelector('.html5-video-container');
@@ -943,6 +1005,53 @@ test('一時停止した新動画の自然サイズ確定イベントでも対�
     assert.equal(await evaluate(`document.getElementById('next-video').getBoundingClientRect().width`), 960);
 });
 
+test('一時停止中の描画指定を画質変更と復帰後も保ち、再生開始で解除する', async () => {
+    await scheduledLive();
+    await startScheduledLive();
+    const filter = () => evaluate("getComputedStyle(document.querySelector('video')).filter");
+    const before = await evaluate('window.layoutCalls');
+    assert.equal(await filter(), 'opacity(0.999)');
+
+    await evaluate("window.liveMedia = { width: 1280, height: 720, ready: 4 };"
+        + "document.querySelector('video').dispatchEvent(new Event('resize'));");
+    await frames(4);
+    assert.equal(await filter(), 'opacity(0.999)');
+    assert.equal(await evaluate('window.layoutCalls'), before + 1);
+    await evaluate(layoutVerificationScript);
+    await frames(4);
+    assert.equal(await filter(), 'opacity(0.999)');
+    assert.deepEqual(await bounds(), fitted);
+    assert.equal(await evaluate('window.layoutCalls'), before + 1);
+    assert.deepEqual(await evaluate('window.liveControlWrites'), []);
+
+    await evaluate("const v = document.querySelector('video');"
+        + "Object.defineProperty(v, 'paused', { configurable: true, value: false }); v.dispatchEvent(new Event('play'));");
+    assert.equal(await filter(), 'none');
+    await evaluate("Object.defineProperty(v, 'paused', { configurable: true, value: true }); v.dispatchEvent(new Event('pause'));");
+    assert.equal(await filter(), 'opacity(0.999)');
+    await evaluate("Object.defineProperty(v, 'ended', { value: true }); v.dispatchEvent(new Event('ended'));");
+    assert.equal(await filter(), 'none');
+    assert.equal(await evaluate('window.layoutCalls'), before + 1);
+});
+
+test('一時停止中の描画指定は古い動画や対象外の動画に残さず、破棄後は適用しない', async () => {
+    await reset();
+    const filters = () => evaluate("[...document.querySelectorAll('video')].map(v => getComputedStyle(v).filter)");
+    await evaluate("const oldVideo = document.querySelector('video');"
+        + "const newVideo = document.createElement('video'); const unrelatedVideo = document.createElement('video');"
+        + "document.body.append(unrelatedVideo); oldVideo.after(newVideo);"
+        + "Object.defineProperty(newVideo, 'readyState', { value: 2 }); newVideo.dispatchEvent(new Event('loadeddata'));"
+        + "unrelatedVideo.dispatchEvent(new Event('pause'));");
+    await frames(4);
+    assert.deepEqual(await filters(), ['none', 'opacity(0.999)', 'none']);
+    await evaluate("document.dispatchEvent(new Event('yt-navigate-start'));");
+    assert.deepEqual(await filters(), ['none', 'none', 'none']);
+    await evaluate("newVideo.dispatchEvent(new Event('canplay'));");
+    assert.deepEqual(await filters(), ['none', 'opacity(0.999)', 'none']);
+    await evaluate("window.__tabBrowserYouTubeMiniPlayerLayoutBridge.dispose(); newVideo.dispatchEvent(new Event('pause'));");
+    assert.deepEqual(await filters(), ['none', 'none', 'none']);
+});
+
 test('補正できないずれは未完了として扱い、確認の再補正は3回で止める', async () => {
     await reset();
     const before = await evaluate('window.layoutCalls');
@@ -1025,5 +1134,120 @@ for (const [name, setup, expected] of [
             ${setup}
         })()`);
         assert.equal(await evaluate(startPositionScript), expected);
+    });
+}
+
+test('layout diagnostics aggregate element replacements and repairs without adding a timer', async () => {
+    await reset();
+    await evaluate(`(() => {
+        const previous = document.querySelector('video');
+        const replacement = previous.cloneNode();
+        previous.replaceWith(replacement);
+        replacement.dispatchEvent(new Event('loadedmetadata'));
+    })()`);
+    await frames();
+    assert.deepEqual(await evaluate("window.__miniPlayerMessages.filter(m => m.event === 'layout-counts')"), []);
+    await evaluate(`(() => {
+        const now = Date.now();
+        Date.now = () => now + 31000;
+        window.__tabBrowserYouTubeMiniPlayerLayoutBridge.beginVerification();
+    })()`);
+    await frames();
+    const messages = await evaluate("window.__miniPlayerMessages.filter(m => m.event === 'layout-counts')");
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].replacements, 1);
+    assert.ok(messages[0].applied >= 2);
+    assert.equal(messages[0].applyErrors, 0);
+    assert.deepEqual(Object.keys(messages[0]).sort(), [
+        'applied', 'applyErrors', 'event', 'playerMissing', 'replacements', 'styleDrift', 'token', 'type', 'videoMissing'
+    ].sort());
+});
+
+test('一時停止中の表示診断は媒体寸法と表示寸法を補正前後で比較し、起点ごとに間引く', async () => {
+    await reset();
+    await evaluate(`(() => {
+        const video = document.querySelector('video');
+        Object.defineProperties(video, {
+            videoWidth: { configurable: true, value: 1280 },
+            videoHeight: { configurable: true, value: 720 }
+        });
+        window.__tabBrowserYouTubeMiniPlayerLayoutBridge.beginVerification();
+    })()`);
+    await frames();
+    await evaluate(`(() => {
+        const video = document.querySelector('video');
+        Object.defineProperties(video, {
+            videoWidth: { value: 1920 },
+            videoHeight: { value: 1080 }
+        });
+        video.style.setProperty('width', '80px', 'important');
+        video.style.setProperty('height', '45px', 'important');
+        video.dispatchEvent(new Event('resize'));
+    })()`);
+    await frames();
+    assert.deepEqual(await evaluate(layoutVerificationScript), { ok: true, requested: true });
+    await frames();
+    await evaluate(layoutVerificationScript);
+    await evaluate("window.__tabBrowserYouTubeMiniPlayerLayoutBridge.capturePausedLayout('unrecognized')");
+    await frames();
+
+    const probes = await evaluate("window.__miniPlayerMessages.filter(m => m.event === 'paused-layout-probe')");
+    assert.equal(probes.length, 2);
+    assert.deepEqual(probes[0], {
+        type: 'youtubePlaybackDiagnostic', token: 'test-token', event: 'paused-layout-probe',
+        reason: 'media-change', result: 'verified', previousNatural: '1280x720',
+        before: { natural: '1920x1080', video: '80x45', parent: '960x540', viewport: '960x540' },
+        after: { natural: '1920x1080', video: '960x540', parent: '960x540', viewport: '960x540' },
+        replaced: false, paused: true, applied: true
+    });
+    assert.equal(probes[1].reason, 'host-verification');
+    assert.deepEqual(probes[1].before, probes[1].after);
+    assert.equal(probes[1].applied, false);
+});
+
+for (const [name, change, expected] of [
+    ['same content', '', 1.25],
+    ['next video', 'window.holdContentId = "next-video";', 2],
+    ['user input', 'keyboard', 2],
+    ['explicit speed', 'v.playbackRate = 1.5;', 1.5],
+    ['replacement element', 'v.replaceWith(v.cloneNode());', 1]
+]) {
+    test('hold-seek speed restoration after an advertisement: ' + name, async () => {
+        await reset();
+        await evaluate(`(() => {
+            window.holdContentId = 'original';
+            const player = document.getElementById('movie_player');
+            player.getVideoData = () => ({ video_id: window.holdContentId });
+            const video = player.querySelector('video');
+            Object.defineProperty(video, 'paused', { value: false });
+            video.playbackRate = 1.25;
+        })()`);
+        await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: 300, y: 200, button: 'right', buttons: 2, clickCount: 1 });
+        await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 360, y: 200, buttons: 2 });
+        assert.equal(await evaluate("document.querySelector('video').playbackRate"), 2);
+        await evaluate("document.getElementById('movie_player').classList.add('ad-showing')");
+        await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 360, y: 200, button: 'right', buttons: 0, clickCount: 1 });
+        assert.equal(await evaluate("document.querySelector('video').playbackRate"), 2);
+        if (change === 'keyboard') {
+            await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'x', code: 'KeyX', windowsVirtualKeyCode: 88 });
+        }
+        const actual = await evaluate(`(() => {
+            const player = document.getElementById('movie_player');
+            const v = player.querySelector('video');
+            ${change === 'keyboard' ? '' : change}
+            player.classList.remove('ad-showing');
+            const current = player.querySelector('video');
+            current.dispatchEvent(new Event('canplay'));
+            return current.playbackRate;
+        })()`);
+        assert.equal(actual, expected);
+        if (name === 'same content') {
+            assert.equal(await evaluate(`(() => {
+                const video = document.querySelector('video');
+                video.playbackRate = 2;
+                video.dispatchEvent(new Event('playing'));
+                return video.playbackRate;
+            })()`), 2);
+        }
     });
 }

@@ -23,7 +23,8 @@ internal enum YouTubeMiniPlayerDragPhase
     Unknown,
     Start,
     Move,
-    End
+    End,
+    Cancel
 }
 
 internal enum YouTubeMiniPlayerRightInputPhase
@@ -105,7 +106,7 @@ internal static class YouTubeMiniPlayerWebMessageService
                     WheelDelta: 0,
                     Hovered: false,
                     TitleHovered: false,
-                    Token: null,
+                    Token: GetJsonString(root, "token"),
                     IsResize: GetJsonBool(root, "resize"),
                     ResizeEdges: ParseResizeEdges(GetJsonDouble(root, "resizeEdges")),
                     Cancelled: GetJsonBool(root, "cancelled"));
@@ -121,7 +122,7 @@ internal static class YouTubeMiniPlayerWebMessageService
                     WheelDelta: 0,
                     GetJsonBool(root, "hovered"),
                     GetJsonBool(root, "titleHovered"),
-                    Token: null);
+                    Token: GetJsonString(root, "token"));
                 return true;
             }
 
@@ -252,6 +253,7 @@ internal static class YouTubeMiniPlayerWebMessageService
             "start" => YouTubeMiniPlayerDragPhase.Start,
             "move" => YouTubeMiniPlayerDragPhase.Move,
             "end" => YouTubeMiniPlayerDragPhase.End,
+            "cancel" => YouTubeMiniPlayerDragPhase.Cancel,
             _ => YouTubeMiniPlayerDragPhase.Unknown
         };
     }

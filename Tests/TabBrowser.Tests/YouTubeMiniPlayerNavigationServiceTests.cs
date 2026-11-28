@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
 using TabBrowser.Models;
 using TabBrowser.Services;
 using Xunit;
@@ -263,6 +265,8 @@ public sealed class YouTubeMiniPlayerNavigationServiceTests
     [Theory]
     [InlineData("https://www.youtube.com/watch?v=abc123", false)]
     [InlineData("https://www.youtube.com/shorts/abc123?feature=share", true)]
+    [InlineData("http://youtu.be/abc123", false)]
+    [InlineData("http://www.youtube-nocookie.com/embed/abc123", false)]
     public void TryCreateMiniPlayerUrlCreatesWatchAutoplayUrl(string url, bool expectedShorts)
     {
         var result = YouTubeMiniPlayerNavigationService.TryCreateMiniPlayerUrl(
@@ -274,6 +278,41 @@ public sealed class YouTubeMiniPlayerNavigationServiceTests
         Assert.Equal("https://www.youtube.com/watch?v=abc123&autoplay=1", miniPlayerUrl);
         Assert.Equal(expectedShorts, isShorts);
     }
+
+    [Theory]
+    [InlineData("https://example.test/watch?v=fixture", false)]
+    [InlineData("ftp://youtube.com/watch?v=fixture", false)]
+    [InlineData("http://youtu.be/fixture", true)]
+    public void PlaceholderLoadUsesTheSameNavigationPolicy(string url, bool shouldLoad)
+        => WorkspaceTrashWindowTests.RunInSta(() =>
+        {
+            var root = new Grid();
+            var button = new Button();
+            var parts = new YouTubeMiniPlayerPlaceholderParts(root, button, new Border());
+            var state = new YouTubeMiniPlayerState { Url = url };
+            string? status = null;
+            Uri? destination = null;
+            YouTubeMiniPlayerPlaceholderLoadService.AttachLoadHandler(parts, state, (_, uri) =>
+            {
+                destination = uri;
+                return Task.CompletedTask;
+            }, value => status = value);
+
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            Assert.Equal(shouldLoad, destination is not null);
+            if (shouldLoad)
+            {
+                Assert.Equal(Uri.UriSchemeHttps, destination!.Scheme);
+            }
+            else
+            {
+                Assert.Equal("ミニプレイヤーのURLを読み込めません", status);
+                Assert.Equal(url, state.Url);
+            }
+
+            return Task.CompletedTask;
+        });
 
     [Fact]
     public void CreateNavigationUrlUsesPausedAutoplaySettingAndNormalizesStateUrl()

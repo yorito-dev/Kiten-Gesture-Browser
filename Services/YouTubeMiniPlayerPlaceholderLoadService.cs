@@ -16,7 +16,8 @@ internal static class YouTubeMiniPlayerPlaceholderLoadService
     {
         placeholder.LoadButton.Click += async (_, _) =>
         {
-            if (!Uri.TryCreate(YouTubeMiniPlayerNavigationService.CreateNavigationUrl(state), UriKind.Absolute, out var uri))
+            var navigationUrl = YouTubeMiniPlayerNavigationService.CreateNavigationUrl(state);
+            if (!YouTubeMiniPlayerOpenRequestService.TryCreateNavigationUri(navigationUrl, out var uri))
             {
                 setStatus("ミニプレイヤーのURLを読み込めません");
                 return;

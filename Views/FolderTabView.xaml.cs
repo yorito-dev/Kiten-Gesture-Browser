@@ -44,6 +44,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private readonly string? _initialSelectionAnchorPath;
     private WorkspaceGestureController? _gestureController;
     private CancellationTokenSource? _navigationCancellation;
+    private bool _refreshAfterNavigation;
     private CancellationTokenSource? _recursiveSearchCancellation;
     private CancellationTokenSource? _iconLoadCancellation = new();
     private CancellationTokenSource? _fileTransferCancellation;
@@ -70,6 +71,8 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private Func<string, object?, Task>? _executeCommandAsync;
     private Func<IReadOnlyList<string>, Task>? _savePathsToWorkspaceAsync;
     private Func<FolderTabPlacesSnapshot>? _getPlacesSnapshot;
+    private Func<string, bool>? _isPlacePinned;
+    private CancellationTokenSource? _placesAvailabilityCancellation;
     private Func<string?, IReadOnlyList<FolderTabPathSuggestion>>? _getPathSuggestions;
     private Action<string, bool>? _setPlacePinned;
     private Action<string, int>? _movePinnedPlace;
@@ -222,11 +225,13 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     public void ConfigurePlaces(
         Func<FolderTabPlacesSnapshot> getPlacesSnapshot,
+        Func<string, bool> isPlacePinned,
         Func<string?, IReadOnlyList<FolderTabPathSuggestion>> getPathSuggestions,
         Action<string, bool> setPlacePinned,
         Action<string, int> movePinnedPlace)
     {
         _getPlacesSnapshot = getPlacesSnapshot;
+        _isPlacePinned = isPlacePinned;
         _getPathSuggestions = getPathSuggestions;
         _setPlacePinned = setPlacePinned;
         _movePinnedPlace = movePinnedPlace;
@@ -454,6 +459,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         }
 
         _isDisposed = true;
+        CancelPlacesAvailability();
         _iconLayoutTimer.Stop();
         _iconLayoutTimer.Tick -= IconLayoutTimer_Tick;
         _folderWatcherTimer.Stop();
@@ -1874,11 +1880,13 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private void RebuildPlacesMenu()
     {
+        CancelPlacesAvailability();
+        _placesAvailabilityCancellation = new CancellationTokenSource();
+        var cancellationToken = _placesAvailabilityCancellation.Token;
         PlacesMenu.Items.Clear();
         var snapshot = _getPlacesSnapshot?.Invoke()
             ?? new FolderTabPlacesSnapshot([], []);
-        var currentIsPinned = snapshot.PinnedPlaces.Any(place =>
-            string.Equals(place.Path, CurrentPath, StringComparison.OrdinalIgnoreCase));
+        var currentIsPinned = IsCurrentPlacePinned();
         var toggleCurrent = new MenuItem
         {
             Header = currentIsPinned ? "この場所のピン留めを解除" : "この場所をピン留め",
@@ -1898,11 +1906,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         PlacesMenu.Items.Add(CreatePlacesSection(
             "ピン留め",
             snapshot.PinnedPlaces,
-            includeOrderingCommands: true));
+            includeOrderingCommands: true, cancellationToken));
         PlacesMenu.Items.Add(CreatePlacesSection(
             "最近開いたフォルダー",
             snapshot.RecentPlaces,
-            includeOrderingCommands: false));
+            includeOrderingCommands: false, cancellationToken));
         PlacesMenu.Items.Add(new Separator());
         PlacesMenu.Items.Add(CreateSpecialFolderMenuItem("デスクトップ", "Desktop"));
         PlacesMenu.Items.Add(CreateSpecialFolderMenuItem("ダウンロード", "Downloads"));
@@ -1916,7 +1924,8 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private MenuItem CreatePlacesSection(
         string header,
         IReadOnlyList<FolderTabPlace> places,
-        bool includeOrderingCommands)
+        bool includeOrderingCommands,
+        CancellationToken cancellationToken)
     {
         var section = new MenuItem { Header = header };
         if (places.Count == 0)
@@ -1927,10 +1936,50 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
         for (var index = 0; index < places.Count; index++)
         {
-            section.Items.Add(CreatePlaceMenuItem(places[index], index, places.Count, includeOrderingCommands));
+            var place = places[index];
+            var row = CreatePlaceMenuItem(place, index, places.Count, includeOrderingCommands);
+            section.Items.Add(row);
+            _ = UpdatePlaceAvailabilityAsync(section, row, place, cancellationToken);
         }
 
         return section;
+    }
+
+    private void PlacesMenu_Closed(object sender, RoutedEventArgs e) => CancelPlacesAvailability();
+
+    private void CancelPlacesAvailability()
+    {
+        var cancellation = _placesAvailabilityCancellation;
+        _placesAvailabilityCancellation = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+    }
+
+    private async Task UpdatePlaceAvailabilityAsync(
+        MenuItem section, MenuItem row, FolderTabPlace place, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var isAvailable = await FolderTabPlacesService.CheckAvailabilityAsync(place.Path, cancellationToken);
+            if (_isDisposed || cancellationToken.IsCancellationRequested)
+                return;
+
+            if (!isAvailable && !place.IsPinned)
+            {
+                section.Items.Remove(row);
+                if (section.Items.Count == 0)
+                    section.Items.Add(new MenuItem { Header = "ありません", IsEnabled = false });
+                return;
+            }
+
+            row.Header = isAvailable ? place.DisplayName : place.DisplayName + "（利用不可）";
+            row.Opacity = isAvailable ? 1 : 0.58;
+            foreach (var command in row.Items.OfType<MenuItem>().Take(3))
+                command.IsEnabled = isAvailable;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
     }
 
     private MenuItem CreatePlaceMenuItem(
@@ -1941,25 +1990,24 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     {
         var placeItem = new MenuItem
         {
-            Header = place.IsAvailable ? place.DisplayName : place.DisplayName + "（利用不可）",
-            ToolTip = place.Path,
-            Opacity = place.IsAvailable ? 1 : 0.58
+            Header = place.DisplayName + "（確認中）",
+            ToolTip = place.Path
         };
         placeItem.Items.Add(CreatePlaceCommand(
             "このタブで開く",
             place.Path,
             PlaceOpenCurrentMenuItem_Click,
-            place.IsAvailable));
+            isEnabled: false));
         placeItem.Items.Add(CreatePlaceCommand(
             "新しいFolderTabで開く",
             place.Path,
             PlaceOpenNewTabMenuItem_Click,
-            place.IsAvailable));
+            isEnabled: false));
         placeItem.Items.Add(CreatePlaceCommand(
             "別Windowで開く",
             place.Path,
             PlaceOpenNewWindowMenuItem_Click,
-            place.IsAvailable));
+            isEnabled: false));
         placeItem.Items.Add(new Separator());
         if (includeOrderingCommands)
         {
@@ -2646,7 +2694,9 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
     private void UpdateFileDropPreview(DragEventArgs e)
     {
-        if (_fileTransferCancellation is not null
+        var effect = FolderTabFileDropController.GetRequestedTransferEffect(e);
+        if (effect == DragDropEffects.None
+            || _fileTransferCancellation is not null
             || !TryGetDroppedFilePaths(e.Data, out var paths))
         {
             e.Effects = DragDropEffects.None;
@@ -2655,7 +2705,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
             return;
         }
 
-        var move = e.KeyStates.HasFlag(DragDropKeyStates.ShiftKey);
+        var move = effect == DragDropEffects.Move;
         var targetItem = FindDropTargetDirectory(e.OriginalSource as DependencyObject);
         SetDropTargetItem(targetItem);
         var destinationPath = targetItem?.FullPath ?? CurrentPath;
@@ -2669,7 +2719,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
         DropTargetHighlight.Visibility = Visibility.Visible;
         DropActionText.Text = $"{(move ? "移動" : "コピー")} → {FolderTabService.GetDisplayName(destinationPath)}";
-        e.Effects = move ? DragDropEffects.Move : DragDropEffects.Copy;
+        e.Effects = effect;
         e.Handled = true;
     }
 
@@ -2682,25 +2732,35 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private async void FolderItemsContent_Drop(object sender, DragEventArgs e)
     {
         var targetPath = _dropTargetItem?.FullPath ?? CurrentPath;
-        var move = e.KeyStates.HasFlag(DragDropKeyStates.ShiftKey);
-        var effect = move ? DragDropEffects.Move : DragDropEffects.Copy;
+        var effect = FolderTabFileDropController.GetRequestedTransferEffect(e);
         ClearFileDropPreview();
+        e.Effects = DragDropEffects.None;
         e.Handled = true;
         if (!TryGetDroppedFilePaths(e.Data, out var paths))
         {
-            e.Effects = DragDropEffects.None;
             ShowMessage("ドロップされたファイルまたはフォルダーを取得できませんでした。");
             return;
         }
 
-        var accepted = await TryHandleFileDropAsync(paths, targetPath, move);
-        e.Effects = accepted ? effect : DragDropEffects.None;
+        if (effect == DragDropEffects.None || !CanStartFileDrop(paths, targetPath))
+        {
+            return;
+        }
+
+        // 移動元の削除は、アプリがコピー先を照合してから行う。
+        e.Effects = FolderTabFileDropController.GetTransferReceipt(effect);
+        await ExecuteFileDropAsync(paths, targetPath, effect == DragDropEffects.Move);
     }
 
-    private async Task<bool> TryHandleFileDropAsync(
+    private Task<bool> TryHandleFileDropAsync(
         IReadOnlyList<string> paths,
         string destinationPath,
         bool move)
+        => CanStartFileDrop(paths, destinationPath)
+            ? ExecuteFileDropAsync(paths, destinationPath, move)
+            : Task.FromResult(false);
+
+    private bool CanStartFileDrop(IReadOnlyList<string> paths, string destinationPath)
     {
         if (_isDisposed)
         {
@@ -2725,6 +2785,11 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
             return false;
         }
 
+        return true;
+    }
+
+    private async Task<bool> ExecuteFileDropAsync(IReadOnlyList<string> paths, string destinationPath, bool move)
+    {
         try
         {
             await PrepareAndExecuteTransferAsync(paths, destinationPath, move);
@@ -2943,8 +3008,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private bool IsCurrentPlacePinned()
     {
         return !string.IsNullOrWhiteSpace(CurrentPath)
-            && (_getPlacesSnapshot?.Invoke().PinnedPlaces.Any(place =>
-                string.Equals(place.Path, CurrentPath, StringComparison.OrdinalIgnoreCase)) ?? false);
+            && (_isPlacePinned?.Invoke(CurrentPath) ?? false);
     }
 
     private static bool CanPasteClipboardFiles()
@@ -3276,19 +3340,24 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
         UpdateNavigationButtons();
     }
 
-    private async Task<bool> NavigateCoreAsync(string folderPath)
+    private async Task<bool> NavigateCoreAsync(string folderPath, bool automaticRefresh = false)
     {
         if (_isDisposed)
         {
             return false;
         }
 
-        ExitRecursiveSearch(restoreItems: false);
-        QuickLookPreviewHost.Close();
+        if (!automaticRefresh)
+        {
+            ExitRecursiveSearch(restoreItems: false);
+            QuickLookPreviewHost.Close();
+        }
+
         _navigationCancellation?.Cancel();
         _navigationCancellation?.Dispose();
-        _navigationCancellation = new CancellationTokenSource();
-        var cancellationToken = _navigationCancellation.Token;
+        var navigation = new CancellationTokenSource();
+        _navigationCancellation = navigation;
+        var cancellationToken = navigation.Token;
         var isInitialLoad = !_hasLoadedContent;
         var shouldPreserveSelection = !string.IsNullOrWhiteSpace(CurrentPath)
             && string.Equals(
@@ -3308,9 +3377,12 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
             SearchBox.Clear();
         }
 
-        ResetIconLoadScope();
+        if (!automaticRefresh)
+        {
+            ResetIconLoadScope();
+            SetBusyState("フォルダーを読み込んでいます...");
+        }
 
-        SetBusyState("フォルダーを読み込んでいます...");
         try
         {
             var listing = await _service.EnumerateAsync(
@@ -3322,6 +3394,30 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
                 return false;
             }
 
+            if (automaticRefresh && (_isRecursiveSearchMode || _recursiveSearchCancellation is not null))
+            {
+                // 配下検索の表示と選択を保ち、一覧へ戻るときに使う直下の項目だけ更新する。
+                _allItemsByPath.Clear();
+                foreach (var entry in listing.Entries)
+                {
+                    _allItemsByPath[entry.FullPath] = new FolderTabItemViewModel(entry);
+                }
+
+                _directoryChangeStamp = FolderTabService.CreateChangeStamp(listing.Entries);
+                _isListingTruncated = listing.IsTruncated;
+                return true;
+            }
+
+            if (automaticRefresh)
+            {
+                selectedPaths = _selectedPaths.ToArray();
+                selectionAnchorPath = _selectionAnchorPath;
+                detailScrollOffset = _detailScrollOffset;
+                iconScrollOffset = _iconScrollOffset;
+                ResetIconLoadScope();
+            }
+
+            var criteria = FolderTabSearchCriteria.Parse(SearchBox.Text.Trim());
             _isSynchronizingSelection = true;
             try
             {
@@ -3334,9 +3430,12 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
                 foreach (var entry in entries)
                 {
                     var item = new FolderTabItemViewModel(entry);
-                    Items.Add(item);
-                    _itemsByPath[item.FullPath] = item;
                     _allItemsByPath[item.FullPath] = item;
+                    if (criteria.Matches(entry))
+                    {
+                        Items.Add(item);
+                        _itemsByPath[item.FullPath] = item;
+                    }
                 }
             }
             finally
@@ -3360,7 +3459,9 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
             PathBox.Text = CurrentPath;
             MessagePanel.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            MessageText.Text = Items.Count == 0 ? "このフォルダーは空です" : string.Empty;
+            MessageText.Text = Items.Count == 0
+                ? _allItemsByPath.Count == 0 ? "このフォルダーは空です" : "検索に一致する項目はありません"
+                : string.Empty;
             UpdateStatusSummary();
             UpdateNavigationButtons();
             ConfigureFolderWatcher();
@@ -3382,6 +3483,38 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
 
             return false;
         }
+        finally
+        {
+            if (ReferenceEquals(_navigationCancellation, navigation))
+            {
+                _navigationCancellation = null;
+                navigation.Dispose();
+                if (_refreshAfterNavigation)
+                {
+                    _refreshAfterNavigation = false;
+                    if (IsVisible)
+                    {
+                        _folderWatcherTimer.Start();
+                    }
+                }
+            }
+        }
+    }
+
+    internal Task RefreshForExternalChangesAsync()
+    {
+        if (_isDisposed || _fileTransferCancellation is not null || string.IsNullOrWhiteSpace(CurrentPath))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (_navigationCancellation is not null)
+        {
+            _refreshAfterNavigation = true;
+            return Task.CompletedTask;
+        }
+
+        return NavigateCoreAsync(CurrentPath, automaticRefresh: true);
     }
 
     private void SetBusyState(string message)
@@ -3459,7 +3592,7 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
             if (string.Equals(CurrentPath, checkedPath, StringComparison.OrdinalIgnoreCase)
                 && stamp != _directoryChangeStamp)
             {
-                await RefreshAsync();
+                await RefreshForExternalChangesAsync();
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
@@ -3554,9 +3687,9 @@ public partial class FolderTabView : UserControl, IDisposable, IFolderTabFileDro
     private async void FolderWatcherTimer_Tick(object? sender, EventArgs e)
     {
         _folderWatcherTimer.Stop();
-        if (IsVisible && _fileTransferCancellation is null)
+        if (IsVisible)
         {
-            await RefreshAsync();
+            await RefreshForExternalChangesAsync();
         }
     }
 

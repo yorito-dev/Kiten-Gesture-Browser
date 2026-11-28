@@ -31,7 +31,11 @@ public partial class SettingsWindow : Window
     private readonly AppSettings _workingSettings;
     private readonly ObservableCollection<SearchAliasSettings> _searchAliases;
 
+    private sealed record HistoryRetentionOption(string Label, int? Days);
+
     private List<ContainerProfile> _containerProfiles = [];
+    private int? _previewedHistoryRetentionDays;
+    private bool _isPreviewingHistoryRetention;
     private bool _canEditContainerProfiles;
     private IReadOnlyList<GestureCommandOption> _gestureCommandOptions =
         GestureSettingsCatalog.CommandOptions;
@@ -82,6 +86,7 @@ public partial class SettingsWindow : Window
         CpuSaverDelayBox.Text = _workingSettings.FocusedViewingCpuSaverDelaySeconds.ToString(CultureInfo.CurrentCulture);
         EnableInactiveTabMemorySaverCheckBox.IsChecked = _workingSettings.EnableInactiveTabMemorySaver;
         EnableLinkHoverPreviewCheckBox.IsChecked = _workingSettings.EnableLinkHoverPreview;
+        AllowSharedWindowsAudioPanCheckBox.IsChecked = _workingSettings.AllowSharedWindowsAudioPan;
         EnableClipboardHistoryCheckBox.IsChecked = _workingSettings.ClipboardHistory.IsEnabled;
         ClipboardHistoryMaximumItemCountBox.Text = _workingSettings.ClipboardHistory.MaximumItemCount.ToString(
             CultureInfo.CurrentCulture);
@@ -90,6 +95,17 @@ public partial class SettingsWindow : Window
         _workingSettings.BrowsingHistory = BrowsingHistorySettingsProfile.Normalize(
             _workingSettings.BrowsingHistory);
         EnableBrowsingHistoryCheckBox.IsChecked = _workingSettings.BrowsingHistory.IsEnabled;
+        List<HistoryRetentionOption> retentionOptions = [new("期限なし", null)];
+        retentionOptions.AddRange(BrowsingHistorySettingsProfile.RetentionChoices.Select(
+            static days => new HistoryRetentionOption($"{days}日", days)));
+        BrowsingHistoryRetentionBox.ItemsSource = retentionOptions;
+        BrowsingHistoryRetentionBox.SelectedItem = retentionOptions.Single(option =>
+            option.Days == _workingSettings.BrowsingHistory.RetentionDays);
+        BrowsingHistoryRetentionBox.SelectionChanged += (_, _) =>
+        {
+            _previewedHistoryRetentionDays = null;
+            BrowsingHistoryRetentionPreview.Text = string.Empty;
+        };
         RecordRecentWebVisitsCheckBox.IsChecked = _workingSettings.RecordRecentWebVisits;
         BrowsingHistoryExcludedHostsBox.Text = string.Join(
             Environment.NewLine,
@@ -110,7 +126,7 @@ public partial class SettingsWindow : Window
 
     public bool IsAccepted { get; private set; }
 
-    public bool ContainerProfilesChanged { get; private set; }
+    public event EventHandler? ContainerProfilesSaved;
 
     public event EventHandler? SuperDragSettingsRequested;
 
@@ -417,16 +433,53 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void OkButton_Click(object sender, RoutedEventArgs e)
+    private async void OkButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!TryBuildResult(out var result))
+        if (_isPreviewingHistoryRetention || !TryBuildResult(out var result))
         {
+            return;
+        }
+
+        if (result.BrowsingHistory.RetentionDays is { } days
+            && days != _workingSettings.BrowsingHistory.RetentionDays
+            && days != _previewedHistoryRetentionDays)
+        {
+            await PreviewHistoryRetentionAsync(days);
             return;
         }
 
         ResultSettings = result;
         IsAccepted = true;
         Close();
+    }
+
+    private async Task PreviewHistoryRetentionAsync(int days)
+    {
+        _isPreviewingHistoryRetention = true;
+        SettingsTabControl.SelectedIndex = IntegrationSettingsTabIndex;
+        BrowsingHistoryRetentionBox.BringIntoView();
+        try
+        {
+            BrowsingHistoryRetentionPreview.Text = "削除対象を確認しています。";
+            var count = await App.BrowsingHistory.CountExpiredAsync(days);
+            if (IsLoaded && BrowsingHistoryRetentionBox.SelectedItem is HistoryRetentionOption selected
+                && selected.Days == days)
+            {
+                BrowsingHistoryRetentionPreview.Text = $"現在の削除対象は {count:N0} 件です。保持期限を確定するにはもう一度 OK を押してください。";
+                _previewedHistoryRetentionDays = days;
+            }
+        }
+        catch (Exception)
+        {
+            if (IsLoaded)
+            {
+                BrowsingHistoryRetentionPreview.Text = "削除対象を確認できませんでした。もう一度お試しください。";
+            }
+        }
+        finally
+        {
+            _isPreviewingHistoryRetention = false;
+        }
     }
 
     private void AddSearchAliasButton_Click(object sender, RoutedEventArgs e)
@@ -530,6 +583,7 @@ public partial class SettingsWindow : Window
             GestureSettingsSection,
             SuperDragSettingsSection);
         SetSectionVisibility(selectedIndex == MediaSettingsTabIndex,
+            TabAudioSettingsSection,
             YouTubeMiniPlayerSettingsSection,
 
             DownloadSettingsSection);
@@ -577,20 +631,16 @@ public partial class SettingsWindow : Window
         }
 
         var searchUrlTemplate = SearchUrlTemplateBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(searchUrlTemplate) || !searchUrlTemplate.Contains("{0}", StringComparison.Ordinal))
+        if (!SearchAliasSettingsProfile.IsValidSearchUrlTemplate(searchUrlTemplate))
         {
-            SetValidationError(SearchUrlTemplateBox, "検索 URL には {0} を含めてください。");
-            return false;
-        }
+            if (!string.Equals(searchUrlTemplate, _workingSettings.SearchUrlTemplate?.Trim(), StringComparison.Ordinal))
+            {
+                SetValidationError(SearchUrlTemplateBox, "検索 URL には {0} を含む HTTP／HTTPS URL を指定してください。");
+                return false;
+            }
 
-        try
-        {
-            _ = string.Format(CultureInfo.InvariantCulture, searchUrlTemplate, "test");
-        }
-        catch (FormatException)
-        {
-            SetValidationError(SearchUrlTemplateBox, "検索 URL の形式が正しくありません。");
-            return false;
+            // 従来の値は他の設定変更で置き換えず、検索するときに無効として扱う。
+            searchUrlTemplate = _workingSettings.SearchUrlTemplate!;
         }
 
         if (!TryReadDouble(
@@ -667,6 +717,7 @@ public partial class SettingsWindow : Window
         result.FocusedViewingCpuSaverDelaySeconds = cpuSaverDelaySeconds;
         result.EnableInactiveTabMemorySaver = EnableInactiveTabMemorySaverCheckBox.IsChecked == true;
         result.EnableLinkHoverPreview = EnableLinkHoverPreviewCheckBox.IsChecked == true;
+        result.AllowSharedWindowsAudioPan = AllowSharedWindowsAudioPanCheckBox.IsChecked == true;
         result.ClipboardHistory = ClipboardHistorySettingsProfile.Normalize(new ClipboardHistorySettings
         {
             IsEnabled = EnableClipboardHistoryCheckBox.IsChecked == true,
@@ -682,6 +733,7 @@ public partial class SettingsWindow : Window
         result.BrowsingHistory = BrowsingHistorySettingsProfile.Normalize(new BrowsingHistorySettings
         {
             IsEnabled = EnableBrowsingHistoryCheckBox.IsChecked == true,
+            RetentionDays = (BrowsingHistoryRetentionBox.SelectedItem as HistoryRetentionOption)?.Days,
             ExcludedHosts = browsingHistoryExcludedHosts,
             ExcludedContainerProfileIds = _canEditContainerProfiles
                 ? ReadCheckedBrowsingHistoryContainerIds(BrowsingHistoryExcludedContainersPanel)
@@ -868,7 +920,7 @@ public partial class SettingsWindow : Window
     {
         if (_canEditContainerProfiles && _containerProfileStore.Save(_containerProfiles))
         {
-            ContainerProfilesChanged = true;
+            ContainerProfilesSaved?.Invoke(this, EventArgs.Empty);
         }
 
         ReloadContainerProfileInputs(selectProfileId);

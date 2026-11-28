@@ -1,15 +1,16 @@
 {
   "schemaVersion": 1,
   "kind": "public-source-snapshot",
-  "projectChanges": "公開専用に整理。実際の公開用パッケージ版・出力metadata・XAML不足検査は維持。",
-  "unitTestsAreSubset": true,
-  "created": "2026-11-22",
-  "upstreamCommit": "2cbb6d0c0c19ac8f1f0b2ca5f0e725f6d0069b13",
-  "sourceSnapshotVersion": "0.2.0-preview.2",
-  "exportedFromCommit": "8387d35bbbd6e2db9e1ff14323ca138b624f7ac1",
+  "created": "2026-11-28",
+  "sourceSnapshotVersion": "0.2.0-preview.3",
+  "upstreamCommit": "21ef234ee748d0f21ba6aec3467d2596f75d43d3",
+  "upstreamTree": "92f5a8dc7a512c8ab1d2d1d080d27c29a26515e6",
+  "exportedFromCommit": "21ef234ee748d0f21ba6aec3467d2596f75d43d3",
   "upstreamBindingVerified": true,
-  "publicRepositoryCommit": null,
-  "buildVerification": "verified-clean",
+  "projectChanges": "公開専用に整理。実際の公開用パッケージ版・出力metadata・XAML不足検査は維持。",
+  "csharpExport": "公開構成で有効な430ファイルを既存生成器で変換し、有効トークンを全比較。",
+  "xamlExport": "既存の公開用XAML生成結果を使用。",
+  "unitTestsAreSubset": true,
   "unitTestFiles": [
     "ApplicationChannelServiceTests",
     "AtomicFileDurabilityTests",
@@ -65,6 +66,13 @@
     "YouTubeMiniPlayerWebDragServiceTests",
     "YouTubeMiniPlayerWebMessageServiceTests"
   ],
+  "testSupportFiles": [
+    "Tests/TabBrowser.Tests/AssemblyInfo.cs"
+  ],
+  "normalizedFixtureFiles": [
+    "ApplicationChannelServiceTests",
+    "SessionServiceTests"
+  ],
   "browserSuiteMinimumCounts": [
     6,
     9,
@@ -76,31 +84,22 @@
   "productGuiTested": false,
   "realPlaybackTested": false,
   "extendedStabilityTested": false,
-  "csharpExport": "公開構成で有効な427ファイルを既存生成器で変換し、有効トークンを全比較。",
-  "xamlExport": "既存の公開用XAML生成結果を使用。",
-  "testSupportFiles": [
-    "Tests/TabBrowser.Tests/AssemblyInfo.cs"
-  ],
-  "normalizedFixtureFiles": [
-    "ApplicationChannelServiceTests",
-    "SessionServiceTests"
-  ],
-  "upstreamTree": "d01de2f1b7b9e6fa35d3fb96158fb72d864a964b",
-  "unitTestCases": 1587,
-  "browserTestCases": 368,
-  "dataToolBuildVerified": true,
   "releasePackage": {
-    "version": "0.2.0-preview.2",
-    "sourceCommit": "2cbb6d0c0c19ac8f1f0b2ca5f0e725f6d0069b13",
-    "sourceTree": "d01de2f1b7b9e6fa35d3fb96158fb72d864a964b",
-    "archiveFile": "Kiten-Gesture-Browser-0.2.0-preview.2-win-x64.zip",
-    "archiveSha256": "6101db995c5506fe126b66324a2b76496fc8cb194fb1ea0adebe6251313d8501",
-    "manifestSha256": "c250bd169b64d8678af3f2e4473a4ef437d3f61e6a6efae0f5ccc4e8fcc66aec",
+    "version": "0.2.0-preview.3",
+    "sourceCommit": "21ef234ee748d0f21ba6aec3467d2596f75d43d3",
+    "sourceTree": "92f5a8dc7a512c8ab1d2d1d080d27c29a26515e6",
+    "archiveFile": "Kiten-Gesture-Browser-0.2.0-preview.3-win-x64.zip",
+    "archiveSha256": "915ee231d4ecd672f4d27baf39dc194b4b96772537fe8cc0261bd6c1d5c62db6",
+    "manifestSha256": "cb14af2267b127ef61d4621849d803ec2b8eb195a71582cd327e9b9d53e423a6",
     "packageFiles": 431,
     "signingStatus": "unsigned",
-    "managementTestCases": 7215,
-    "managementBrowserTestCases": 374,
-    "settingsCompatibilityCases": 48,
+    "managementTestCases": 7464,
+    "managementBrowserTestCases": 403,
+    "settingsCompatibilityCases": 51,
     "mediaElementNonGuiCases": 24
-  }
+  },
+  "unitTestCases": 1626,
+  "browserTestCases": 397,
+  "dataToolBuildVerified": true,
+  "buildVerification": "verified-clean"
 }

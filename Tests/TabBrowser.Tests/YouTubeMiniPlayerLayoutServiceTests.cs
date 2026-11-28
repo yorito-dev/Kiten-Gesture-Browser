@@ -161,6 +161,42 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
     }
 
     [Fact]
+    public void OnlyDraggingTheTitleBandStopsItsHideTimer()
+    {
+        RunOnStaThread(() =>
+        {
+            var state = new YouTubeMiniPlayerState { Width = 480, Height = 270 };
+            var runtime = YouTubeMiniPlayerRuntimeFactory.Create(
+                state, new Style(typeof(Button)), "タイトル帯のドラッグ", new Border(), null, null).Runtime;
+            var delay = TimeSpan.FromSeconds(5);
+            void RequestHide() => YouTubeMiniPlayerOverlayVisibilityService.SetTitleBandVisibility(
+                runtime, false, delay, static _ => { });
+
+            try
+            {
+                runtime.IsSurfaceDragging = true;
+                RequestHide();
+                var timer = Assert.IsType<System.Windows.Threading.DispatcherTimer>(runtime.Overlay.TitleBandHideTimer);
+                Assert.True(timer.IsEnabled);
+
+                runtime.Overlay.IsTitleBandDragging = true;
+                RequestHide();
+                Assert.False(timer.IsEnabled);
+
+                runtime.Overlay.IsTitleBandDragging = false;
+                runtime.IsSurfaceDragging = false;
+                RequestHide();
+                Assert.Same(timer, runtime.Overlay.TitleBandHideTimer);
+                Assert.True(timer.IsEnabled);
+            }
+            finally
+            {
+                YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+            }
+        });
+    }
+
+    [Fact]
     public void TitleTooltipShowsFullCurrentTitleWithoutChangingCompactHeader()
     {
         RunOnStaThread(() =>
@@ -184,6 +220,37 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
             Assert.Equal("次の動画のタイトル", content.Text);
             parts.TitleText.Text = string.Empty;
             Assert.Equal(string.Empty, content.Text);
+        });
+    }
+
+    [Fact]
+    public void TitleBandHistoryWiringPreservesTheRuntimeAndNavigationDirection()
+    {
+        RunOnStaThread(() =>
+        {
+            var state = new YouTubeMiniPlayerState { Width = 480, Height = 270 };
+            var runtime = YouTubeMiniPlayerRuntimeFactory.Create(
+                state, new Style(typeof(Button)), "履歴ボタンの検証", new Border(), null, null).Runtime;
+            var directions = new List<bool>();
+            try
+            {
+                YouTubeMiniPlayerRuntimeWiringService.AttachTitleBandHistoryNavigation(runtime, (source, forward) =>
+                {
+                    Assert.Same(runtime, source);
+                    directions.Add(forward);
+                });
+                foreach (var button in new[] { runtime.TitleBandBackButton, runtime.TitleBandForwardButton })
+                {
+                    var click = new RoutedEventArgs(Button.ClickEvent, button);
+                    button.RaiseEvent(click);
+                    Assert.True(click.Handled);
+                }
+                Assert.Equal(new[] { false, true }, directions);
+            }
+            finally
+            {
+                YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+            }
         });
     }
 
@@ -774,7 +841,7 @@ public sealed class YouTubeMiniPlayerLayoutServiceTests
             {
                 Interval = TimeSpan.FromMinutes(1)
             };
-            runtime.WebDragFollowTimer = dragTimer;
+            runtime.WebDrag.FollowTimer = dragTimer;
             runtime.SizeBasedQualityUpdateTimer = qualityTimer;
             dragTimer.Start();
             qualityTimer.Start();

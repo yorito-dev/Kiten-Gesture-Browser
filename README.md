@@ -7,7 +7,7 @@
 
 Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブブラウザです。本体ソースはMIT Licenseで提供します。
 
-**[無料の公開アルファをダウンロード（v0.2.0-preview.2）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.2)**
+**[無料の公開アルファをダウンロード（v0.2.0-preview.3）](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.3)**
 
 **[初めて使う方へ：ダウンロード・起動・基本操作・バックアップ](docs/getting-started.md)**
 
@@ -41,7 +41,7 @@ Windows 11 x64向けの、マウスジェスチャーでWeb探索を行うタブ
 
 ## ダウンロードと導入
 
-[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.2)のAssetsにある[Kiten-Gesture-Browser-0.2.0-preview.2-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.2.0-preview.2/Kiten-Gesture-Browser-0.2.0-preview.2-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.2.0-preview.2/Kiten-Gesture-Browser-0.2.0-preview.2-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
+[配布ページ](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.3)のAssetsにある[Kiten-Gesture-Browser-0.2.0-preview.3-win-x64.zip](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.2.0-preview.3/Kiten-Gesture-Browser-0.2.0-preview.3-win-x64.zip)と、同名の[SHA-256ファイル](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/download/v0.2.0-preview.3/Kiten-Gesture-Browser-0.2.0-preview.3-win-x64.zip.sha256)を取得してください。`Source code`は実行用ではありません。
 
 1. 入手元とZIPのSHA-256を確認します。
 2. 新しい空フォルダーへZIPをすべて展開します。
@@ -67,7 +67,7 @@ AIに聞けばすぐに答えが返ってくる時代になりました。それ
 
 本体のダウンロードと利用は無料です。開発支援は任意で、支援の有無による機能差はありません。
 
-本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.2)で無料提供しています。
+本体の実行用ZIPは[GitHub Releases](https://github.com/yorito-dev/Kiten-Gesture-Browser/releases/tag/v0.2.0-preview.3)で無料提供しています。
 
 ## 利用条件・プライバシー・報告
 
@@ -88,7 +88,7 @@ Cookie、認証情報、実DB、バックアップZIP、未加工ログを公開
 MITで提供する本体と、別の条件が適用される依存部品を区別してください。
 ソースZIPには.NET RuntimeやNuGetパッケージ自体は含めません。ビルド時に固定バージョンを取得します。
 
-Windows 11 x64、PowerShell 7以上、.NET SDK 10.0.401以降（.NET Runtime 10.0.12以上を含むもの）が必要です。`global.json`は10.0.400を指定し、`latestFeature`で.NET 10の新しいfeature bandを許可しています。cloneしたフォルダー、またはソースZIPを展開したフォルダーの直下で実行します。
+Windows 11 x64、PowerShell 7以上、.NET SDK 10.0.401以降が必要です。テストなどで出力を実行する環境には、.NET 10のDesktop Runtime 10.0.15以上も用意します。`global.json`は10.0.400を指定し、`latestFeature`で.NET 10の新しいfeature bandを許可しています。cloneしたフォルダー、またはソースZIPを展開したフォルダーの直下で実行します。
 
 ```powershell
 pwsh -NoProfile -File .\Build-Source.ps1

@@ -74,6 +74,7 @@ public partial class MainWindow : IFolderTabOpenHost
             view.ConfigureWorkspaceSave(SaveFolderTabPathsToWorkspaceAsync);
             view.ConfigurePlaces(
                 CreateFolderTabPlacesSnapshot,
+                path => FolderTabPlacesService.IsPinned(_settings.FolderTabPinnedPlaces, path),
                 CreateFolderTabPathSuggestions,
                 SetFolderTabPlacePinned,
                 MoveFolderTabPinnedPlace);

@@ -70,7 +70,6 @@ internal sealed class YouTubeMiniPlayerController
         int windowId,
         Func<YouTubeMiniPlayerState, YouTubeMiniPlayerRuntime> createRuntime,
         Action<YouTubeMiniPlayerState, FrameworkElement, bool> clampToHost,
-        Action<Guid> bringToFront,
         Action<YouTubeMiniPlayerRuntime, bool> applyMinimizedState)
     {
         return YouTubeMiniPlayerRestoreService.RestorePlaceholders(
@@ -79,7 +78,6 @@ internal sealed class YouTubeMiniPlayerController
             this,
             createRuntime,
             clampToHost,
-            bringToFront,
             applyMinimizedState);
     }
 

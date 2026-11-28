@@ -20,7 +20,7 @@ public sealed class CommandSearchIndex
                 {
                     Item = item,
                     Index = index,
-                    LastUsedAt = usageById.TryGetValue(item.Id, out var usage)
+                    LastUsedAt = item.TracksUsage && usageById.TryGetValue(item.Id, out var usage)
                         ? usage.LastUsedAt
                         : DateTimeOffset.MinValue
                 })
@@ -37,7 +37,7 @@ public sealed class CommandSearchIndex
                 Item = item,
                 Index = index,
                 MatchScore = GetScore(item, normalizedQuery),
-                UsageBonus = GetUsageBonus(item.Id, usageById, now)
+                UsageBonus = item.TracksUsage ? GetUsageBonus(item.Id, usageById, now) : 0
             })
             .Where(result => result.MatchScore >= 0)
             .OrderByDescending(result => result.MatchScore + result.UsageBonus)

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -26,6 +27,7 @@ internal interface IYouTubeMiniPlayerAudioHost
     bool IsHoverPreviewEnabled { get; }
     IReadOnlyList<MainWindow> GetOwners();
     Task CaptureStatesAsync(MainWindow owner);
+    void RecordAudioStateCapture(int ownerCount, int capturedOwnerCount, TimeSpan elapsed, bool completed);
     IEnumerable<YouTubeMiniPlayerListItem> GetLoadedItems(IReadOnlyList<MainWindow> owners);
     bool IsItemLoaded(YouTubeMiniPlayerListItem item);
     IEnumerable<YouTubeMiniPlayerAudioSurface> GetRuntimeAudioSurfaces();
@@ -147,7 +149,8 @@ internal sealed class YouTubeMiniPlayerAudioController
             if (!IsCurrentHoverPreviewRequest(targetId, generation)) return;
             await StopYouTubeMiniPlayerHoverAudioPreviewCoreAsync();
             if (!IsCurrentHoverPreviewRequest(targetId, generation)) return;
-            var items = await CaptureLoadedYouTubeMiniPlayerAudioItemsAsync();
+            var items = await CaptureLoadedYouTubeMiniPlayerAudioItemsAsync(
+                () => IsCurrentHoverPreviewRequest(targetId, generation));
             if (!IsCurrentHoverPreviewRequest(targetId, generation)) return;
             var states = items
                 .Select(static item => new YouTubeMiniPlayerAudioFocusState(
@@ -427,15 +430,33 @@ internal sealed class YouTubeMiniPlayerAudioController
         return (mutedApplied, pausedApplied);
     }
 
-    private async Task<List<YouTubeMiniPlayerListItem>> CaptureLoadedYouTubeMiniPlayerAudioItemsAsync()
+    private async Task<List<YouTubeMiniPlayerListItem>> CaptureLoadedYouTubeMiniPlayerAudioItemsAsync(
+        Func<bool>? shouldContinue = null)
     {
         var windows = _host.GetOwners();
-        foreach (var window in windows)
+        var startedAt = Stopwatch.GetTimestamp();
+        var captured = 0;
+        var completed = false;
+        try
         {
-            await _host.CaptureStatesAsync(window);
-        }
+            foreach (var window in windows)
+            {
+                if (shouldContinue?.Invoke() == false)
+                {
+                    return [];
+                }
+                await _host.CaptureStatesAsync(window);
+                captured++;
+            }
 
-        return _host.GetLoadedItems(windows).ToList();
+            var items = _host.GetLoadedItems(windows).ToList();
+            completed = true;
+            return items;
+        }
+        finally
+        {
+            _host.RecordAudioStateCapture(windows.Count, captured, Stopwatch.GetElapsedTime(startedAt), completed);
+        }
     }
 
     public void UpdateIndicators()

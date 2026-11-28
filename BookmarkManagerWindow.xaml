@@ -430,6 +430,11 @@
                         IsEnabled="False"
                         Click="DeleteButton_Click"
                         Style="{StaticResource DialogButtonStyle}" />
+                <Button x:Name="UndoDeleteButton"
+                        Content="削除を取り消す"
+                        IsEnabled="False"
+                        Click="UndoDeleteButton_Click"
+                        Style="{StaticResource DialogButtonStyle}" />
             </WrapPanel>
             <Button DockPanel.Dock="Right"
                     Content="閉じる"

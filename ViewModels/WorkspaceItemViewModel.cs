@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using System.Windows.Media.Imaging;
 using TabBrowser.Models.Workspaces;
 using TabBrowser.Services.Workspaces;
@@ -12,6 +14,7 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
 {
     internal const int MaximumNoteCardPreviewCharacters = 320;
     private static readonly Brush FolderIconBackground = CreateSolidBrush("#3A2F12");
+    private static readonly SemaphoreSlim ShellStateProbeSlots = new(4);
 
     private static readonly string[] IconPalette =
     [
@@ -31,7 +34,10 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
     private bool _isSelected;
     private bool _isDragGuideVisible;
     private bool _isBeingDragged;
-    private bool _isShellItemMissing;
+    private bool? _shellTargetExists;
+    private int _shellStateVersion;
+    private readonly Func<string, ShellItemKind, bool> _shellTargetExistsProbe;
+    private readonly Dispatcher? _shellStateDispatcher;
     private int _childItemCount;
     private ImageSource? _favicon;
     private ImageSource? _thumbnail;
@@ -41,11 +47,19 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
     private ImageSource? _splitRightThumbnail;
 
     public WorkspaceItemViewModel(WorkspaceItem item)
+        : this(item, FileOrDirectoryExists, Application.Current?.Dispatcher)
+    {
+    }
+
+    internal WorkspaceItemViewModel(
+        WorkspaceItem item, Func<string, ShellItemKind, bool> shellTargetExistsProbe, Dispatcher? dispatcher)
     {
         Item = item;
         _title = item.Title;
         _x = item.X;
         _y = item.Y;
+        _shellTargetExistsProbe = shellTargetExistsProbe;
+        _shellStateDispatcher = dispatcher;
         RefreshShellState();
     }
 
@@ -260,24 +274,28 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
 
     public string TargetPath => Item is ShellItem shellItem ? shellItem.TargetPath : string.Empty;
 
-    public bool IsShellItemMissing
+    public bool IsShellItemMissing => _shellTargetExists == false;
+
+    public string ShellStateText => _shellTargetExists switch
     {
-        get => _isShellItemMissing;
-        private set
+        false => "見つかりません",
+        null when IsShellItem => "参照先を確認中",
+        _ => string.Empty
+    };
+
+    private void SetShellTargetExists(bool? value)
+    {
+        if (_shellTargetExists == value)
         {
-            if (_isShellItemMissing == value)
-            {
-                return;
-            }
-
-            _isShellItemMissing = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(ShellStateText));
-            OnPropertyChanged(nameof(MetaText));
+            return;
         }
-    }
 
-    public string ShellStateText => IsShellItemMissing ? "見つかりません" : string.Empty;
+        _shellTargetExists = value;
+        OnPropertyChanged(nameof(IsShellItemMissing));
+        OnPropertyChanged(nameof(ShellStateText));
+        OnPropertyChanged(nameof(MetaText));
+        OnPropertyChanged(nameof(CardSecondaryText));
+    }
 
     public bool IsRecent => DateTimeOffset.Now - Item.CreatedAt <= TimeSpan.FromHours(24);
 
@@ -449,7 +467,7 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
 
             if (Item is ShellItem shellItem)
             {
-                return IsShellItemMissing ? "見つかりません" : GetShellKindLabel(shellItem);
+                return _shellTargetExists == true ? GetShellKindLabel(shellItem) : ShellStateText;
             }
 
             return TypeLabel;
@@ -502,7 +520,7 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
 
             if (Item is ShellItem shellItem)
             {
-                return GetShellKindLabel(shellItem);
+                return _shellTargetExists is null ? ShellStateText : GetShellKindLabel(shellItem);
             }
 
             return string.IsNullOrWhiteSpace(Item.Note)
@@ -606,6 +624,7 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
         shellItem.ThumbnailPngBase64 = string.Empty;
         shellItem.ThumbnailUpdatedAt = null;
         _thumbnail = null;
+        SetShellTargetExists(null);
         RefreshShellState();
         OnPropertyChanged(nameof(TargetPath));
         OnPropertyChanged(nameof(IsShellDirectory));
@@ -635,13 +654,60 @@ public sealed class WorkspaceItemViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanConvertShellTextFileToNote));
     }
 
-    public void RefreshShellState()
+    public void RefreshShellState() => _ = RefreshShellStateAsync();
+
+    internal async Task RefreshShellStateAsync()
     {
-        IsShellItemMissing = Item is ShellItem shellItem
-            && !(shellItem.Kind == ShellItemKind.Directory
-                ? Directory.Exists(shellItem.TargetPath)
-                : File.Exists(shellItem.TargetPath));
+        if (Item is not ShellItem { TargetPath: var path, Kind: var kind })
+        {
+            return;
+        }
+
+        var version = Interlocked.Increment(ref _shellStateVersion);
+        bool exists;
+        await ShellStateProbeSlots.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (version != Volatile.Read(ref _shellStateVersion))
+            {
+                return;
+            }
+
+            exists = await Task.Run(() => _shellTargetExistsProbe(path, kind)).ConfigureAwait(false);
+        }
+        finally
+        {
+            ShellStateProbeSlots.Release();
+        }
+
+        if (_shellStateDispatcher is not { } dispatcher || dispatcher.CheckAccess())
+        {
+            ApplyResult();
+        }
+        else if (!dispatcher.HasShutdownStarted && !dispatcher.HasShutdownFinished)
+        {
+            try
+            {
+                await dispatcher.InvokeAsync(ApplyResult, DispatcherPriority.Background).Task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (dispatcher.HasShutdownStarted)
+            {
+                // 終了が始まったDispatcherへ結果を出さない。
+            }
+        }
+
+        void ApplyResult()
+        {
+            if (version == Volatile.Read(ref _shellStateVersion) && Item is ShellItem current
+                && current.TargetPath == path && current.Kind == kind)
+            {
+                SetShellTargetExists(exists);
+            }
+        }
     }
+
+    private static bool FileOrDirectoryExists(string path, ShellItemKind kind)
+        => kind == ShellItemKind.Directory ? Directory.Exists(path) : File.Exists(path);
 
     public void ApplyCommittedLocation(WorkspaceItem committedItem)
     {

@@ -33,6 +33,17 @@ public sealed class SettingsService
 
     private static readonly ConcurrentDictionary<string, object> SaveGates = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConditionalWeakTable<AppSettings, SettingsBaseline> Baselines = new();
+    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<Guid, byte>> PermanentlyDeletedWorkspaceNotes =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    internal static void ForgetPermanentlyDeletedWorkspaceNotePlacements(
+        IReadOnlyCollection<Guid> noteIds, string? filePath = null)
+    {
+        var path = Path.GetFullPath(filePath ?? AppPaths.SettingsFile);
+        var deletedNotes = PermanentlyDeletedWorkspaceNotes.GetOrAdd(path, static _ => new());
+        foreach (var noteId in noteIds)
+            deletedNotes.TryAdd(noteId, 0);
+    }
 
     private sealed class SettingsBaseline(string path, JsonObject? value, bool canConfirmPersisted = false)
     {
@@ -107,6 +118,44 @@ public sealed class SettingsService
         var baseline = Baselines.GetValue(latest, _ => throw new InvalidOperationException());
         Baselines.Add(result, new SettingsBaseline(baseline.Path, baseline.Value, baseline.CanConfirmPersisted));
         return result;
+    }
+
+    internal static Task<AppSettings> CommitEditingResultAsync(
+        AppSettings before, AppSettings after, string? filePath = null)
+    {
+        // UIが所有する設定から、保存側だけが使う編集内容を確定する。
+        var original = CloneForEdit(before);
+        var edited = CloneForEdit(after);
+        var path = Path.GetFullPath(filePath ?? AppPaths.SettingsFile);
+        return Task.Run(() =>
+        {
+            lock (SaveGates.GetOrAdd(path, static _ => new object()))
+            {
+                var result = MergeEditingResult(original, edited, path);
+                if (PermanentlyDeletedWorkspaceNotes.TryGetValue(path, out var deletedNotes))
+                    foreach (var noteId in deletedNotes.Keys)
+                        result.WorkspaceNoteEditorWindowPlacements.Remove(noteId);
+                SaveToFile(path, result);
+                return result;
+            }
+        });
+    }
+
+    internal static AppSettings PreserveLiveEdits(
+        AppSettings saved, AppSettings beforeWrite, AppSettings current)
+    {
+        var result = ToNode(saved);
+        ApplyChanges(ToNode(beforeWrite), ToNode(current), result,
+            automaticRemovals: CaptureAutomaticRemovals(current),
+            mutations: CaptureMutations(current), appliedMutationVersion: LatestMutationVersion(beforeWrite));
+        return result.Deserialize<AppSettings>(JsonOptions)!;
+    }
+
+    internal static AppSettings ApplyCommittedEdit(AppSettings before, AppSettings saved, AppSettings current)
+    {
+        var result = ToNode(current);
+        ApplyChanges(ToNode(before), ToNode(saved), result);
+        return result.Deserialize<AppSettings>(JsonOptions)!;
     }
 
     internal static void AcknowledgeSynchronizedChanges(AppSettings settings, AppSettings before)
@@ -239,6 +288,14 @@ public sealed class SettingsService
                 else
                     ApplyChanges(baseline.Value, snapshot, latest, automaticRemovals: automaticRemovals,
                         mutations: mutations, appliedMutationVersion: baseline.AppliedMutationVersion);
+                // このプロセスで完全削除を確認したIDは、先に捕捉された別Windowの保存からも除く。
+                if (PermanentlyDeletedWorkspaceNotes.TryGetValue(path, out var deletedNotes)
+                    && latest["workspaceNoteEditorWindowPlacements"] is JsonObject placements)
+                {
+                    foreach (var noteId in deletedNotes.Keys)
+                        placements.Remove(noteId.ToString("D"));
+                }
+
                 var content = latest.ToJsonString(JsonOptions);
                 if (!HasSameFileContent(path, content))
                 {
@@ -376,9 +433,14 @@ public sealed class SettingsService
     {
         try
         {
-            return File.Exists(_settingsBackupFile)
-                ? LoadFromFile(_settingsBackupFile)
-                : null;
+            var backup = File.Exists(_settingsBackupFile) ? LoadFromFile(_settingsBackupFile) : null;
+            if (backup?.BrowsingHistory is { } history)
+            {
+                // 古いバックアップの設定を復旧しても、取り消した可能性のある自動削除は再開しない。
+                history.RetentionDays = null;
+            }
+
+            return backup;
         }
         catch
         {
@@ -445,6 +507,7 @@ public sealed class SettingsService
             if (settings.SitePrivacy?.PopupRules?.Any(static rule => rule is null) == true
                 || settings.PageZoomPreferences?.Any(static entry => entry is null) == true)
                 throw new JsonException("サイト権限またはサイト別倍率の配列にnull要素があります。");
+            NormalizeDefaultSearchTemplate(settings);
             settings.SearchAliases = SearchAliasSettingsProfile.Normalize(settings.SearchAliases);
             settings.SuperDrag = SuperDragSettingsProfile.Normalize(settings.SuperDrag);
             settings.FolderTabViewMode = FolderTabViewMode.Normalize(settings.FolderTabViewMode);
@@ -560,6 +623,7 @@ public sealed class SettingsService
             {
                 settings.SearchUrlTemplate = searchUrlTemplate;
             }
+            NormalizeDefaultSearchTemplate(settings);
 
             if (TryExtractDownloadSettings(text, out var downloadSettings))
             {
@@ -603,13 +667,32 @@ public sealed class SettingsService
         return settings;
     }
 
+    private static void NormalizeDefaultSearchTemplate(AppSettings settings)
+    {
+        if (settings.SearchUrlTemplate is { } template && template.Contains("{0}", StringComparison.Ordinal))
+        {
+            try
+            {
+                _ = AddressService.FormatSearchUrl(template, "test");
+                return;
+            }
+            catch (FormatException)
+            {
+                // 設定画面で保存できる書式と同じ条件で確認する。
+            }
+        }
+
+        settings.SearchEngine = AppSettings.DefaultSearchEngine;
+        settings.SearchUrlTemplate = AppSettings.DefaultSearchUrlTemplate;
+    }
+
     private static Dictionary<string, JsonElement>? RecoverCompatibilitySettings(string text, string[] keys)
     {
         var recovered = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var key in keys)
         {
-            // 除外した表示設定は、完全なobjectが残る場合だけ原形で救済する。
-            if (key is "chatGptReadability" or "fiveChLiveReadability" or "youTubeFavoriteLive"
+            // 除外した設定は、完全なobjectが残る場合だけ原形で救済する。
+            if (key is "chatGptReadability" or "fiveChLiveReadability" or "youTubeFavoriteLive" or "ytDlpExecutableApproval"
                 && System.Text.RegularExpressions.Regex.IsMatch(
                     text, "\"" + key + "\"\\s*:\\s*\\{"))
             {
@@ -1090,4 +1173,58 @@ public sealed class SettingsService
         }
     }
 
+}
+
+// UI上の確定操作を到着順に進め、終了前はその時点で確定済みの要求を待つ。
+internal sealed class SettingsApplicationQueue
+{
+    private readonly object _gate = new();
+    private readonly HashSet<Task> _pending = [];
+    private Task _tail = Task.CompletedTask;
+
+    public Task CapturePending()
+    {
+        lock (_gate)
+        {
+            return _pending.Count == 0 ? Task.CompletedTask : Task.WhenAll(_pending);
+        }
+    }
+
+    public async Task EnqueueAsync(Func<Task> apply)
+    {
+        Task current;
+        lock (_gate)
+        {
+            current = RunAfterAsync(_tail, apply);
+            _tail = current;
+            _pending.Add(current);
+        }
+
+        try
+        {
+            await current;
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _pending.Remove(current);
+            }
+        }
+    }
+
+    private static async Task RunAfterAsync(Task previous, Func<Task> apply)
+    {
+        await Task.Yield();
+        try
+        {
+            await previous;
+        }
+        catch (Exception)
+        {
+            // 失敗は元の確定操作と終了前の待機に返す。次の確定操作は続ける。
+        }
+
+        await apply();
+    }
 }

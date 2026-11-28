@@ -154,7 +154,7 @@ public sealed class RecentItemsController
             _recentItems.Record(RecentItemFactory.FromWeb(
                 tab.Url!,
                 tab.DisplayTitle,
-                CapturedTabSnapshot.CreateThumbnailPngBase64(tab.Thumbnail),
+                CapturedTabSnapshot.CreateRecentItemThumbnailPngBase64(tab.Thumbnail),
                 faviconPngBase64: tab.FaviconPngBase64,
                 pageDescription: tab.PageDescription,
                 containerProfileId: tab.ContainerProfileId));
@@ -172,7 +172,7 @@ public sealed class RecentItemsController
             return;
         }
 
-        var thumbnailPngBase64 = CapturedTabSnapshot.CreateThumbnailPngBase64(tab.Thumbnail);
+        var thumbnailPngBase64 = CapturedTabSnapshot.CreateRecentItemThumbnailPngBase64(tab.Thumbnail);
         if (string.IsNullOrWhiteSpace(thumbnailPngBase64))
         {
             return;

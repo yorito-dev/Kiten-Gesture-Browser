@@ -47,7 +47,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
 
     IReadOnlyList<CommandPaletteItem> ICommandPaletteViewHost.Search(string? query, bool includeUnavailable)
     {
-        var containerProfiles = ReloadContainerProfiles(applyToTabs: false);
+        var containerProfiles = _containerProfiles.Profiles;
         var contextTab = GetCommandPaletteContextTab();
         var invocationContext = CreateCommandInvocationContext(contextTab);
         return _commandPaletteController.Search(
@@ -389,6 +389,7 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
         string? linkText)
     {
         CloseCommandPalettesInOtherWindows();
+        ReloadContainerProfiles(applyToTabs: false);
         _commandPaletteViewController.PrepareOpen();
         var contextGeneration = _commandPaletteContextCoordinator.Begin(
             explicitContextTab?.Id,
@@ -518,7 +519,8 @@ public partial class MainWindow : ICommandPaletteViewHost, ICommandPaletteDataHo
             LinkUrl: hasLink ? context.LinkUrl : string.Empty,
             LinkText: hasLink ? context.LinkText : string.Empty,
             CanNavigateBack: CanNavigateBrowserHistory(tab, offset: -1),
-            CanNavigateForward: CanNavigateBrowserHistory(tab, offset: 1));
+            CanNavigateForward: CanNavigateBrowserHistory(tab, offset: 1),
+            HasTopBottomSplit: _splitViewService.ActiveSplitView?.Orientation == SplitViewOrientation.TopBottom);
     }
 
     private async Task LoadCommandPaletteSelectionContextAsync(

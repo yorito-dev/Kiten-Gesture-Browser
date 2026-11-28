@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -37,6 +38,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     private static readonly TimeSpan ThumbnailSaveDebounce = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan WorkspaceWheelSwitchDelay = TimeSpan.FromMilliseconds(60);
     private static readonly TimeSpan WorkspaceBackfillDelay = TimeSpan.FromMilliseconds(180);
+    private const int MaximumCachedWorkspaceCount = 3;
     private static readonly TimeSpan WorkspacePreloadDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan WorkspaceErrorDisplayDuration = TimeSpan.FromSeconds(5);
     private static readonly (int X, int Y)[] AvoidanceDirections =
@@ -50,9 +52,16 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         (0, -1),
         (1, -1)
     ];
-    private static readonly HttpClient FaviconHttpClient = CreateFaviconHttpClient();
-    private static readonly HttpClient YouTubeThumbnailHttpClient = CreateYouTubeThumbnailHttpClient();
+    private static readonly HttpClient FaviconHttpClient = CreateWorkspaceImageHttpClient();
+    private static readonly HttpClient YouTubeThumbnailHttpClient = CreateWorkspaceImageHttpClient();
+    private static readonly ConcurrentDictionary<string, ShellPathOperation> ActiveShellPathOperations =
+        new(StringComparer.OrdinalIgnoreCase);
 
+    private static readonly object ShellCopyShutdownGate = new();
+    private static readonly Dictionary<Guid, int> ShellCopyShutdownOwners = [];
+    private static int _shellCopyShutdownCount;
+
+    private readonly Guid? _shellCopyOwnerId;
     private readonly WorkspaceService _workspaceService;
     private readonly WorkspaceArrangementService _arrangementService = new();
     private readonly WorkspaceShellItemService _shellItemService = new();
@@ -120,9 +129,10 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         WorkspaceWindowPort windows,
         WorkspaceThumbnailPort thumbnails,
         Guid? initialFolderId = null,
-        Guid? initialSelectedItemId = null)
+        Guid? initialSelectedItemId = null,
+        Guid? shellCopyOwnerId = null)
         : this(workspaceService, initialWorkspaceId, tabs, miniPlayers, windows, thumbnails,
-            initialFolderId, initialSelectedItemId, null)
+            initialFolderId, initialSelectedItemId, null, shellCopyOwnerId)
     {
     }
 
@@ -135,8 +145,10 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         WorkspaceThumbnailPort thumbnails,
         Guid? initialFolderId,
         Guid? initialSelectedItemId,
-        Func<TimeSpan, CancellationToken, Task>? workspaceErrorDismissDelay)
+        Func<TimeSpan, CancellationToken, Task>? workspaceErrorDismissDelay,
+        Guid? shellCopyOwnerId = null)
     {
+        _shellCopyOwnerId = shellCopyOwnerId;
         _workspaceErrorDismissDelay = workspaceErrorDismissDelay ?? Task.Delay;
         _workspaceService = workspaceService;
         _initialWorkspaceId = initialWorkspaceId;
@@ -1033,8 +1045,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             }
 
             var runtime = await ReadWorkspaceRuntimeAsync(workspaceId, cancellationToken);
-            _workspaceRuntimeCache[workspaceId] = runtime;
-            if (requestVersion != _workspaceSwitchRequestVersion)
+            if (_isDisposed || requestVersion != _workspaceSwitchRequestVersion)
             {
                 return;
             }
@@ -1236,12 +1247,23 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             foreach (var workspace in Workspaces)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (_workspaceRuntimeCache.Count >= MaximumCachedWorkspaceCount)
+                {
+                    break;
+                }
+
                 if (_workspaceRuntimeCache.ContainsKey(workspace.Id))
                 {
                     continue;
                 }
 
                 var runtime = await ReadWorkspaceRuntimeAsync(workspace.Id, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_isDisposed || _workspaceRuntimeCache.Count >= MaximumCachedWorkspaceCount)
+                {
+                    break;
+                }
+
                 if (_workspaceRuntimeCache.TryAdd(workspace.Id, runtime))
                 {
                     WorkspaceItemsPreloaded?.Invoke(runtime.GetVisibleItems(null));
@@ -1288,6 +1310,14 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     {
         SelectedItem = null;
         _currentWorkspaceRuntime = runtime;
+        var activationVersion = ++_workspaceActivationVersion;
+        runtime.LastActivationVersion = activationVersion;
+        _workspaceRuntimeCache[slot.Id] = runtime;
+        if (_workspaceRuntimeCache.Count > MaximumCachedWorkspaceCount)
+        {
+            var eviction = _workspaceRuntimeCache.Values.MinBy(static candidate => candidate.LastActivationVersion)!;
+            _workspaceRuntimeCache.Remove(eviction.WorkspaceId);
+        }
         _allItems = runtime.AllItems;
         _shellIconAttemptedItemIds.Clear();
         CurrentWorkspace = slot.Workspace;
@@ -1300,7 +1330,6 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
         IsLoading = false;
         ClearWorkspaceError();
-        var activationVersion = ++_workspaceActivationVersion;
         _ = StartWorkspaceBackfillsAfterStableSelectionAsync(slot.Id, activationVersion);
         StatusText = $"{slot.Name}: {Items.Count} 件";
     }
@@ -1632,7 +1661,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         }
     }
 
-    private static async Task<string> TryFetchFaviconAsync(string url)
+    internal static async Task<string> TryFetchFaviconAsync(string url, HttpClient? httpClient = null)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var pageUri)
             || !IsSupportedFaviconUri(pageUri))
@@ -1640,20 +1669,24 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             return string.Empty;
         }
 
+        httpClient ??= FaviconHttpClient;
         foreach (var faviconUri in GetFaviconCandidateUris(pageUri))
         {
             try
             {
+                using var cancellation = new CancellationTokenSource(httpClient.Timeout);
                 using var request = new HttpRequestMessage(HttpMethod.Get, faviconUri);
                 request.Headers.Accept.ParseAdd("image/*");
-                using var response = await FaviconHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-                if (!response.IsSuccessStatusCode || !IsSupportedImageContentType(response.Content.Headers.ContentType?.MediaType))
+                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation.Token);
+                if (!response.IsSuccessStatusCode
+                    || !IsSupportedImageContentType(response.Content.Headers.ContentType?.MediaType)
+                    || response.Content.Headers.ContentLength is > MaxFaviconBytes)
                 {
                     continue;
                 }
 
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                if (bytes.Length == 0 || bytes.Length > MaxFaviconBytes)
+                var bytes = await ReadLimitedBytesAsync(response.Content, MaxFaviconBytes, cancellation.Token);
+                if (bytes.Length == 0)
                 {
                     continue;
                 }
@@ -1703,25 +1736,8 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             && !mediaType.Equals("image/svg+xml", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static HttpClient CreateFaviconHttpClient()
-    {
-        var client = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(4)
-        };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("TabBrowser/1.0");
-        return client;
-    }
-
-    private static HttpClient CreateYouTubeThumbnailHttpClient()
-    {
-        var client = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(4)
-        };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("TabBrowser/1.0");
-        return client;
-    }
+    internal static HttpClient CreateWorkspaceImageHttpClient()
+        => new(new HttpClientHandler { UseCookies = false }) { Timeout = TimeSpan.FromSeconds(4) };
 
     private async Task SwitchWorkspaceAsync(object? parameter)
     {
@@ -2468,6 +2484,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
                     request.VisibleArea.Y,
                     request.VisibleArea.Width,
                     request.VisibleArea.Height),
+                new WorkspaceArrangementBounds(0, 0, WorkspaceCardPlacement.CanvasWidth, WorkspaceCardPlacement.CanvasHeight),
                 request.Mode);
         if (!result.Succeeded)
         {
@@ -3372,9 +3389,126 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             $"実フォルダーを作成しました: {created.Title}");
     }
 
+    internal static IDisposable PreventShellCopiesDuringShutdown(Guid? ownerId = null)
+        => new ShellCopyShutdownScope(ownerId);
+
+    private sealed class ShellCopyShutdownScope : IDisposable
+    {
+        private readonly Guid? _ownerId;
+        private bool _disposed;
+
+        public ShellCopyShutdownScope(Guid? ownerId)
+        {
+            _ownerId = ownerId;
+            lock (ShellCopyShutdownGate)
+            {
+                if (ownerId is { } id)
+                    ShellCopyShutdownOwners[id] = ShellCopyShutdownOwners.GetValueOrDefault(id) + 1;
+                else
+                    _shellCopyShutdownCount++;
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (ShellCopyShutdownGate)
+            {
+                if (_disposed)
+                    return;
+
+                _disposed = true;
+                if (_ownerId is not { } id)
+                    _shellCopyShutdownCount--;
+                else if (ShellCopyShutdownOwners[id] == 1)
+                    ShellCopyShutdownOwners.Remove(id);
+                else
+                    ShellCopyShutdownOwners[id]--;
+            }
+        }
+    }
+
+    internal static bool HasActiveShellCopies
+        => ActiveShellPathOperations.Values.Any(static operation => operation.IsCopy);
+
+    internal static async Task WaitForShellCopiesAsync(Guid? ownerId = null)
+    {
+        while (true)
+        {
+            var pending = ActiveShellPathOperations.Values
+                .Where(operation => operation.IsCopy && (ownerId is null || operation.OwnerId == ownerId))
+                .Select(static operation => operation.Completion).ToArray();
+            if (pending.Length == 0)
+            {
+                return;
+            }
+
+            await Task.WhenAll(pending);
+        }
+    }
+
+    internal static ShellPathOperation? TryBeginShellPathOperation(string path, bool isCopy, Guid? ownerId = null)
+        => TryBeginShellPathOperation(path, isCopy, ownerId, out _);
+
+    private static ShellPathOperation? TryBeginShellPathOperation(
+        string path, bool isCopy, Guid? ownerId, out bool blockedByShutdown)
+    {
+        var key = Path.TrimEndingDirectorySeparator(WorkspaceShellItemService.NormalizePath(path));
+        lock (ShellCopyShutdownGate)
+        {
+            blockedByShutdown = isCopy && (_shellCopyShutdownCount > 0
+                || (ownerId is { } id && ShellCopyShutdownOwners.ContainsKey(id)));
+            if (blockedByShutdown)
+                return null;
+
+            var operation = new ShellPathOperation(key, isCopy, ownerId);
+            return ActiveShellPathOperations.TryAdd(key, operation) ? operation : null;
+        }
+    }
+
+    private ShellPathOperation? BeginShellPathOperation(string path, bool isCopy = false)
+    {
+        try
+        {
+            var operation = TryBeginShellPathOperation(path, isCopy, _shellCopyOwnerId, out var blockedByShutdown);
+            if (operation is null)
+            {
+                SetWorkspaceError(blockedByShutdown
+                    ? "終了処理中のため、実ファイルをコピーできません。"
+                    : "同じ実ファイルまたはフォルダーを操作中です。完了後にもう一度お試しください。");
+            }
+
+            return operation;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+        {
+            SetWorkspaceError("実ファイルのパスを確認できません: " + ex.Message);
+            return null;
+        }
+    }
+
+    internal sealed class ShellPathOperation(string key, bool isCopy, Guid? ownerId) : IDisposable
+    {
+        private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool IsCopy { get; } = isCopy;
+        public Guid? OwnerId { get; } = ownerId;
+        public Task Completion => _completion.Task;
+
+        public void Dispose()
+        {
+            ActiveShellPathOperations.TryRemove(new KeyValuePair<string, ShellPathOperation>(key, this));
+            _completion.TrySetResult();
+        }
+    }
+
     private async Task RenameShellTargetAsync(object? parameter)
     {
         if (parameter is not WorkspaceShellNameRequest { Item.Item: ShellItem shellItem } request)
+        {
+            return;
+        }
+
+        using var operation = BeginShellPathOperation(shellItem.TargetPath);
+        if (operation is null)
         {
             return;
         }
@@ -3414,21 +3548,39 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
     private async Task CopyOrMoveShellItemAsync(WorkspaceShellPathRequest request, bool isMove)
     {
-        if (request.Item.Item is not ShellItem shellItem || CurrentWorkspace is null)
+        if (_isDisposed || request.Item.Item is not ShellItem shellItem || CurrentWorkspace is null)
+        {
+            return;
+        }
+
+        var source = new ShellItem { TargetPath = shellItem.TargetPath, Kind = shellItem.Kind };
+        using var operation = BeginShellPathOperation(source.TargetPath, isCopy: !isMove);
+        if (operation is null)
         {
             return;
         }
 
         var workspaceId = CurrentWorkspace.Id;
-        var point = FindAvailablePoint(
-            new WorkspaceCanvasPoint(request.Item.X + 96, request.Item.Y),
-            request.Item.Item.ParentFolderId);
+        var parentFolderId = request.Item.Item.ParentFolderId;
+        var point = FindAvailablePoint(new WorkspaceCanvasPoint(request.Item.X + 96, request.Item.Y), parentFolderId);
         ShellFileOperationResult result;
+        ShellItemKind kind;
         try
         {
-            result = isMove
-                ? _shellItemService.Move(shellItem, request.Path)
-                : _shellItemService.Copy(shellItem, request.Path);
+            if (isMove)
+            {
+                result = _shellItemService.Move(shellItem, request.Path);
+                kind = _shellItemService.Classify(result.DestinationPath);
+            }
+            else
+            {
+                var destination = request.Path;
+                (result, kind) = await Task.Run(() =>
+                {
+                    var copiedFile = _shellItemService.Copy(source, destination);
+                    return (copiedFile, _shellItemService.Classify(copiedFile.DestinationPath));
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -3438,7 +3590,6 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
             return;
         }
 
-        var kind = _shellItemService.Classify(result.DestinationPath);
         if (isMove)
         {
             await CompleteShellOperationAsync(result, request.Item.Id, shellItem.WorkspaceId, createsCard: false,
@@ -3452,7 +3603,7 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         var copied = new ShellItem
         {
             WorkspaceId = workspaceId,
-            ParentFolderId = request.Item.Item.ParentFolderId,
+            ParentFolderId = parentFolderId,
             Title = WorkspaceShellItemService.GetDisplayName(result.DestinationPath),
             TargetPath = result.DestinationPath,
             Kind = kind,
@@ -3469,6 +3620,12 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
     private async Task RecycleShellItemAsync(object? parameter)
     {
         if (_isDisposed || parameter is not WorkspaceItemViewModel { Item: ShellItem shellItem } item)
+        {
+            return;
+        }
+
+        using var operation = BeginShellPathOperation(shellItem.TargetPath);
+        if (operation is null)
         {
             return;
         }
@@ -3503,6 +3660,12 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         if (_undoShellOperationInProgress || _lastShellOperation is not { Result.CanUndo: true } operation)
         {
             StatusText = "元に戻せるファイル操作がありません";
+            return;
+        }
+
+        using var pathOperation = BeginShellPathOperation(operation.Result.DestinationPath);
+        if (pathOperation is null)
+        {
             return;
         }
 
@@ -3669,6 +3832,8 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
                 && string.Equals(committed.TargetPath, result.DestinationPath, StringComparison.OrdinalIgnoreCase))
             {
                 var message = $"DB保存は完了しましたが、通知に失敗しました。実ファイルは保持しています。元: {result.SourcePath} / 変更先: {result.DestinationPath} / DB: {committed.TargetPath}。{dbError.Message}";
+                if (_isDisposed)
+                    return;
                 try { SetLastShellOperation(new WorkspaceShellUndoState(result, itemId, workspaceId)); }
                 catch (Exception stateError) { message += " Undo表示も更新できません: " + stateError.Message; }
                 var resyncError = await TryResyncShellWorkspaceAsync(workspaceId);
@@ -3700,6 +3865,9 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
 
             return;
         }
+
+        if (_isDisposed)
+            return;
 
         try
         {
@@ -4308,7 +4476,10 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         if (currentWorkspaceId != originalWorkspaceId)
         {
             _workspaceRuntimeCache.Remove(originalWorkspaceId);
-            _currentWorkspaceRuntime = new WorkspaceRuntimeState(currentWorkspaceId, _allItems);
+            _currentWorkspaceRuntime = new WorkspaceRuntimeState(currentWorkspaceId, _allItems)
+            {
+                LastActivationVersion = _workspaceActivationVersion
+            };
             _workspaceRuntimeCache[currentWorkspaceId] = _currentWorkspaceRuntime;
         }
 
@@ -4642,6 +4813,8 @@ public sealed class WorkspaceOSViewModel : INotifyPropertyChanged, IWorkspaceCha
         public Guid WorkspaceId { get; }
 
         public List<WorkspaceItemViewModel> AllItems { get; }
+
+        public int LastActivationVersion { get; set; }
 
         public bool ContainsVisibleItems(ObservableCollection<WorkspaceItemViewModel> items)
             => ReferenceEquals(_rootItems, items) || _folderItems.ContainsValue(items);

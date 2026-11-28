@@ -23,6 +23,7 @@ internal sealed class LocalVideoPlaybackController : IDisposable
     private bool _isDisposed;
     private bool _loadWhenViewIsReady;
     private bool _playWhenOpened;
+    private bool _restartFromBeginningOnPlay;
     private bool _hasTransientMutedOverride;
     private bool _hasTransientPausedOverride;
     private bool _hasTransientPlaybackRateOverride;
@@ -455,13 +456,7 @@ internal sealed class LocalVideoPlaybackController : IDisposable
             return false;
         }
 
-        _state.IsLooping = _state.IsLooping != true;
-        if (_state.IsLooping == true)
-        {
-            _state.IsAbRepeatEnabled = false;
-        }
-
-        _state.UpdatedAt = DateTimeOffset.UtcNow;
+        YouTubeMiniPlayerStateService.ToggleLocalVideoLoop(_state, DateTimeOffset.UtcNow);
         NotifyStateChanged(true);
         return true;
     }
@@ -650,6 +645,7 @@ internal sealed class LocalVideoPlaybackController : IDisposable
         _hasTransientMutedOverride = false;
         _hasTransientPausedOverride = false;
         _hasTransientPlaybackRateOverride = false;
+        _restartFromBeginningOnPlay = false;
         if (_mediaPlayer is not null)
         {
             _mediaPlayer.Close();
@@ -675,6 +671,7 @@ internal sealed class LocalVideoPlaybackController : IDisposable
         try
         {
             _mediaPlayer.Position = TimeSpan.FromSeconds(position);
+            _restartFromBeginningOnPlay = false;
             UpdateStateFromPlayer();
             StateChanged?.Invoke(queueSave);
             return true;
@@ -693,6 +690,12 @@ internal sealed class LocalVideoPlaybackController : IDisposable
         }
         else
         {
+            if (_restartFromBeginningOnPlay)
+            {
+                _mediaPlayer!.Position = TimeSpan.Zero;
+                _restartFromBeginningOnPlay = false;
+            }
+
             _mediaPlayer!.Play();
         }
     }
@@ -772,6 +775,7 @@ internal sealed class LocalVideoPlaybackController : IDisposable
         {
             IsPlaying = false;
             _positionTimer.Stop();
+            _restartFromBeginningOnPlay = true;
             _state.IsPaused = true;
             _state.LastPositionSeconds = _state.DurationSeconds;
             _state.UpdatedAt = DateTimeOffset.UtcNow;

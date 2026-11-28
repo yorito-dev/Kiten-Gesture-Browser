@@ -27,6 +27,7 @@ public sealed class WorkspaceShellItemService
     private const FileAttributes CopiedAttributes =
         FileAttributes.ReadOnly | FileAttributes.Hidden | FileAttributes.System | FileAttributes.Archive;
     private const uint ReadFileAttributes = 0x80;
+    private const uint GenericReadAccess = 0x80000000;
     private const uint DeleteAccess = 0x00010000;
     private const uint OpenDirectoryHandle = 0x02000000;
     private const uint OpenReparsePoint = 0x00200000;
@@ -562,25 +563,31 @@ public sealed class WorkspaceShellItemService
                         () => CaptureMoveCopyPlan(item, cancellationToken),
                         cancellationToken).ConfigureAwait(false)
                 };
-            await CopyPathAsync(
+            var copiedEntries = await CopyPathAsync(
                 plannedItem,
                 progress,
                 _transferOperations.CopyChunkCompleted,
                 _transferOperations.DestinationReadyForPublication,
                 cancellationToken).ConfigureAwait(false);
             _transferOperations.DestinationPublished(item);
+            var destinationVerified = false;
             try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                await Task.Run(
-                    () => _transferOperations.DeleteMovedSource(plannedItem),
-                    cancellationToken).ConfigureAwait(false);
+                await Task.Run(() =>
+                {
+                    var verifiedItem = plannedItem with { CopiedDestinationEntries = copiedEntries };
+                    VerifyPublishedMoveDestination(verifiedItem, cancellationToken);
+                    destinationVerified = true;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _transferOperations.DeleteMovedSource(verifiedItem);
+                }, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                throw new IOException(
-                    $"コピー先を保持しましたが、移動元を削除できなかったため移動は完了していません。移動元: {item.SourcePath} コピー先: {item.DestinationPath}",
-                    ex);
+                var message = !destinationVerified && ex is not OperationCanceledException
+                    ? "コピー先の照合ができなかったため、移動元を残しました。移動は完了していません。"
+                    : $"コピー先を保持しましたが、移動元を削除できなかったため移動は完了していません。移動元: {item.SourcePath} コピー先: {item.DestinationPath}";
+                throw new IOException(message, ex);
             }
         }
 
@@ -1068,7 +1075,7 @@ public sealed class WorkspaceShellItemService
         return Convert.ToBase64String(stream.ToArray());
     }
 
-    private static async Task CopyPathAsync(
+    private static async Task<IReadOnlyDictionary<string, ShellUndoEntry>?> CopyPathAsync(
         ShellFileTransferPlanItem item,
         IProgress<ShellFileTransferProgress>? progress,
         Action<string, long> copyChunkCompleted,
@@ -1113,12 +1120,13 @@ public sealed class WorkspaceShellItemService
                     copyChunkCompleted,
                     () => ownsStagingPath = true,
                     cancellationToken).ConfigureAwait(false);
+                var copiedEntries = CaptureMoveDestinationEntries(stagingPath, item.CopyPlan, cancellationToken);
                 destinationReadyForPublication(item);
                 cancellationToken.ThrowIfCancellationRequested();
                 File.Move(stagingPath, item.DestinationPath);
                 ownsStagingPath = false;
                 ReportProgress(currentPath, 0, force: true);
-                return;
+                return copiedEntries;
             }
 
             var entries = item.CopyPlan ?? await Task.Run(
@@ -1162,11 +1170,13 @@ public sealed class WorkspaceShellItemService
                 SetCopiedAttributes(target, File.GetAttributes(directory.SourcePath));
             }
 
+            var copiedDirectoryEntries = CaptureMoveDestinationEntries(stagingPath, item.CopyPlan, cancellationToken);
             destinationReadyForPublication(item);
             cancellationToken.ThrowIfCancellationRequested();
             Directory.Move(stagingPath, item.DestinationPath);
             ownsStagingPath = false;
             ReportProgress(currentPath, 0, force: true);
+            return copiedDirectoryEntries;
         }
         catch
         {
@@ -1370,18 +1380,86 @@ public sealed class WorkspaceShellItemService
         }
     }
 
+    private static IReadOnlyDictionary<string, ShellUndoEntry>? CaptureMoveDestinationEntries(
+        string stagingPath, TransferCopyPlan? plan, CancellationToken cancellationToken)
+    {
+        if (plan is null)
+        {
+            return null;
+        }
+
+        var copied = new Dictionary<string, ShellUndoEntry>(StringComparer.Ordinal);
+        foreach (var entry in plan.Directories.Concat(plan.Files))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var expected = entry.SourceSnapshot;
+            var actual = ReadUndoEntry(Path.Combine(stagingPath, entry.RelativePath));
+            if (expected is null || actual is null || expected.IsDirectory != actual.IsDirectory
+                || expected.Length != actual.Length)
+            {
+                throw new IOException("移動する項目のコピー先を照合できませんでした。");
+            }
+
+            copied.Add(entry.RelativePath, actual);
+        }
+
+        return copied;
+    }
+
+    private static void VerifyPublishedMoveDestination(
+        ShellFileTransferPlanItem item, CancellationToken cancellationToken)
+    {
+        var copied = item.CopiedDestinationEntries ?? throw new IOException("コピー先の照合情報がありません。");
+        foreach (var (relativePath, expected) in copied)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var destination = OpenVerifiedMoveDestination(Path.Combine(item.DestinationPath, relativePath), expected);
+        }
+    }
+
+    private static SafeFileHandle OpenVerifiedMoveDestination(string path, ShellUndoEntry expected)
+    {
+        var handle = CreateFileForIdentity(path, GenericReadAccess, FileShare.Read, IntPtr.Zero, FileMode.Open,
+            OpenReparsePoint | (expected.IsDirectory ? OpenDirectoryHandle : 0u), IntPtr.Zero);
+        try
+        {
+            var actual = ReadEntryByHandle(handle);
+            if (actual is not null
+                && actual.Identity == expected.Identity
+                && actual.IsDirectory == expected.IsDirectory
+                && actual.Length == expected.Length
+                && (expected.IsDirectory || actual.LastWriteTimeUtc == expected.LastWriteTimeUtc))
+            {
+                return handle;
+            }
+
+            throw new IOException("移動先を照合できませんでした。");
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
     internal static void DeleteMovedSource(ShellFileTransferPlanItem item)
     {
         var entries = item.CopyPlan ?? throw new InvalidOperationException("移動元の計画がありません。");
+        var copied = item.CopiedDestinationEntries ?? throw new IOException("コピー先の照合情報がありません。");
         foreach (var file in entries.Files)
         {
+            using var destination = OpenVerifiedMoveDestination(
+                Path.Combine(item.DestinationPath, file.RelativePath), copied[file.RelativePath]);
             TryDeleteCopiedSource(file);
         }
 
         var hasRemainingDirectory = false;
         for (var index = entries.Directories.Count - 1; index >= 0; index--)
         {
-            hasRemainingDirectory |= !TryDeleteCopiedSource(entries.Directories[index]);
+            var directory = entries.Directories[index];
+            using var destination = OpenVerifiedMoveDestination(
+                Path.Combine(item.DestinationPath, directory.RelativePath), copied[directory.RelativePath]);
+            hasRemainingDirectory |= !TryDeleteCopiedSource(directory);
         }
 
         if (hasRemainingDirectory)
@@ -1703,6 +1781,7 @@ public sealed record ShellFileTransferPlanItem(
     bool IsDirectory)
 {
     internal TransferCopyPlan? CopyPlan { get; init; }
+    internal IReadOnlyDictionary<string, ShellUndoEntry>? CopiedDestinationEntries { get; init; }
 }
 
 public sealed record ShellFileTransferPreparation(

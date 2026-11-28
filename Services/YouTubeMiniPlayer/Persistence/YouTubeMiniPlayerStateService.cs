@@ -20,6 +20,16 @@ public readonly record struct YouTubeMiniPlayerPlaybackStateSnapshot(
 
 public static class YouTubeMiniPlayerStateService
 {
+    internal static void ToggleLocalVideoLoop(YouTubeMiniPlayerState state, DateTimeOffset updatedAt)
+    {
+        state.IsLooping = state.IsLooping != true;
+        if (state.IsLooping == true)
+        {
+            state.IsAbRepeatEnabled = false;
+        }
+
+        state.UpdatedAt = updatedAt;
+    }
     private const double MaximumPlaybackPositionProjectionAgeSeconds = 15;
 
     public static YouTubeMiniPlayerPlaybackStateSnapshot CreatePlaybackStateSnapshot(YouTubeMiniPlayerState state)
@@ -110,12 +120,13 @@ public static class YouTubeMiniPlayerStateService
         }
 
         var before = CreatePlaybackStateSnapshot(state);
-        state.LastPositionSeconds = message.CurrentTimeSeconds ?? state.LastPositionSeconds;
+        state.LastPositionSeconds = YouTubeControlScriptService.NormalizePlaybackPosition(message.CurrentTimeSeconds)
+            ?? state.LastPositionSeconds;
         state.DurationSeconds = message.DurationSeconds is > 0
             ? message.DurationSeconds
             : state.DurationSeconds;
         state.IsPaused = message.IsPaused ?? state.IsPaused;
-        if (message.PlaybackRate is { } playbackRate)
+        if (YouTubeControlScriptService.NormalizePlaybackSpeed(message.PlaybackRate) is { } playbackRate)
         {
             state.PreviousPlaybackRate = YouTubeControlScriptService.RememberNonDefaultPlaybackSpeed(
                 playbackRate,
@@ -175,7 +186,8 @@ public static class YouTubeMiniPlayerStateService
                 observedPlaybackState = true;
             }
 
-            if (TryReadDouble(root, "speed", out var speed))
+            if (TryReadDouble(root, "speed", out var inputSpeed)
+                && YouTubeControlScriptService.NormalizePlaybackSpeed(inputSpeed) is { } speed)
             {
                 state.PreviousPlaybackRate = YouTubeControlScriptService.RememberNonDefaultPlaybackSpeed(
                     speed,
@@ -194,7 +206,8 @@ public static class YouTubeMiniPlayerStateService
                 observedPlaybackState = true;
             }
 
-            if (TryReadDouble(root, "position", out var position))
+            if (TryReadDouble(root, "position", out var inputPosition)
+                && YouTubeControlScriptService.NormalizePlaybackPosition(inputPosition) is { } position)
             {
                 state.LastPositionSeconds = position;
                 observedPlaybackState = true;

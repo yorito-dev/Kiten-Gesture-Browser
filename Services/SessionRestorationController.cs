@@ -18,7 +18,7 @@ internal interface ISessionRestorationHost
     void ApplyContainerProfileToTab(BrowserTab tab);
     void SelectTab(BrowserTab tab);
     void SetStatus(string message, bool autoClear);
-    IReadOnlyCollection<SplitViewModel> LoadSplitViews();
+    (IReadOnlyCollection<SplitViewModel> Current, IReadOnlyCollection<SplitViewModel> Backup) LoadSplitViews();
     void AppendSplitViewRestoreDiagnostic(SplitViewRestoreResult result, int storedCandidateCount,
         int sessionCandidateCount, int ignoredSessionGroupCount, Guid? activeTabId);
     void RefreshSplitViewTabVisualStates();
@@ -53,6 +53,13 @@ internal sealed class SessionRestorationController(
     public SessionRestoreResult LastRestoreResult { get; private set; } = SessionRestoreResult.Empty;
 
     public void RecordWarning() => WarningCount++;
+
+    public bool ShouldShowRestoredAudioPanNotice(
+        AppSettings settings, bool isNormalStartupRestore, bool isPrivateWindow)
+        => isNormalStartupRestore && !isPrivateWindow
+            && !settings.AllowSharedWindowsAudioPan && !settings.RestoredAudioPanNoticeShown
+            && host.Tabs.Any(tab => _restoredSessionTabIds.Contains(tab.Id)
+                && tab.CanSetAudioPan && !tab.IsAudioPanStereo);
 
     public void RestoreRememberedWindows<TWindow>(
         SessionData session,
@@ -195,9 +202,10 @@ internal sealed class SessionRestorationController(
         try
         {
             var hadRestoredSplitIds = host.Tabs.Any(static tab => !string.IsNullOrWhiteSpace(tab.SplitViewId));
-            var storedSplitViews = host.LoadSplitViews();
+            var (storedSplitViews, backupSplitViews) = host.LoadSplitViews();
             var splitViewsToRestore = CreateRestorableSplitViews(
                 storedSplitViews,
+                backupSplitViews,
                 out var storedCandidateCount,
                 out var sessionCandidateCount,
                 out var ignoredSessionGroupCount);
@@ -229,6 +237,7 @@ internal sealed class SessionRestorationController(
 
     private List<SplitViewModel> CreateRestorableSplitViews(
         IReadOnlyCollection<SplitViewModel> storedSplitViews,
+        IReadOnlyCollection<SplitViewModel> backupSplitViews,
         out int storedCandidateCount,
         out int sessionCandidateCount,
         out int ignoredSessionGroupCount)
@@ -272,17 +281,22 @@ internal sealed class SessionRestorationController(
                 continue;
             }
 
+            var backup = backupSplitViews.FirstOrDefault(candidate =>
+                candidate.Id == splitViewId
+                && candidate.WindowId == host.WindowId
+                && ((candidate.LeftTabId == tabs[0].Id && candidate.RightTabId == tabs[1].Id)
+                    || (candidate.LeftTabId == tabs[1].Id && candidate.RightTabId == tabs[0].Id)));
             result.Add(new SplitViewModel
             {
                 Id = splitViewId,
                 WindowId = host.WindowId,
-                LeftTabId = tabs[0].Id,
-                RightTabId = tabs[1].Id,
-                ActivePane = SplitViewPane.Left,
-                Orientation = GetRestoredSplitViewOrientation(tabs),
-                Ratio = GetRestoredSplitViewRatio(tabs),
-                CreatedAt = DateTimeOffset.Now,
-                UpdatedAt = DateTimeOffset.Now
+                LeftTabId = backup?.LeftTabId ?? tabs[0].Id,
+                RightTabId = backup?.RightTabId ?? tabs[1].Id,
+                ActivePane = backup?.ActivePane ?? SplitViewPane.Left,
+                Orientation = GetRestoredSplitViewOrientation(tabs, backup?.Orientation),
+                Ratio = GetRestoredSplitViewRatio(tabs, backup?.Ratio),
+                CreatedAt = backup?.CreatedAt ?? DateTimeOffset.Now,
+                UpdatedAt = backup?.UpdatedAt ?? DateTimeOffset.Now
             });
             sessionCandidateCount++;
         }
@@ -290,8 +304,14 @@ internal sealed class SessionRestorationController(
         return result;
     }
 
-    private static string GetRestoredSplitViewOrientation(IReadOnlyCollection<BrowserTab> tabs)
+    private static string GetRestoredSplitViewOrientation(
+        IReadOnlyCollection<BrowserTab> tabs, string? backupOrientation)
     {
+        if (tabs.All(static tab => string.IsNullOrWhiteSpace(tab.SplitViewOrientation)))
+        {
+            return backupOrientation ?? SplitViewOrientation.LeftRight;
+        }
+
         return tabs.Any(static tab => string.Equals(
                 tab.SplitViewOrientation,
                 SplitViewOrientation.TopBottom,
@@ -300,10 +320,11 @@ internal sealed class SessionRestorationController(
             : SplitViewOrientation.LeftRight;
     }
 
-    private static double GetRestoredSplitViewRatio(IEnumerable<BrowserTab> tabs)
+    private static double GetRestoredSplitViewRatio(IEnumerable<BrowserTab> tabs, double? backupRatio)
     {
         return SplitViewModelProfile.NormalizeRatio(
-            tabs.Select(static tab => tab.SplitViewRatio).FirstOrDefault(static ratio => ratio.HasValue));
+            tabs.Select(static tab => tab.SplitViewRatio).FirstOrDefault(static ratio => ratio.HasValue)
+            ?? backupRatio);
     }
 
     private void ClearRestoredSplitViewIds()

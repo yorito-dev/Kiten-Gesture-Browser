@@ -33,7 +33,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
     public static async Task<bool> TrySuspendForInactivityAsync(
         YouTubeMiniPlayerRuntime runtime, PerformanceDiagnosticLogController? diagnostics)
     {
-        if (TryGetCoreWebView2(runtime) is not { } core)
+        if (runtime.WebView is not { } webView || TryGetCoreWebView2(runtime) is not { } core)
         {
             return false;
         }
@@ -46,9 +46,29 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
                 return false;
             }
 
-            var suspended = await WebViewSuspendDiagnostics.TrySuspendAsync(
-                core, runtime.WebView, WebViewSuspendRoute.YouTubeMiniPlayer, diagnostics);
-            runtime.IsSuspendedForInactivity = suspended;
+            var generation = runtime.InactiveSuspendGeneration;
+            bool IsCurrent() => ReferenceEquals(runtime.WebView, webView)
+                && ReferenceEquals(TryGetCoreWebView2(runtime), core);
+            bool CanSuspend() => IsCurrent() && !runtime.IsFullScreen
+                && runtime.State.IsMinimized && runtime.InactiveSuspendGeneration == generation;
+
+            var suspended = await BackgroundWebViewSuspension.For(webView).TrySuspendAsync(
+                webView,
+                CanSuspend,
+                () => WebViewSuspendDiagnostics.TrySuspendAsync(
+                    core, webView, WebViewSuspendRoute.YouTubeMiniPlayer, diagnostics),
+                () => !CanSuspend(),
+                () =>
+                {
+                    if (IsCurrent() && core.IsSuspended)
+                    {
+                        core.Resume();
+                    }
+                });
+            if (IsCurrent() && runtime.InactiveSuspendGeneration == generation)
+            {
+                runtime.IsSuspendedForInactivity = suspended;
+            }
             return suspended;
         }
         catch
@@ -81,6 +101,11 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         YouTubeMiniPlayerRuntime runtime, bool deferReload = false)
     {
         runtime.InactiveSuspendGeneration++;
+        if (runtime.WebView is { } webView)
+        {
+            BackgroundWebViewSuspension.Find(webView)?.RestoreForUse(webView);
+        }
+
         if (TryGetCoreWebView2(runtime) is not { } core)
         {
             runtime.IsSuspendedForInactivity = false;
@@ -284,11 +309,9 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
 
     private static void StopManipulation(YouTubeMiniPlayerRuntime runtime)
     {
-        runtime.IsWebDragging = false;
+        YouTubeMiniPlayerWebDragService.Stop(runtime);
         runtime.IsSurfaceDragging = false;
-        runtime.IsResizing = false;
-        runtime.WebDragResizeEdges = MiniPlayerResizeEdges.None;
-        runtime.WebDragFollowTimer?.Stop();
+        runtime.CancelSurfaceCtrlResize = null;
     }
 
     private static void ApplyFullScreenChrome(
@@ -433,7 +456,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         ReleasePopupSurfaces(runtime);
         runtime.Overlay.TitleBandHideTimer?.Stop();
         runtime.Overlay.ToolbarHideTimer?.Stop();
-        runtime.WebDragFollowTimer?.Stop();
+        runtime.WebDrag.FollowTimer?.Stop();
         runtime.SizeBasedQualityUpdateTimer?.Stop();
         runtime.LocalVideoView?.Dispose();
         runtime.FullScreenStateChanged = null;
@@ -442,10 +465,7 @@ internal static class YouTubeMiniPlayerRuntimeLifecycleService
         runtime.TaskbarWindow.Content = null;
         runtime.IsTaskbarCloseRequested = false;
         runtime.IsClosingTaskbarWindow = true;
-        if (runtime.TaskbarWindow.IsVisible)
-        {
-            runtime.TaskbarWindow.Close();
-        }
+        runtime.TaskbarWindow.Close();
     }
 }
 

@@ -7,6 +7,62 @@ namespace TabBrowser.Tests;
 public sealed class SettingsPersistenceReviewTests
 {
     [Fact]
+    public async Task WorkerCommitsAnIndependentCopyAndPreservesUnrelatedChanges()
+    {
+        using var files = new Files();
+        var before = files.Load();
+        var after = SettingsService.CloneForEdit(before);
+        after.SearchEngine = "edit";
+        var anotherWindow = files.Load();
+        anotherWindow.EnableLinkHoverPreview = !before.EnableLinkHoverPreview;
+        files.Save(anotherWindow);
+
+        var writing = SettingsService.CommitEditingResultAsync(before, after, files.Path);
+        after.SearchEngine = "later-edit";
+        var saved = await writing;
+        Assert.Equal("edit", saved.SearchEngine);
+        Assert.Equal(anotherWindow.EnableLinkHoverPreview, saved.EnableLinkHoverPreview);
+        Assert.Equal("edit", files.Load().SearchEngine);
+
+        anotherWindow.SearchEngine = "live-edit-after-capture";
+        var beforeLiveEdit = SettingsService.CloneForEdit(saved);
+        Assert.Equal("live-edit-after-capture",
+            SettingsService.PreserveLiveEdits(saved, beforeLiveEdit, anotherWindow).SearchEngine);
+        Assert.Equal("edit", files.Load().SearchEngine);
+    }
+
+    [Fact]
+    public async Task QueuedSettingsApplyWaitsForTheCurrentWindowToFinishAndExposesPendingFailure()
+    {
+        var queue = new SettingsApplicationQueue();
+        var applying = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var first = queue.EnqueueAsync(async () =>
+        {
+            firstStarted.SetResult();
+            await applying.Task;
+        });
+        await firstStarted.Task;
+        var second = queue.EnqueueAsync(() =>
+        {
+            secondStarted.SetResult();
+            return Task.CompletedTask;
+        });
+        var closing = queue.CapturePending();
+        Assert.False(closing.IsCompleted);
+        Assert.False(secondStarted.Task.IsCompleted);
+
+        applying.SetException(new IOException("synthetic"));
+        await Assert.ThrowsAsync<IOException>(() => first);
+        await second;
+        await Assert.ThrowsAsync<IOException>(() => closing);
+        Assert.True(secondStarted.Task.IsCompletedSuccessfully);
+        Assert.True(queue.CapturePending().IsCompletedSuccessfully);
+    }
+
+    [Fact]
     public void SystemSessionEndRequiresKnownSavedSettingsWithoutNewEdits()
     {
         using var files = new Files();
@@ -124,6 +180,40 @@ public sealed class SettingsPersistenceReviewTests
         files.Save(provisional);
         Assert.Equal("latest", files.Load().SearchEngine);
         Assert.True(files.Load().EnableLinkHoverPreview);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SettingsBackupRecoveryDoesNotRestartUnconfirmedHistoryExpiration(bool locked)
+    {
+        using var files = new Files();
+        files.Save(new AppSettings
+        {
+            SearchEngine = "from-backup",
+            BrowsingHistory = new BrowsingHistorySettings { IsEnabled = true, RetentionDays = 30 }
+        });
+        files.Save(new AppSettings { SearchEngine = "from-primary" });
+        var backupPath = AtomicFileService.CreateBackupFilePath(files.Path);
+        var backup = File.ReadAllBytes(backupPath);
+
+        AppSettings recovered;
+        if (locked)
+        {
+            using var handle = File.Open(files.Path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            recovered = files.Load();
+        }
+        else
+        {
+            File.WriteAllText(files.Path, "{ broken");
+            recovered = files.Load();
+        }
+
+        Assert.Equal("from-backup", recovered.SearchEngine);
+        Assert.True(recovered.BrowsingHistory.IsEnabled);
+        Assert.Null(recovered.BrowsingHistory.RetentionDays);
+        Assert.Null(files.Load().BrowsingHistory.RetentionDays);
+        Assert.Equal(backup, File.ReadAllBytes(backupPath));
     }
 
     [Fact]

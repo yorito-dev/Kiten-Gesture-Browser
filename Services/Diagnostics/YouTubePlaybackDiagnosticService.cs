@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace TabBrowser.Services;
@@ -23,7 +24,19 @@ public sealed record YouTubePlaybackDiagnosticMessage(
     long? DroppedVideoFrames,
     long? CorruptedVideoFrames,
     double? VideoNaturalWidth = null,
-    double? VideoNaturalHeight = null);
+    double? VideoNaturalHeight = null,
+    string? PlayerSurface = null,
+    YouTubeMiniPlayerLayoutCounts? LayoutCounts = null,
+    YouTubeMiniPlayerPausedLayoutProbe? PausedLayoutProbe = null);
+
+public sealed record YouTubeMiniPlayerLayoutCounts(
+    int Replacements, int Applied, int PlayerMissing, int VideoMissing, int StyleDrift, int ApplyErrors);
+
+public sealed record YouTubeMiniPlayerLayoutDimensions(string Natural, string Video, string Parent, string Viewport);
+
+public sealed record YouTubeMiniPlayerPausedLayoutProbe(
+    string Reason, string Result, string PreviousNatural, YouTubeMiniPlayerLayoutDimensions Before,
+    YouTubeMiniPlayerLayoutDimensions After, bool Replaced, bool Paused, bool Applied);
 
 public sealed record YouTubePlaybackDiagnosticObservation(
     bool ShouldLog,
@@ -450,7 +463,10 @@ public static class YouTubePlaybackDiagnosticService
         "error",
         "emptied",
         "sample",
-        "state"
+        "state",
+        "surface-probe",
+        "layout-counts",
+        "paused-layout-probe"
     };
 
     public static string BuildBridgeScript(
@@ -479,7 +495,7 @@ public static class YouTubePlaybackDiagnosticService
                 }
 
                 const bridgeKey = "__tabBrowserYouTubePlaybackDiagnostic";
-                const bridgeVersion = 7;
+                const bridgeVersion = 8;
                 const periodicSamplesEnabled = {{(enablePeriodicSamples ? "true" : "false")}};
                 const stateUpdatesEnabled = {{(enableStateUpdates ? "true" : "false")}};
                 const existing = window[bridgeKey];
@@ -567,7 +583,38 @@ public static class YouTubePlaybackDiagnosticService
                         videoNaturalHeight: readFinite(video.videoHeight)
                     });
                 };
-                const handleEvent = event => postDiagnostic(event.type, event.target);
+                let lastProbeKey = "";
+                let lastProbeAt = -Infinity;
+                const postPlayerSurfaceProbe = () => {
+                    const path = String(window.location.pathname || "");
+                    const surface = path === "/watch" ? "watch"
+                        : path.startsWith("/shorts/") ? "shorts"
+                        : path.startsWith("/live/") ? "live"
+                        : path.startsWith("/embed/") ? "embed" : null;
+                    if (!surface || !nativePostMessage) {
+                        return;
+                    }
+
+                    const video = document.querySelector("video");
+                    const player = document.querySelector("#movie_player");
+                    const reason = !(video instanceof HTMLVideoElement) ? "video-missing"
+                        : typeof player?.getPlayerResponse !== "function" ? "player-api-missing" : "available";
+                    const now = Date.now();
+                    const key = surface + "|" + reason;
+                    if (key === lastProbeKey || now - lastProbeAt < 30000) {
+                        return;
+                    }
+
+                    lastProbeKey = key;
+                    lastProbeAt = now;
+                    nativePostMessage({ type: "{{MessageType}}", token, event: "surface-probe", reason, surface });
+                };
+                const handleEvent = event => {
+                    postDiagnostic(event.type, event.target);
+                    if (event.type === "loadedmetadata" || event.type === "canplay") {
+                        postPlayerSurfaceProbe();
+                    }
+                };
                 let lastStateSentAt = 0;
                 const postPlaybackState = (video, reason, force = false) => {
                     if (!(video instanceof HTMLVideoElement) || !nativePostMessage) {
@@ -629,6 +676,9 @@ public static class YouTubePlaybackDiagnosticService
                     document.addEventListener("timeupdate", handleTimeUpdate, true);
                 }
 
+                document.addEventListener("yt-navigate-finish", postPlayerSurfaceProbe, true);
+                postPlayerSurfaceProbe();
+
                 let sampleTimer = null;
                 {{periodicSampleSetup}}
 
@@ -649,6 +699,7 @@ public static class YouTubePlaybackDiagnosticService
                         if (sampleTimer !== null) {
                             window.clearInterval(sampleTimer);
                         }
+                        document.removeEventListener("yt-navigate-finish", postPlayerSurfaceProbe, true);
                         for (const eventName of eventNames) {
                             document.removeEventListener(eventName, handleEvent, true);
                         }
@@ -690,6 +741,55 @@ public static class YouTubePlaybackDiagnosticService
             return false;
         }
 
+        var reason = GetOptionalString(root, "reason");
+        var surface = GetOptionalString(root, "surface");
+        if (eventName == "surface-probe" && (surface is not ("watch" or "shorts" or "live" or "embed")
+            || reason is not ("video-missing" or "player-api-missing" or "available")))
+        {
+            return false;
+        }
+
+        YouTubeMiniPlayerLayoutCounts? layoutCounts = null;
+        if (eventName == "layout-counts")
+        {
+            var replacements = GetInt32(root, "replacements");
+            var applied = GetInt32(root, "applied");
+            var playerMissing = GetInt32(root, "playerMissing");
+            var videoMissing = GetInt32(root, "videoMissing");
+            var styleDrift = GetInt32(root, "styleDrift");
+            var applyErrors = GetInt32(root, "applyErrors");
+            if (replacements is not >= 0 || applied is not >= 0
+                || playerMissing is not >= 0 || videoMissing is not >= 0
+                || styleDrift is not >= 0 || applyErrors is not >= 0)
+            {
+                return false;
+            }
+
+            layoutCounts = new(replacements.Value, applied.Value,
+                playerMissing.Value, videoMissing.Value, styleDrift.Value, applyErrors.Value);
+        }
+
+        YouTubeMiniPlayerPausedLayoutProbe? pausedLayoutProbe = null;
+        if (eventName == "paused-layout-probe")
+        {
+            var result = GetOptionalString(root, "result");
+            var previousNatural = GetLayoutSize(root, "previousNatural");
+            var before = ReadLayoutDimensions(root, "before");
+            var after = ReadLayoutDimensions(root, "after");
+            var replaced = GetBoolean(root, "replaced");
+            var paused = GetBoolean(root, "paused");
+            var applied = GetBoolean(root, "applied");
+            if (reason is not ("host-verification" or "media-change")
+                || result is not ("verified" or "drift" or "missing" or "apply-error")
+                || previousNatural is null || before is null || after is null
+                || replaced is null || paused is null || applied is null)
+            {
+                return false;
+            }
+
+            pausedLayoutProbe = new(reason, result, previousNatural, before, after, replaced.Value, paused.Value, applied.Value);
+        }
+
         message = new YouTubePlaybackDiagnosticMessage(
             GetOptionalString(root, "token"),
             eventName,
@@ -704,15 +804,52 @@ public static class YouTubePlaybackDiagnosticService
             GetBoolean(root, "muted"),
             GetFiniteDouble(root, "volume"),
             GetBoolean(root, "looping"),
-            GetOptionalString(root, "reason"),
+            reason,
             GetOptionalString(root, "visibility") ?? "unknown",
             GetInt32(root, "errorCode"),
             GetInt64(root, "totalVideoFrames"),
             GetInt64(root, "droppedVideoFrames"),
             GetInt64(root, "corruptedVideoFrames"),
             GetFiniteDouble(root, "videoNaturalWidth"),
-            GetFiniteDouble(root, "videoNaturalHeight"));
+            GetFiniteDouble(root, "videoNaturalHeight"),
+            eventName == "surface-probe" ? surface : null,
+            layoutCounts,
+            pausedLayoutProbe);
         return true;
+    }
+
+    private static YouTubeMiniPlayerLayoutDimensions? ReadLayoutDimensions(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var natural = GetLayoutSize(value, "natural");
+        var video = GetLayoutSize(value, "video");
+        var parent = GetLayoutSize(value, "parent");
+        var viewport = GetLayoutSize(value, "viewport");
+        return natural is not null && video is not null && parent is not null && viewport is not null
+            ? new(natural, video, parent, viewport)
+            : null;
+    }
+
+    private static string? GetLayoutSize(JsonElement root, string name)
+    {
+        const int maximumDimension = 32768;
+        var size = GetOptionalString(root, name);
+        if (size is null || size.Length > 11)
+        {
+            return null;
+        }
+
+        var separator = size.IndexOf('x', StringComparison.Ordinal);
+        return separator > 0
+            && int.TryParse(size.AsSpan(0, separator), NumberStyles.None, CultureInfo.InvariantCulture, out var width)
+            && int.TryParse(size.AsSpan(separator + 1), NumberStyles.None, CultureInfo.InvariantCulture, out var height)
+            && width is >= 0 and <= maximumDimension && height is >= 0 and <= maximumDimension
+            ? FormattableString.Invariant($"{width}x{height}")
+            : null;
     }
 
     public static bool IsTrustedYouTubeSource(string source)

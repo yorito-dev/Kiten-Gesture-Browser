@@ -33,7 +33,8 @@ public partial class WorkspaceOSWindow : Window
         Func<string?, string?, Task> executeGestureCommandAsync,
         Action<string> openLocalVideoInMiniPlayer,
         EventHandler<QuickLookPaneLayoutChangedEventArgs> quickLookPaneLayoutChanged,
-        EventHandler<QuickLookTextDisplayChangedEventArgs> quickLookTextDisplayChanged)
+        EventHandler<QuickLookTextDisplayChangedEventArgs> quickLookTextDisplayChanged,
+        Guid? shellCopyOwnerId = null)
     {
         InitializeComponent();
         InputScopeId = inputScopeId;
@@ -43,7 +44,8 @@ public partial class WorkspaceOSWindow : Window
             tabs,
             miniPlayers,
             windows,
-            thumbnails);
+            thumbnails,
+            shellCopyOwnerId: shellCopyOwnerId);
         DataContext = _viewModel;
         WorkspaceView.ConfigureShellFolderTabs(tabs.OpenShellFolderInTab);
         WorkspaceView.ConfigureLocalVideoPlayer(openLocalVideoInMiniPlayer);

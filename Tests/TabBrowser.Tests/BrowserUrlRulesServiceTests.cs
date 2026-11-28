@@ -6,6 +6,27 @@ namespace TabBrowser.Tests;
 public sealed class BrowserUrlRulesServiceTests
 {
     [Theory]
+    [InlineData("http://fixture.test/page", "http://fixture.test/page", true)]
+    [InlineData("https://fixture.test/page", "https://FIXTURE.test/page", true)]
+    [InlineData("https://fixture.test/page", "https://elsewhere.test/page", false)]
+    [InlineData("https://fixture.test/page", "https://fixture.test/frame", false)]
+    [InlineData("https://fixture.test/page", null, false)]
+    [InlineData("about:blank", "about:blank", false)]
+    [InlineData("file:///C:/fixture.html", "file:///C:/fixture.html", false)]
+    public void BlankPopupOpenerIsPreservedOnlyForTheCurrentWebPage(string currentUrl, string? requestFrame, bool expected)
+        => Assert.Equal(expected, BrowserUrlRulesService.IsBlankPopupFromCurrentWebPage(currentUrl, requestFrame));
+
+    [Theory]
+    [InlineData("https://translate.google.com/?sl=auto&text=synthetic&op=translate", true)]
+    [InlineData("https://translate.google.com/#sl=auto&%74ext=synthetic", true)]
+    [InlineData("https://translate.google.com/?text=", false)]
+    [InlineData("https://translate.google.com/translate?u=https%3A%2F%2Fexample.test%2F", false)]
+    [InlineData("https://translate.google.com.example.test/?text=synthetic", false)]
+    [InlineData("https://translate.google.com/?context=synthetic", false)]
+    public void RecognizesOnlyTranslationResultsWithSelectedText(string url, bool expected)
+        => Assert.Equal(expected, BrowserUrlRulesService.IsSelectedTextTranslationUrl(url));
+
+    [Theory]
     [InlineData("https://untrusted.invalid/__/auth/handler?authType=signInViaPopup", false, false)]
     [InlineData("https://untrusted.invalid/__/auth/handler?authType=signInViaPopup", true, true)]
     [InlineData("https://untrusted.invalid/__/auth/handler?%61uthType=%73ignInViaPopup", false, false)]

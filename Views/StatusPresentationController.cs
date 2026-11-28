@@ -115,17 +115,17 @@ internal sealed class StatusPresentationController : IDisposable
                 - bottomResizeHeight);
         _elements.StatusPopup.HorizontalOffset = 0;
         _elements.StatusPopup.VerticalOffset = verticalOffset;
-        PopupWindowOrderService.ApplyBounds(
+        _host.ReapplyAlwaysOnTopIfNeeded();
+        PopupWindowOrderService.ApplyRelativeBounds(
             _elements.StatusPopup,
             _elements.StatusBar,
+            _elements.RootGrid,
             _elements.RootGrid,
             new Rect(
                 0,
                 verticalOffset,
                 Math.Max(1, _elements.RootGrid.ActualWidth),
-                _elements.StatusBar.Height),
-            PopupWindowOrderPolicy.Normal);
-        _host.ReapplyAlwaysOnTopIfNeeded();
+                _elements.StatusBar.Height));
     }
 
     internal void HandlePopupOpened()
@@ -141,18 +141,18 @@ internal sealed class StatusPresentationController : IDisposable
             DispatcherPriority.ContextIdle);
     }
 
-    internal void EnsurePopupNotTopmost()
+    internal void SynchronizePopupOrder()
     {
         if (_disposed)
         {
             return;
         }
 
-        PopupWindowOrderService.Apply(
+        _host.ReapplyAlwaysOnTopIfNeeded();
+        PopupWindowOrderService.ApplyRelativeToOwner(
             _elements.StatusPopup,
             _elements.StatusBar,
-            PopupWindowOrderPolicy.Normal);
-        _host.ReapplyAlwaysOnTopIfNeeded();
+            _elements.RootGrid);
     }
 
     internal void ClosePopupImmediately()

@@ -7,6 +7,7 @@ internal sealed class SessionPersistenceCoordinator
     internal static readonly TimeSpan DefaultDebounceDelay = TimeSpan.FromMilliseconds(700);
     internal static readonly TimeSpan DefaultMaximumDeferThreshold = TimeSpan.FromMilliseconds(5000);
     internal static readonly TimeSpan ImmediateDelay = TimeSpan.FromMilliseconds(1);
+    private static readonly TimeSpan FailedSaveRetryDelay = TimeSpan.FromSeconds(30);
 
     private readonly object _gate = new();
     private readonly object _scheduleApplyGate = new();
@@ -358,7 +359,7 @@ internal sealed class SessionPersistenceCoordinator
                 return;
             }
 
-            _schedule(callback.Delay, () => OnScheduledSave(callback.Generation));
+            _schedule(callback.Delay, () => OnScheduledSave(callback));
         }
     }
 
@@ -386,14 +387,14 @@ internal sealed class SessionPersistenceCoordinator
         }
     }
 
-    private void OnScheduledSave(long generation)
+    private void OnScheduledSave(ScheduledCallback callback)
     {
         TaskCompletionSource? completion = null;
         lock (_gate)
         {
             if (_flushRunning
                 || _saveRunning
-                || generation != _scheduleGeneration)
+                || callback.Generation != _scheduleGeneration)
             {
                 return;
             }
@@ -405,10 +406,10 @@ internal sealed class SessionPersistenceCoordinator
             _activeSaveTask = completion.Task;
         }
 
-        _ = ExecuteScheduledSaveAsync(completion);
+        _ = ExecuteScheduledSaveAsync(completion, callback);
     }
 
-    private async Task ExecuteScheduledSaveAsync(TaskCompletionSource completion)
+    private async Task ExecuteScheduledSaveAsync(TaskCompletionSource completion, ScheduledCallback startedCallback)
     {
         Exception? failure = null;
         long capturedRequestVersion;
@@ -422,7 +423,8 @@ internal sealed class SessionPersistenceCoordinator
             var workItem = await _captureLatestWorkItemAsync().ConfigureAwait(false);
             if (workItem is not null)
             {
-                await workItem.SaveAsync().ConfigureAwait(false);
+                var save = workItem.SaveAutomaticallyAsync ?? workItem.SaveAsync;
+                await save().ConfigureAwait(false);
                 MarkRequestVersionPersisted(capturedRequestVersion);
             }
         }
@@ -439,6 +441,14 @@ internal sealed class SessionPersistenceCoordinator
             {
                 _queuedDuringRun = false;
                 scheduledCallback = CreateScheduledCallbackLocked(_now());
+            }
+            else if (failure is not null
+                && !_flushRunning
+                && !startedCallback.IsRetry
+                && startedCallback.Generation == _scheduleGeneration
+                && capturedRequestVersion == _requestVersion)
+            {
+                scheduledCallback = new ScheduledCallback(FailedSaveRetryDelay, ++_scheduleGeneration, IsRetry: true);
             }
         }
 
@@ -500,5 +510,5 @@ internal sealed class SessionPersistenceCoordinator
         long ScheduleGeneration,
         Task ActiveSaveTask);
 
-    private readonly record struct ScheduledCallback(TimeSpan Delay, long Generation);
+    private readonly record struct ScheduledCallback(TimeSpan Delay, long Generation, bool IsRetry = false);
 }

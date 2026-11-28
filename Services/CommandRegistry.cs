@@ -54,12 +54,13 @@ public sealed class CommandRegistry
             .Select(action => new
             {
                 Action = action,
+                Title = action.GetTitle(invocationContext),
                 Availability = action.GetAvailability(invocationContext)
             })
             .Where(result =>
                 result.Availability.State == CommandAvailabilityState.Available
                 || includeUnavailable)
-            .OrderBy(static result => result.Action.Title, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(static result => result.Title, StringComparer.CurrentCultureIgnoreCase)
             .Select(result =>
             {
                 var action = result.Action;
@@ -81,7 +82,7 @@ public sealed class CommandRegistry
                 {
                     Id = "command:" + action.Id,
                     Type = CommandPaletteItemType.Command,
-                    Title = action.Title,
+                    Title = result.Title,
                     Subtitle = isAvailable
                         ? string.IsNullOrWhiteSpace(action.Description)
                             ? action.Category

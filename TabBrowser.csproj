@@ -6,13 +6,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.2.0-preview.2</KitenReleaseVersion>
+    <KitenReleaseVersion Condition="'$(KitenReleaseVersion)' == ''">0.2.0-preview.3</KitenReleaseVersion>
     <KitenReleaseClass Condition="'$(KitenReleaseClass)' == ''">Preview</KitenReleaseClass>
     <KitenBuildVerification Condition="'$(KitenBuildVerification)' == ''">unverified</KitenBuildVerification>
     <KitenDistributionPageUrl Condition="'$(KitenDistributionPageUrl)' == ''" />
     <KitenIssueReportUrl Condition="'$(KitenIssueReportUrl)' == ''" />
     <KitenPublicBuild Condition="'$(KitenPublicBuild)' == ''">true</KitenPublicBuild>
-    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <RuntimeFrameworkVersion>10.0.15</RuntimeFrameworkVersion>
     <DefineConstants Condition="'$(KitenPublicBuild)' == 'true'">$(DefineConstants);KITEN_PUBLIC_BUILD</DefineConstants>
     <IntermediateOutputPath Condition="'$(KitenPublicBuild)' == 'true'">obj\$(Configuration)\public\</IntermediateOutputPath>
     <OutputPath Condition="'$(KitenPublicBuild)' == 'true'">bin\$(Configuration)\public\</OutputPath>
@@ -28,10 +28,12 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.30" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
+    <PackageReference Include="SQLite" Version="3.54.1" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Scripts\GestureHost.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Scripts\YouTubePlaybackHealthProbe.js" LogicalName="TabBrowser.Scripts.YouTubePlaybackHealthProbe.js" />
     <Content Include="Help\user-guide.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="docs\images\user-guide\**\*" Exclude="docs\images\user-guide\07-youtube-mini-player.png;docs\images\user-guide\07b-youtube-mini-player-controls.png;docs\images\user-guide\08-mini-player-list.png;docs\images\user-guide\10-settings-categories.png">
       <Link>Help\images\user-guide\%(RecursiveDir)%(Filename)%(Extension)</Link>

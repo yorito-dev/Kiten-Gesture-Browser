@@ -1,7 +1,7 @@
 Kiten Gesture Browser - Third-Party Notices（MediaElement配布用）
 =================================================================
 
-対象: 0.2.0-preview.2 win-x64 自己完結配布
+対象: 0.2.0-preview.3 win-x64 自己完結配布
 ローカル動画はWindowsのWPF標準MediaElementを利用します。LibVLC、LibVLCSharp、VLCプラグイン・付属データはこの配布構成に含みません。
 Windows側の再生機能・コーデックは利用者のOS環境に依存します。
 Kiten本体の利用条件はLICENSE.txtです。
@@ -18,15 +18,15 @@ Kiten本体の利用条件はLICENSE.txtです。
   License: Apache-2.0
   Source: https://github.com/ericsink/SQLitePCL.raw
   Upstream NOTICE.TXT: https://github.com/ericsink/SQLitePCL.raw/blob/96043b8cff323f21919df86a431c136655d81b4a/NOTICE.TXT
-- SQLite | 3.53.4
+- SQLite | 3.54.1
   License: Public Domain
   Source: https://www.sqlite.org/copyright.html
 - Microsoft.Web.WebView2 | 1.0.3967.48
   License and NOTICE: package同梱文書を下記に転載
   Source: https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3967.48
-- Microsoft .NET Runtime | 10.0.12
-- Microsoft Windows Desktop Runtime | 10.0.12
-  License and third-party notices: Runtime pack同梱文書とWPF v10.0.12原典を下記に転載
+- Microsoft .NET Runtime | 10.0.15
+- Microsoft Windows Desktop Runtime | 10.0.15
+  License and third-party notices: Runtime pack同梱文書とWPF v10.0.15原典を下記に転載
   Source: https://github.com/dotnet/runtime
 
 Kitenのアプリアイコンとユーザーガイド画像はプロジェクト資産です。作者表示名は「ヨリト」です。
@@ -61,7 +61,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ------------------------------------------------------------------------
-Microsoft .NET Runtime 10.0.12 - LICENSE.TXT
+Microsoft .NET Runtime 10.0.15 - LICENSE.TXT
 ------------------------------------------------------------------------
 The MIT License (MIT)
 
@@ -88,7 +88,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ------------------------------------------------------------------------
-Microsoft .NET Runtime 10.0.12 - THIRD-PARTY-NOTICES.TXT
+Microsoft .NET Runtime 10.0.15 - THIRD-PARTY-NOTICES.TXT
 ------------------------------------------------------------------------
 .NET Runtime uses third-party libraries or other resources that may be
 distributed under licenses different than the .NET Runtime software.
@@ -1509,7 +1509,7 @@ NIST-developed software is expressly provided "AS IS." NIST MAKES NO WARRANTY OF
 You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
 ------------------------------------------------------------------------
-Microsoft Windows Desktop Runtime 10.0.12 - LICENSE
+Microsoft Windows Desktop Runtime 10.0.15 - LICENSE
 ------------------------------------------------------------------------
 The MIT License (MIT)
 
@@ -1536,7 +1536,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ------------------------------------------------------------------------
-Microsoft Windows Desktop Runtime 10.0.12 - THIRD-PARTY-NOTICES.TXT
+Microsoft Windows Desktop Runtime 10.0.15 - THIRD-PARTY-NOTICES.TXT
 ------------------------------------------------------------------------
 .NET Core uses third-party libraries or other resources that may be
 distributed under licenses different than the .NET Core software.
@@ -1722,7 +1722,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---------------------------------------------------------
 
 ------------------------------------------------------------------------
-SQLite 3.53.4 - package LICENSE.txt
+SQLite 3.54.1 - package LICENSE.txt
 ------------------------------------------------------------------------
 
 SQLite is Public Domain

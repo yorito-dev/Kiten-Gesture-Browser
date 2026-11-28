@@ -15,7 +15,7 @@ public partial class MainWindow : ITabMemoryEvaluationHost
         if (!_isInitialized
             || _isClosingWindow
             || _isPrivateWindow
-            || !_settings.EnableInactiveTabMemorySaver)
+            || !CurrentTabResourceSettings.InactiveTabMemorySaverEnabled)
         {
             return;
         }
@@ -43,11 +43,11 @@ public partial class MainWindow : ITabMemoryEvaluationHost
     private Task EvaluateInactiveTabMemoryAsync() => _tabMemoryEvaluationController.EvaluateAsync();
 
     bool ITabMemoryEvaluationHost.CanStartEvaluation()
-        => _settings.EnableInactiveTabMemorySaver
+        => CurrentTabResourceSettings.InactiveTabMemorySaverEnabled
             && !_isClosingWindow
             && !_isPrivateWindow
             && IsPrimaryTabMemoryManagementWindow();
-    bool ITabMemoryEvaluationHost.IsMemorySaverEnabled => _settings.EnableInactiveTabMemorySaver;
+    bool ITabMemoryEvaluationHost.IsMemorySaverEnabled => CurrentTabResourceSettings.InactiveTabMemorySaverEnabled;
     bool ITabMemoryEvaluationHost.IsClosing => _isClosingWindow;
     BrowserTab? ITabMemoryEvaluationHost.ActiveTab => ActiveTab;
     long ITabMemoryEvaluationHost.TotalAvailableMemoryBytes => GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;

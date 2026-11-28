@@ -220,15 +220,27 @@ internal sealed class TabReorderController : IDisposable
     {
         if (_disposed) return 0;
         _host.EnsureWorkspaceTabIsFirst();
+        return GetInsertionIndexForDrop(tabList, dropPoint, originalSource, CreateTabIndexLookup());
+    }
+
+    private int GetInsertionIndexForDrop(
+        ListBox tabList, Point dropPoint, object originalSource, Dictionary<BrowserTab, int> tabIndices)
+    {
         if (_tabs.Count == 0)
         {
             return 0;
         }
 
-        var visibleTabs = tabList.Items.OfType<BrowserTab>().Where(_tabs.Contains).ToList();
-        var targetIndex = visibleTabs.Count > 0
-            ? _tabs.IndexOf(visibleTabs[^1]) + 1
-            : _tabs.Count;
+        var targetIndex = _tabs.Count;
+        for (var index = tabList.Items.Count - 1; index >= 0; index--)
+        {
+            if (tabList.Items[index] is BrowserTab visibleTab && tabIndices.TryGetValue(visibleTab, out var tabIndex))
+            {
+                targetIndex = tabIndex + 1;
+                break;
+            }
+        }
+
         var targetItem = VisualTreeTraversal.FindVisualParent<ListBoxItem>(originalSource as DependencyObject);
         if (targetItem is not null
             && !ReferenceEquals(ItemsControl.ItemsControlFromItemContainer(targetItem), tabList))
@@ -238,9 +250,9 @@ internal sealed class TabReorderController : IDisposable
 
         targetItem ??= FindNearestTabItem(tabList, dropPoint);
 
-        if (targetItem?.DataContext is BrowserTab targetTab && _tabs.Contains(targetTab))
+        if (targetItem?.DataContext is BrowserTab targetTab && tabIndices.TryGetValue(targetTab, out var targetTabIndex))
         {
-            targetIndex = _tabs.IndexOf(targetTab);
+            targetIndex = targetTabIndex;
             var targetOrigin = targetItem.TranslatePoint(new Point(0, 0), tabList);
             var insertAfter = TabStripController.IsVerticalTabList(tabList)
                 ? dropPoint.Y > targetOrigin.Y + (targetItem.ActualHeight / 2)
@@ -252,6 +264,17 @@ internal sealed class TabReorderController : IDisposable
         }
 
         return _host.ClampNormalTabInsertionIndex(targetIndex);
+    }
+
+    private Dictionary<BrowserTab, int> CreateTabIndexLookup()
+    {
+        var indices = new Dictionary<BrowserTab, int>(_tabs.Count);
+        for (var index = 0; index < _tabs.Count; index++)
+        {
+            indices.TryAdd(_tabs[index], index);
+        }
+
+        return indices;
     }
 
     internal bool UpdateDropPreview(Point dropPoint, object originalSource)
@@ -269,7 +292,9 @@ internal sealed class TabReorderController : IDisposable
             return false;
         }
 
-        var insertionIndex = GetInsertionIndexForDrop(tabList, dropPoint, originalSource);
+        _host.EnsureWorkspaceTabIsFirst();
+        var tabIndices = CreateTabIndexLookup();
+        var insertionIndex = GetInsertionIndexForDrop(tabList, dropPoint, originalSource, tabIndices);
         if (ReferenceEquals(_lastTabDropPreviewList, tabList)
             && _lastTabDropInsertionIndex == insertionIndex)
         {
@@ -279,20 +304,27 @@ internal sealed class TabReorderController : IDisposable
         ClearDropPreviewCore(resetTarget: false);
         _lastTabDropPreviewList = tabList;
         _lastTabDropInsertionIndex = insertionIndex;
-        var visibleTabs = tabList.Items.OfType<BrowserTab>().Where(_tabs.Contains).ToList();
-        if (visibleTabs.Count == 0)
+        BrowserTab? trailingTab = null;
+        foreach (var tab in tabList.Items.OfType<BrowserTab>())
         {
-            return true;
+            if (!tabIndices.TryGetValue(tab, out var tabIndex))
+            {
+                continue;
+            }
+
+            if (tabIndex >= insertionIndex)
+            {
+                tab.IsDropPreviewBefore = true;
+                return true;
+            }
+
+            trailingTab = tab;
         }
 
-        var targetTab = visibleTabs.FirstOrDefault(tab => _tabs.IndexOf(tab) >= insertionIndex);
-        if (targetTab is null)
+        if (trailingTab is not null)
         {
-            visibleTabs[^1].IsDropPreviewAfter = true;
-            return true;
+            trailingTab.IsDropPreviewAfter = true;
         }
-
-        targetTab.IsDropPreviewBefore = true;
         return true;
     }
 
@@ -440,7 +472,8 @@ internal sealed class TabReorderController : IDisposable
         bool animate)
     {
         RestoreExternalTabDropPreviewTrailingGap(animate);
-        var visibleTabs = tabList.Items.OfType<BrowserTab>().Where(_tabs.Contains).ToList();
+        var tabIndices = CreateTabIndexLookup();
+        var visibleTabs = tabList.Items.OfType<BrowserTab>().Where(tabIndices.ContainsKey).ToList();
         var isVertical = TabStripController.IsVerticalTabList(tabList);
         var previewExtent = 0d;
         BrowserTab? targetTab = null;
@@ -449,7 +482,7 @@ internal sealed class TabReorderController : IDisposable
         {
             targetTab = visibleTabs.FirstOrDefault(tab =>
                 _tabDragDropService.ShouldShiftTabForExternalDropPreview(
-                    _tabs.IndexOf(tab),
+                    tabIndices[tab],
                     targetIndex));
             if (targetTab is not null
                 && tabList.ItemContainerGenerator.ContainerFromItem(targetTab) is ListBoxItem targetItem)
@@ -482,7 +515,7 @@ internal sealed class TabReorderController : IDisposable
             var shouldShift = insertionIndex is { } shiftInsertionIndex
                 && previewExtent > 0
                 && _tabDragDropService.ShouldShiftTabForExternalDropPreview(
-                    _tabs.IndexOf(tab),
+                    tabIndices[tab],
                     shiftInsertionIndex);
             TabStripController.AnimateTabItemTranslateTo(
                 item,

@@ -124,6 +124,26 @@ public sealed class BrowsingHistoryRepository
             cancellationToken);
     }
 
+    internal async Task<(IReadOnlyList<long> Ids, BrowsingHistoryDeleteSummary Summary)> PlanHostDeletionAsync(
+        string host, BrowsingHistoryQuery query, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        var where = BuildQueryWhere(command, query, host);
+        command.CommandText = $"SELECT id, visited_at_utc FROM browsing_history {where} ORDER BY visited_at_utc;";
+        var ids = new List<long>();
+        DateTimeOffset? oldest = null;
+        DateTimeOffset? newest = null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            ids.Add(reader.GetInt64(0));
+            newest = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(1));
+            oldest ??= newest;
+        }
+        return (ids, new BrowsingHistoryDeleteSummary(ids.Count, oldest, newest));
+    }
+
     public Task<BrowsingHistoryDeleteSummary> GetRangeSummaryAsync(
         DateTimeOffset from,
         DateTimeOffset to,
@@ -137,6 +157,20 @@ public sealed class BrowsingHistoryRepository
                 command.Parameters.AddWithValue("$to", to.ToUniversalTime().ToUnixTimeMilliseconds());
             },
             cancellationToken);
+    }
+
+    internal Task<int> DeleteExpiredAsync(DateTimeOffset cutoff, Func<Action, bool> tryCommit,
+        CancellationToken cancellationToken)
+        => ExecuteDeleteAsync("DELETE FROM browsing_history WHERE visited_at_utc < $cutoff;",
+            command => command.Parameters.AddWithValue("$cutoff", cutoff.ToUnixTimeMilliseconds()),
+            cancellationToken, tryCommit);
+
+    internal async Task CompactAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "VACUUM;";
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public Task<int> DeleteAllAsync(CancellationToken cancellationToken = default)
@@ -273,7 +307,8 @@ public sealed class BrowsingHistoryRepository
     private async Task<int> ExecuteDeleteAsync(
         string commandText,
         Action<SqliteCommand>? bind,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<Action, bool>? tryCommit = null)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -284,7 +319,16 @@ public sealed class BrowsingHistoryRepository
             command.CommandText = commandText;
             bind?.Invoke(command);
             var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            if (tryCommit is null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+            else if (!tryCommit(transaction.Commit))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return 0;
+            }
+
             return deleted;
         }
         catch
@@ -425,9 +469,15 @@ public sealed class BrowsingHistoryRepository
         await alterCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static string BuildQueryWhere(SqliteCommand command, BrowsingHistoryQuery query)
+    private static string BuildQueryWhere(SqliteCommand command, BrowsingHistoryQuery query, string? host = null)
     {
         var conditions = new List<string>();
+        if (host is not null)
+        {
+            conditions.Add("host = $host COLLATE NOCASE");
+            command.Parameters.AddWithValue("$host", BrowsingHistorySettingsProfile.NormalizeHost(host));
+        }
+
         var search = query.SearchText?.Trim();
         if (!string.IsNullOrWhiteSpace(search))
         {

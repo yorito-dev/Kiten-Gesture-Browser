@@ -12,7 +12,7 @@ public sealed class WorkspaceService
     private readonly IWorkspaceRepository _repository;
 
     public WorkspaceService()
-        : this(new SQLiteWorkspaceRepository())
+        : this(SQLiteWorkspaceRepository.DefaultInstance)
     {
     }
 

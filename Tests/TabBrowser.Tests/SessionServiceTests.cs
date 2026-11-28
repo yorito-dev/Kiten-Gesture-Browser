@@ -144,7 +144,7 @@ public sealed class SessionServiceTests
     {
         using var directory = new TempDirectory();
         var writer = directory.CreateSessionService();
-        writer.Save(new SessionData
+        await writer.SaveAsync(new SessionData
         {
             Tabs = [new SessionTabState { Url = "https://example.com/initial-protected" }]
         });
@@ -180,23 +180,6 @@ public sealed class SessionServiceTests
         Assert.Equal(
             "https://example.com/before-crash",
             Assert.Single((await service.LoadAsync()).Tabs).Url);
-    }
-
-    [Fact]
-    public async Task SynchronousEmptyOverwriteAlsoPreservesProtectedRecoveryPoint()
-    {
-        using var directory = new TempDirectory();
-        var service = directory.CreateSessionService();
-
-        service.Save(new SessionData
-        {
-            Tabs = [new SessionTabState { Url = "https://example.com/synchronous" }]
-        });
-        service.Save(new SessionData());
-
-        var protectedSession = await service.LoadProtectedRecoveryPointAsync();
-        Assert.NotNull(protectedSession);
-        Assert.Equal("https://example.com/synchronous", Assert.Single(protectedSession.Tabs).Url);
     }
 
     [Fact]
@@ -938,10 +921,8 @@ public sealed class SessionServiceTests
             Assert.Single(Directory.GetFiles(directory.CorruptSessionDirectory, "*.bin"))));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task InvalidWindowElementRecoversWithoutReplacingGoodBackup(bool synchronousSave)
+    [Fact]
+    public async Task InvalidWindowElementRecoversWithoutReplacingGoodBackup()
     {
         using var directory = new TempDirectory();
         var writer = directory.CreateSessionService();
@@ -959,8 +940,7 @@ public sealed class SessionServiceTests
             Assert.Single(Directory.GetFiles(directory.CorruptSessionDirectory, "*.bin"))));
         Assert.Equal(backup, await File.ReadAllBytesAsync(directory.SessionBackupFile));
 
-        if (synchronousSave) service.Save(recovered);
-        else await service.SaveAsync(recovered);
+        await service.SaveAsync(recovered);
         Assert.Equal(backup, await File.ReadAllBytesAsync(directory.SessionBackupFile));
         Assert.Equal("https://example.com/backup", Assert.Single(
             (await directory.CreateSessionService().LoadAsync()).Tabs).Url);
@@ -1109,7 +1089,6 @@ public sealed class SessionServiceTests
         Assert.Equal(CorruptPrimaryPreservationStatus.Failed,
             service.LastLoadInfo.CorruptPrimaryPreservation);
         await Assert.ThrowsAnyAsync<IOException>(() => service.SaveAsync(recovered));
-        Assert.ThrowsAny<IOException>(() => service.Save(recovered));
         Assert.Equal(original, await File.ReadAllBytesAsync(directory.SessionFile));
         Assert.Equal(backup, await File.ReadAllBytesAsync(directory.SessionBackupFile));
         if (Directory.Exists(directory.CorruptSessionDirectory))
@@ -1327,7 +1306,6 @@ public sealed class SessionServiceTests
         Assert.Equal("empty", service.LastLoadInfo.Source);
         Assert.True(service.LastLoadInfo.PrimaryLoadFailed);
         await Assert.ThrowsAnyAsync<IOException>(() => service.SaveAsync(loaded));
-        Assert.ThrowsAny<IOException>(() => service.Save(loaded));
         Assert.Equal(original, await File.ReadAllBytesAsync(directory.SessionFile));
         Assert.False(Directory.Exists(directory.CorruptSessionDirectory));
     }
@@ -1577,10 +1555,8 @@ public sealed class SessionServiceTests
         Assert.True(service.LastLoadInfo.PrimaryLoadFailed);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SaveAfterFailedBackupRepairRetriesSameContentWithoutLosingBackup(bool synchronousSave)
+    [Fact]
+    public async Task SaveAfterFailedBackupRepairRetriesSameContentWithoutLosingBackup()
     {
         using var directory = new TempDirectory();
         var writer = directory.CreateSessionService();
@@ -1610,14 +1586,12 @@ public sealed class SessionServiceTests
         Assert.Equal(backupBefore, await File.ReadAllBytesAsync(directory.SessionBackupFile));
 
         failRepair = false;
-        if (synchronousSave) service.Save(loaded);
-        else await service.SaveAsync(loaded);
+        await service.SaveAsync(loaded);
 
         Assert.Equal(1, normalSaveAttempts);
         Assert.Equal("https://example.com/only-good-backup", Assert.Single((await directory.CreateSessionService().LoadAsync()).Tabs).Url);
         Assert.Equal(backupBefore, await File.ReadAllBytesAsync(directory.SessionBackupFile));
-        if (synchronousSave) service.Save(loaded);
-        else await service.SaveAsync(loaded);
+        await service.SaveAsync(loaded);
         Assert.Equal(1, normalSaveAttempts);
     }
 
@@ -1669,10 +1643,8 @@ public sealed class SessionServiceTests
         Assert.Equal(backupBefore, await File.ReadAllBytesAsync(directory.WindowMemoryBackupFile));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task UnsupportedPrimaryVersionBlocksLoadAndLaterSaveWithoutChangingFiles(bool synchronousSave)
+    [Fact]
+    public async Task UnsupportedPrimaryVersionBlocksLoadAndLaterSaveWithoutChangingFiles()
     {
         using var directory = new TempDirectory();
         var writer = directory.CreateSessionService();
@@ -1687,10 +1659,7 @@ public sealed class SessionServiceTests
         var loadFailure = await Assert.ThrowsAnyAsync<IOException>(() => service.LoadAsync());
         Assert.Equal("UnsupportedSessionVersionException", loadFailure.GetType().Name);
         Assert.Equal("unsupported", service.LastLoadInfo.Source);
-        if (synchronousSave)
-            Assert.ThrowsAny<IOException>(() => service.Save(CreateSession("https://example.com/new")));
-        else
-            await Assert.ThrowsAnyAsync<IOException>(() => service.SaveAsync(CreateSession("https://example.com/new")));
+        await Assert.ThrowsAnyAsync<IOException>(() => service.SaveAsync(CreateSession("https://example.com/new")));
 
         Assert.Equal(SessionPersistenceDiagnosticResult.Failed,
             service.CaptureRecoveryDiagnosticSnapshot().NormalSave.LastResult);
@@ -1859,6 +1828,80 @@ public sealed class SessionServiceTests
         Assert.Equal("snapshot", service.LastLoadInfo.Source);
         Assert.True(service.LastLoadInfo.PrimaryLoadFailed);
         Assert.True(service.LastLoadInfo.BackupLoadFailed);
+    }
+
+    [Theory]
+    [InlineData(false, 40)]
+    [InlineData(true, 4)]
+    public async Task PlaybackProgressUpdatesPrimaryAndBackupAtEachSave(bool scheduled, int expectedSnapshots)
+    {
+        using var directory = new TempDirectory();
+        var clock = new ManualTimeProvider();
+        var snapshots = 0;
+        var service = new SessionService(directory.SessionFile, directory.WindowMemoryFile, directory.DirectoryPath,
+            new SessionRecoveryDiagnosticState(), beforePersistenceOperation: operation =>
+            {
+                if (operation == SessionPersistenceDiagnosticOperation.AutomaticSnapshotCreation)
+                {
+                    snapshots++;
+                }
+            }, timeProvider: clock);
+        var session = new SessionData
+        {
+            Tabs = Enumerable.Range(0, 100)
+                .Select(index => new SessionTabState { Url = $"https://example.test/{index}" })
+                .ToList()
+        };
+        var tab = session.Tabs[0];
+        tab.YouTubePlaybackVideoId = "synthetic";
+        session.Windows.Add(new SessionWindowState { Tabs = session.Tabs });
+
+        for (var index = 0; index < 40; index++)
+        {
+            tab.YouTubePlaybackPositionSeconds = index;
+            if (scheduled)
+            {
+                await service.SaveAutomaticallyAsync(session);
+            }
+            else
+            {
+                await service.SaveAsync(session);
+            }
+
+            clock.Elapsed += TimeSpan.FromSeconds(30);
+        }
+
+        Assert.Equal(expectedSnapshots, snapshots);
+        var primary = await new SessionService(directory.SessionFile, directory.WindowMemoryFile).LoadAsync();
+        var backup = await new SessionService(directory.SessionBackupFile, directory.WindowMemoryFile).LoadAsync();
+        Assert.Equal(39, primary.Tabs[0].YouTubePlaybackPositionSeconds);
+        Assert.Equal(38, backup.Tabs[0].YouTubePlaybackPositionSeconds);
+    }
+
+    [Fact]
+    public async Task ScheduledChangesOtherThanOpenTabPositionAndExplicitFlushCreateSnapshots()
+    {
+        using var directory = new TempDirectory();
+        var clock = new ManualTimeProvider();
+        var service = new SessionService(directory.SessionFile, directory.WindowMemoryFile, directory.DirectoryPath,
+            new SessionRecoveryDiagnosticState(), timeProvider: clock);
+        var session = CreateSession("https://example.test/watch");
+        var tab = Assert.Single(session.Tabs);
+        tab.YouTubePlaybackPositionSeconds = 1;
+        await service.SaveAutomaticallyAsync(session);
+
+        tab.YouTubePlaybackPositionSeconds = 2;
+        await service.SaveAutomaticallyAsync(session);
+        Assert.Single(Directory.GetFiles(directory.SessionSnapshotDirectory));
+
+        tab.YouTubePlaybackPositionSeconds = 3;
+        tab.YouTubePlaybackIsPaused = true;
+        await service.SaveAutomaticallyAsync(session);
+        Assert.Equal(2, Directory.GetFiles(directory.SessionSnapshotDirectory).Length);
+
+        tab.YouTubePlaybackPositionSeconds = 4;
+        await service.SaveAsync(session);
+        Assert.Equal(3, Directory.GetFiles(directory.SessionSnapshotDirectory).Length);
     }
 
     [Fact]
@@ -2063,10 +2106,10 @@ public sealed class SessionServiceTests
     }
 
     [Fact]
-    public async Task SynchronousAndAsynchronousSaveReportEquivalentSnapshotFailure()
+    public async Task ScheduledAndExplicitSaveReportEquivalentSnapshotFailure()
     {
-        using var asyncDirectory = new TempDirectory();
-        using var syncDirectory = new TempDirectory();
+        using var explicitDirectory = new TempDirectory();
+        using var scheduledDirectory = new TempDirectory();
         static void FailSnapshot(SessionPersistenceDiagnosticOperation operation)
         {
             if (operation == SessionPersistenceDiagnosticOperation.AutomaticSnapshotCreation)
@@ -2075,21 +2118,21 @@ public sealed class SessionServiceTests
             }
         }
 
-        var asyncService = asyncDirectory.CreateSessionService(
+        var explicitService = explicitDirectory.CreateSessionService(
             new SessionRecoveryDiagnosticState(),
             FailSnapshot);
-        var syncService = syncDirectory.CreateSessionService(
+        var scheduledService = scheduledDirectory.CreateSessionService(
             new SessionRecoveryDiagnosticState(),
             FailSnapshot);
 
-        await asyncService.SaveAsync(CreateSession("https://example.com/async"));
-        syncService.Save(CreateSession("https://example.com/sync"));
+        await explicitService.SaveAsync(CreateSession("https://example.com/explicit"));
+        await scheduledService.SaveAutomaticallyAsync(CreateSession("https://example.com/scheduled"));
 
-        var asyncDiagnostic = asyncService.CaptureRecoveryDiagnosticSnapshot();
-        var syncDiagnostic = syncService.CaptureRecoveryDiagnosticSnapshot();
-        Assert.Equal(asyncDiagnostic.NormalSave.LastResult, syncDiagnostic.NormalSave.LastResult);
-        Assert.Equal(asyncDiagnostic.AutomaticSnapshot.LastResult, syncDiagnostic.AutomaticSnapshot.LastResult);
-        Assert.Equal(asyncDiagnostic.AutomaticSnapshot.FailureCategory, syncDiagnostic.AutomaticSnapshot.FailureCategory);
+        var explicitDiagnostic = explicitService.CaptureRecoveryDiagnosticSnapshot();
+        var scheduledDiagnostic = scheduledService.CaptureRecoveryDiagnosticSnapshot();
+        Assert.Equal(explicitDiagnostic.NormalSave.LastResult, scheduledDiagnostic.NormalSave.LastResult);
+        Assert.Equal(explicitDiagnostic.AutomaticSnapshot.LastResult, scheduledDiagnostic.AutomaticSnapshot.LastResult);
+        Assert.Equal(explicitDiagnostic.AutomaticSnapshot.FailureCategory, scheduledDiagnostic.AutomaticSnapshot.FailureCategory);
     }
 
     [Fact]
@@ -2764,6 +2807,13 @@ public sealed class SessionServiceTests
         Assert.Null(tab.YouTubePlaybackIsPaused);
         Assert.Null(tab.YouTubePlaybackIsLooping);
         Assert.Null(tab.YouTubePlaybackIsTheaterMode);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        public TimeSpan Elapsed { get; set; }
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Elapsed.Ticks;
     }
 
     private sealed class TempDirectory : IDisposable

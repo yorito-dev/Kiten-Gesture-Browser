@@ -295,6 +295,20 @@ internal sealed class TabNavigationHistoryService(Func<string?, bool> isPersista
 
         tab.NavigationHistory = history.ToList();
         tab.NavigationHistoryIndex = historyIndex;
+
+        // 実行中の戻る・進むを保ち、保存用の履歴からだけ選択文を含む翻訳URLを除く。
+        for (var index = history.Count - 1; index >= 0; index--)
+        {
+            if (BrowserUrlRulesService.IsSelectedTextTranslationUrl(history[index]))
+            {
+                history.RemoveAt(index);
+                if (index <= historyIndex)
+                {
+                    historyIndex--;
+                }
+            }
+        }
+
         return history;
     }
 

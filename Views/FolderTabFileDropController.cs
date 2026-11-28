@@ -47,6 +47,15 @@ internal sealed class FolderTabFileDropController : IDisposable
         _timer.Tick += HoverTimer_Tick;
     }
 
+    internal static DragDropEffects GetRequestedTransferEffect(DragEventArgs e)
+    {
+        var requested = e.KeyStates.HasFlag(DragDropKeyStates.ShiftKey) ? DragDropEffects.Move : DragDropEffects.Copy;
+        return (e.AllowedEffects & requested) == requested ? requested : DragDropEffects.None;
+    }
+
+    internal static DragDropEffects GetTransferReceipt(DragDropEffects requested)
+        => requested == DragDropEffects.Copy ? DragDropEffects.Copy : DragDropEffects.None;
+
     internal bool TryHandleDragOver(DragEventArgs e)
     {
         if (_disposed || !_host.TryGetFileDropPaths(e.Data, out var paths)) return false;
@@ -62,7 +71,9 @@ internal sealed class FolderTabFileDropController : IDisposable
             e.Handled = true;
             return true;
         }
-        if (targetTab is not { IsFolderTab: true }
+        var effect = GetRequestedTransferEffect(e);
+        if (effect == DragDropEffects.None
+            || targetTab is not { IsFolderTab: true }
             || _host.GetFolderTarget(targetTab) is not { } folderTabView
             || !_tabs.Contains(targetTab)
             || !folderTabView.CanAcceptTabHeaderFileDrop)
@@ -80,7 +91,7 @@ internal sealed class FolderTabFileDropController : IDisposable
             e.Handled = true;
             return true;
         }
-        var move = e.KeyStates.HasFlag(DragDropKeyStates.ShiftKey);
+        var move = effect == DragDropEffects.Move;
         BeginHover(targetTab);
         if (_move != move) _move = move;
         var destinationPath = string.IsNullOrWhiteSpace(folderTabView.CurrentPath)
@@ -88,7 +99,7 @@ internal sealed class FolderTabFileDropController : IDisposable
             : folderTabView.CurrentPath;
         var destinationName = string.IsNullOrWhiteSpace(destinationPath) ? "フォルダー" : FolderTabService.GetDisplayName(destinationPath);
         _host.SetStatus($"{(move ? "移動" : "コピー")} → {destinationName}", autoClear: false);
-        e.Effects = move ? DragDropEffects.Move : DragDropEffects.Copy;
+        e.Effects = effect;
         e.Handled = true;
         return true;
     }
@@ -119,6 +130,9 @@ internal sealed class FolderTabFileDropController : IDisposable
     internal async Task<bool> TryHandleDropAsync(DragEventArgs e)
     {
         if (_disposed || !_host.TryGetFileDropPaths(e.Data, out var paths)) return false;
+        var effect = GetRequestedTransferEffect(e);
+        e.Effects = DragDropEffects.None;
+        e.Handled = true;
         var targetTab = _host.FindTabFromOriginalSource(e.OriginalSource);
         IFolderTabFileDropTarget? folderTabView;
         if (targetTab is { IsFolderTab: true }
@@ -132,30 +146,36 @@ internal sealed class FolderTabFileDropController : IDisposable
             targetTab = _hoverTarget;
             folderTabView = _host.GetFolderTarget(targetTab);
         }
-        var move = e.KeyStates.HasFlag(DragDropKeyStates.ShiftKey);
         ResetHover();
-        if (targetTab is not { IsFolderTab: true } || folderTabView is null
+        if (effect == DragDropEffects.None || targetTab is not { IsFolderTab: true } || folderTabView is null
             || !_tabs.Contains(targetTab) || !folderTabView.CanAcceptTabHeaderFileDrop)
         {
-            e.Effects = DragDropEffects.None;
-            e.Handled = true;
             return true;
         }
+
+        if (folderTabView.ShouldCancelSameLocationFileDrop(paths))
+        {
+            _host.SetStatus("同じ場所へのドロップはキャンセルされます", autoClear: true);
+            return true;
+        }
+
+        var destinationPath = folderTabView.CurrentPath;
+        var move = effect == DragDropEffects.Move;
+        e.Effects = GetTransferReceipt(effect);
         if (!ReferenceEquals(_host.ActiveTab, targetTab))
         {
             _host.SelectTab(targetTab);
             await _host.ActivateSelectedTabAsync();
         }
-        // Window終了中にactivationが完了しても、新しいファイル操作は開始しない。
-        if (_disposed)
+        // タブ切替えを待つ間に対象が閉じられたり移動先が変わったりした場合は開始しない。
+        if (_disposed || !_tabs.Contains(targetTab) || !ReferenceEquals(_host.GetFolderTarget(targetTab), folderTabView)
+            || !folderTabView.CanAcceptTabHeaderFileDrop
+            || !string.Equals(destinationPath, folderTabView.CurrentPath, StringComparison.OrdinalIgnoreCase))
         {
-            e.Effects = DragDropEffects.None;
-            e.Handled = true;
             return true;
         }
-        var accepted = await folderTabView.TryHandleTabHeaderFileDropAsync(paths, move);
-        e.Effects = accepted ? move ? DragDropEffects.Move : DragDropEffects.Copy : DragDropEffects.None;
-        e.Handled = true;
+
+        await folderTabView.TryHandleTabHeaderFileDropAsync(paths, move);
         return true;
     }
 

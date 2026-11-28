@@ -62,13 +62,15 @@ internal sealed class CommandPaletteBackgroundLoadCoordinator(WindowTaskSupervis
 
     public static async Task<IReadOnlyList<WorkspaceCommandSource>> FetchWorkspaceSourcesAsync(CancellationToken token)
     {
-        var service = new WorkspaceService();
+        var repository = SQLiteWorkspaceRepository.DefaultInstance;
+        var service = new WorkspaceService(repository);
         var workspaces = await service.GetWorkspacesAsync(token);
+        var items = await repository.GetCommandPaletteItemsAsync(token);
+        var itemsByWorkspace = items.ToLookup(static item => item.WorkspaceId);
         var sources = new List<WorkspaceCommandSource>();
         foreach (var workspace in workspaces)
         {
-            var items = await service.GetWorkspaceItemsAsync(workspace.Id, token);
-            sources.AddRange(items.Select(item => new WorkspaceCommandSource(item, workspace.Name)));
+            sources.AddRange(itemsByWorkspace[workspace.Id].Select(item => new WorkspaceCommandSource(item, workspace.Name)));
         }
 
         return sources;

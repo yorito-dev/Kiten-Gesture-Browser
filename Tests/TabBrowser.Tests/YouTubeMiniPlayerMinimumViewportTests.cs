@@ -143,6 +143,24 @@ public sealed class YouTubeMiniPlayerMinimumViewportTests
         });
     }
 
+    [Fact]
+    public void DisposingRuntimeClosesItsNativeWindowEvenIfItHasNeverBeenShown()
+    {
+        WithFrameRuntime(MiniPlayerSourceKind.YouTube, 16.0 / 9, (runtime, _) =>
+        {
+            var window = runtime.TaskbarWindow;
+            var closed = 0;
+            window.Closed += (_, _) => closed++;
+            Assert.NotEqual(IntPtr.Zero, new WindowInteropHelper(window).EnsureHandle());
+            Assert.False(window.IsVisible);
+
+            YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+            YouTubeMiniPlayerRuntimeLifecycleService.DisposeRuntime(runtime);
+
+            Assert.Equal(1, closed);
+        });
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(0x00080080)]

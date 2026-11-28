@@ -27,6 +27,8 @@ internal interface IStartupTabActivationHost
     void RestartFocusedViewingCpuSaverTimer();
     void RestartTabMemoryManagementTimer();
     string? CreateRestoredTabLoadFailureStatus();
+    string? CreateRestoredAudioPanNotice() => null;
+    Task SaveRestoredAudioPanNoticeAsync() => Task.CompletedTask;
 }
 
 /// <summary>全Window枠の先行復元と、各Windowの選択タブ起動・完了報告を所有する。</summary>
@@ -192,6 +194,14 @@ internal sealed class StartupWindowRestoreController(
         startupRestoreHadFailure |= activationHost.RestoreWarningCount > restoreWarningCountBefore;
         var restoreWarningCount = activationHost.RestoreWarningCount - restoreWarningCountBefore;
         var startupSessionStatus = CreateStartupSessionStatus(sessionLoadInfo, restoreWarningCount);
+        var audioPanNotice = activationHost.CreateRestoredAudioPanNotice();
+        if (audioPanNotice is not null)
+        {
+            startupSessionStatus = startupSessionStatus is null
+                ? audioPanNotice
+                : $"{startupSessionStatus} / {audioPanNotice}";
+        }
+
         var restoredTabLoadFailureStatus = activationHost.CreateRestoredTabLoadFailureStatus();
         if (!string.IsNullOrWhiteSpace(restoredTabLoadFailureStatus)
             && !string.IsNullOrWhiteSpace(startupSessionStatus))
@@ -212,6 +222,10 @@ internal sealed class StartupWindowRestoreController(
         }
 
         activationHost.MarkStartupPerformance(StartupPerformanceStage.StartupReady, activationHost.ActiveTab, activationHost.TabCount);
+        if (audioPanNotice is not null)
+        {
+            await activationHost.SaveRestoredAudioPanNoticeAsync();
+        }
     }
 
     internal static string? CreateStartupSessionStatus(SessionLoadInfo? loadInfo, int restoreWarningCount)

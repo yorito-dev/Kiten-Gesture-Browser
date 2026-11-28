@@ -179,7 +179,7 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
 
     public static bool IsDragging(YouTubeMiniPlayerRuntime runtime)
     {
-        return runtime.IsWebDragging || runtime.IsSurfaceDragging || runtime.IsResizing;
+        return runtime.WebDrag.IsDragging || runtime.IsSurfaceDragging || runtime.IsResizing;
     }
 
     public static void RefreshFromCursor(
@@ -274,6 +274,12 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
             return;
         }
 
+        if (runtime.Overlay.IsTitleBandDragging)
+        {
+            runtime.Overlay.TitleBandHideTimer?.Stop();
+            return;
+        }
+
         runtime.Overlay.TitleBandHideTimer ??= CreateTitleBandHideTimer(runtime, hideDelay);
         runtime.Overlay.TitleBandHideTimer.Stop();
         runtime.Overlay.TitleBandHideTimer.Start();
@@ -288,6 +294,11 @@ internal static class YouTubeMiniPlayerOverlayVisibilityService
         timer.Tick += (_, _) =>
         {
             timer.Stop();
+            if (runtime.Overlay.IsTitleBandDragging)
+            {
+                return;
+            }
+
             runtime.TitleBandPopup.IsOpen = false;
             runtime.TitleBand.Visibility = Visibility.Collapsed;
         };

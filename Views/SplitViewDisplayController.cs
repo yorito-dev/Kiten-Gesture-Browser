@@ -83,6 +83,7 @@ internal sealed class SplitViewDisplayController(
     SplitViewWindowStateCoordinator stateCoordinator)
 {
     private const int DelayedRefreshMilliseconds = 180;
+    private PendingStart? _pendingStart;
 
     public async Task StartAsync(
         BrowserTab leftTab,
@@ -113,40 +114,58 @@ internal sealed class SplitViewDisplayController(
             return;
         }
 
+        if (_pendingStart is { } previousStart)
+        {
+            RollbackStart(previousStart);
+        }
+
         if (splitViewService.IsActive && elements.Host.Visibility == Visibility.Visible)
         {
             HideForSingleTab(leftTab);
         }
 
+        var displaced = splitViewService.Snapshot()
+            .Where(model => model.LeftTabId == leftTab.Id || model.RightTabId == leftTab.Id
+                || model.LeftTabId == rightTab.Id || model.RightTabId == rightTab.Id)
+            .ToList();
         var normalizedOrientation = SplitViewModelProfile.NormalizeOrientation(orientation);
-        if (!splitViewService.TryStart(host.WindowId, leftTab, rightTab, host.Tabs, normalizedOrientation, out _))
+        if (!splitViewService.TryStart(host.WindowId, leftTab, rightTab, host.Tabs, normalizedOrientation, out var registration))
         {
             host.SetStatus("同じタブは分割できません", autoClear: true);
             return;
         }
 
-        host.AppendDiagnostic("split-view-start", leftTab, rightTab,
-            detail: $"orientation={normalizedOrientation}");
-        host.CloseBookmarkPreview();
-        host.SelectTab(leftTab);
-        host.SetAddressText(host.IsNewTabUrl(leftTab.AddressUrl) ? string.Empty : leftTab.AddressUrl ?? string.Empty);
-        host.SetLastActiveBrowserTabId(leftTab.Id);
-
-        if (!await EnsureTabsLoadedAsync(cancellationToken))
+        var pending = new PendingStart(registration, displaced);
+        _pendingStart = pending;
+        try
         {
-            if (cancellationToken.IsCancellationRequested)
+            host.AppendDiagnostic("split-view-start", leftTab, rightTab,
+                detail: $"orientation={normalizedOrientation}");
+            host.CloseBookmarkPreview();
+            host.SelectTab(leftTab);
+            host.SetAddressText(host.IsNewTabUrl(leftTab.AddressUrl) ? string.Empty : leftTab.AddressUrl ?? string.Empty);
+            host.SetLastActiveBrowserTabId(leftTab.Id);
+
+            var ready = await EnsureTabsLoadedAsync(cancellationToken, registration);
+            if (cancellationToken.IsCancellationRequested || host.IsClosing
+                || !ReferenceEquals(_pendingStart, pending)
+                || !ReferenceEquals(splitViewService.ActiveSplitView, registration))
             {
                 return;
             }
 
-            ClearForSingleTab(leftTab);
-            host.SetStatus("分割表示に必要な内容を準備できませんでした", autoClear: true);
-            return;
-        }
+            if (!ready)
+            {
+                RollbackStart(pending);
+                host.SetStatus("分割表示に必要な内容を準備できませんでした", autoClear: true);
+                return;
+            }
 
-        if (cancellationToken.IsCancellationRequested)
+            _pendingStart = null;
+        }
+        finally
         {
-            return;
+            RollbackStart(pending);
         }
 
         ShowActive();
@@ -162,9 +181,53 @@ internal sealed class SplitViewDisplayController(
             autoClear: true);
     }
 
-    public async Task<bool> EnsureTabsLoadedAsync(CancellationToken cancellationToken = default)
+    private void RollbackStart(PendingStart start)
     {
-        if (splitViewService.ActiveSplitView is null)
+        if (!ReferenceEquals(_pendingStart, start))
+        {
+            return;
+        }
+
+        _pendingStart = null;
+        var wasActive = ReferenceEquals(splitViewService.ActiveSplitView, start.Registration);
+        var activeTabs = wasActive ? GetActiveSplitTabs().ToList() : [];
+        if (!splitViewService.TryRollbackStart(start.Registration, host.Tabs, start.Displaced) || host.IsClosing)
+        {
+            return;
+        }
+
+        if (wasActive && elements.Host.Visibility == Visibility.Visible)
+        {
+            var keep = host.DisplayedTab;
+            elements.Host.Visibility = Visibility.Collapsed;
+            host.HideSplitYouTubeControlPopups();
+            foreach (var tab in activeTabs)
+            {
+                if (!ReferenceEquals(tab, keep))
+                {
+                    host.MoveTabContentToBackground(tab);
+                }
+            }
+
+            if (keep is not null && activeTabs.Contains(keep))
+            {
+                host.ShowSingleTabContent(keep);
+            }
+        }
+
+        host.PersistSplitViewState();
+        RefreshTabVisualStates();
+        host.RefreshVerticalTabViews();
+        host.QueueSessionSave();
+    }
+
+    public Task<bool> EnsureTabsLoadedAsync(CancellationToken cancellationToken = default)
+        => EnsureTabsLoadedAsync(cancellationToken, splitViewService.ActiveSplitView);
+
+    private async Task<bool> EnsureTabsLoadedAsync(
+        CancellationToken cancellationToken, SplitViewModel? registration)
+    {
+        if (registration is null || !ReferenceEquals(splitViewService.ActiveSplitView, registration))
         {
             return false;
         }
@@ -184,7 +247,8 @@ internal sealed class SplitViewDisplayController(
                 await host.EnsureTabLoadedAsync(leftTab, leftTab.Url);
             }
 
-            if (cancellationToken.IsCancellationRequested)
+            if (cancellationToken.IsCancellationRequested || host.IsClosing
+                || !ReferenceEquals(splitViewService.ActiveSplitView, registration))
             {
                 return false;
             }
@@ -195,7 +259,8 @@ internal sealed class SplitViewDisplayController(
                 await host.EnsureTabLoadedAsync(rightTab, rightTab.Url);
             }
 
-            if (cancellationToken.IsCancellationRequested)
+            if (cancellationToken.IsCancellationRequested || host.IsClosing
+                || !ReferenceEquals(splitViewService.ActiveSplitView, registration))
             {
                 return false;
             }
@@ -206,6 +271,8 @@ internal sealed class SplitViewDisplayController(
         host.AppendDiagnostic("split-view-load-end", leftTab, rightTab);
         return host.IsSplitPaneContentReady(leftTab) && host.IsSplitPaneContentReady(rightTab);
     }
+
+    private sealed record PendingStart(SplitViewModel Registration, IReadOnlyList<SplitViewModel> Displaced);
 
     public void PlaceWebViewForPreparation(BrowserTab tab)
     {

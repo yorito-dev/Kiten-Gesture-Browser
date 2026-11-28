@@ -16,9 +16,9 @@ function miniPlayerDragHost() {
         - Number(layoutSource.match(/const double FrameBorderThickness = (\d+);/)[1])
         - Number(layoutSource.match(/const double ResizeBorderThickness = (\d+);/)[1]);
     const bridge = source.indexOf('const dragBridgeKey =');
-    const start = source.indexOf('const state = {', bridge);
+    const start = source.indexOf('const dragListeners = new AbortController();', bridge);
     const prefixEnd = source.indexOf('const isYouTubeEndScreenTarget', start);
-    const handlersStart = source.indexOf('const finishDrag = (event) => {', prefixEnd);
+    const handlersStart = source.indexOf('const finishDrag = ', prefixEnd);
     const end = source.indexOf('const holdSeekState = {', handlersStart);
     assert.ok(bridge > 0 && start > bridge && prefixEnd > start && handlersStart > prefixEnd && end > handlersStart);
     const handlers = new Map(), messages = [];
@@ -39,7 +39,7 @@ function miniPlayerDragHost() {
             emit('document', 'lostpointercapture', { pointerId });
         } } };
     const window = { ...surface('window'), chrome: { webview: { postMessage(message) { messages.push(message); } } } };
-    const context = { document, window, isYouTubeNativeMenuOpen: () => false,
+    const context = { document, window, AbortController, fullScreenMessageToken: "test-token", isYouTubeNativeMenuOpen: () => false,
         dragGestureThreshold: Number(source.match(/const dragGestureThreshold = (\d+);/)[1]) };
     vm.createContext(context);
     vm.runInContext((source.slice(start, prefixEnd) + source.slice(handlersStart, end))
@@ -57,6 +57,7 @@ test('動画面ドラッグ: 通常解放は一度だけ終了し、以後の移
     const h = miniPlayerDragHost(); h.down(); h.move();
     h.emit('document', 'pointerup', { buttons: 0 }); h.move({ buttons: 0, screenX: 50 });
     assert.deepEqual(h.phases(), ['start', 'move', 'end']); assert.equal(h.state().dragging, false);
+    assert.ok(h.messages.every(message => message.token === 'test-token'));
 });
 test('動画面ドラッグ: pointerup欠落でもbuttons=0の移動で終了する', () => {
     const h = miniPlayerDragHost(); h.down(); h.move();
@@ -256,14 +257,15 @@ function miniPlayerScript(method, values) {
     const start = source.indexOf('static string ' + method + '(');
     assert.ok(start >= 0, method);
     const raw = source.slice(start).match(/return (?:\$\$)?"""\r?\n([\s\S]*?)\r?\n\s*""";/)[1];
-    values = { AdvertisementPlayingExpression: source.match(/const string AdvertisementPlayingExpression = """\r?\n([\s\S]*?)\r?\n\s*""";/)[1], ...values };
+    values = { videoExpression: 'document.querySelector("video")', AdvertisementPlayingExpression: source.match(/const string AdvertisementPlayingExpression = """\r?\n([\s\S]*?)\r?\n\s*""";/)[1], ...values };
     return raw.replace(/\{\{(\w+)\}\}/g, (_, key) => {
         assert.ok(Object.hasOwn(values, key), method + ': ' + key);
         return values[key];
     });
 }
 // ライブ移動の実行入口が選ぶ製品JSを使い、反映の遅れや初回の無視を再現する。
-function liveSeekHost({ succeedOnAttempt = 1, onTick = () => {}, liveHead = false, holdBadge = false, timerDelay = 250 } = {}) {
+function liveSeekHost({ succeedOnAttempt = 1, onTick = () => {}, liveHead = false, holdBadge = false,
+    timerDelay = 250, selectDisplayedVideo = false } = {}) {
     const handlers = new Map(), seeks = [], adClasses = new Set();
     let ticks = 0, videoId = 'live-video', activeVideo, badgeAvailable = true, nativeLiveHead = liveHead;
     let now = Date.now();
@@ -292,13 +294,29 @@ function liveSeekHost({ succeedOnAttempt = 1, onTick = () => {}, liveHead = fals
     const playbackSource = readFileSync(resolve(sourceRoot, 'Services/YouTubeMiniPlayer/Playback/YouTubeMiniPlayerPlaybackCommandService.cs'), 'utf8');
     const method = playbackSource.slice(playbackSource.indexOf('public static Task<bool> SeekToLiveEdgeAsync('))
         .match(/YouTubeControlScriptService\.(Build\w+Script)\(\)/)[1];
-    const code = miniPlayerScript(method, { seekToLiveEdgeScript: miniPlayerScript('BuildSeekToLiveEdgeScript', {}) });
-    const h = { video, player, context, seeks, handlers, adClasses,
+    const staleVideo = { ...video, seekable: { length: 0 } };
+    if (selectDisplayedVideo) {
+        const querySelector = context.document.querySelector;
+        context.document.querySelector = selector => selector === 'video' ? staleVideo : querySelector(selector);
+        context.__tabBrowserYouTubeMiniPlayerLayoutBridge = { selectVideo: () => activeVideo };
+    }
+    const code = miniPlayerScript(method, { seekToLiveEdgeScript:
+        miniPlayerScript('BuildSeekToLiveEdgeScript', { videoExpression: 'selectedVideo' }) });
+    const h = { video, staleVideo, player, context, seeks, handlers, adClasses,
         setVideoId(value) { videoId = value; }, replaceVideo() { activeVideo = { ...video }; },
         setLiveHead(value) { nativeLiveHead = value; }, removeBadge() { badgeAvailable = false; },
         apply: () => vm.runInContext(code, context), ticks: () => ticks };
     return h;
 }
+
+test('ライブ移動: 先頭に残った旧動画を避け表示中の動画だけを確認する', async () => {
+    const h = liveSeekHost({ selectDisplayedVideo: true, succeedOnAttempt: 2 });
+    const result = await h.apply();
+    assert.equal(result.ok, true);
+    assert.equal(h.seeks.length, 2);
+    assert.equal(h.video.currentTime, 999.75);
+    assert.equal(h.staleVideo.currentTime, 10);
+});
 
 test('ライブ移動: 初回の指示が無視されても1回の実行で再試行して到達を確認する', async () => {
     const h = liveSeekHost({ succeedOnAttempt: 2 });
@@ -337,6 +355,33 @@ test('ライブ移動: 再生位置の反映を待ち、到達後は追加シー
     assert.equal(result.position, 998.75);
     assert.equal(h.seeks.length, 1);
     assert.equal(h.ticks(), 2);
+});
+
+test('ライブ移動: 長時間配信でseekable終端の時間軸がずれていても純正表示とシーク完了で到達を確認する', async () => {
+    const h = liveSeekHost({ succeedOnAttempt: Infinity, onTick(tick, h) {
+        if (tick === 1) {
+            h.video.currentTime = 46865;
+            h.video.seeking = true;
+            h.setLiveHead(true);
+        }
+        if (tick === 2) h.video.seeking = false;
+    } });
+    h.video.currentTime = 24997;
+    h.video.seekable.end = () => 8490708;
+    const result = await h.apply();
+    assert.equal(result.ok, true);
+    assert.equal(result.isAtLiveEdge, true);
+    assert.equal(result.position, 46865);
+    assert.equal(h.seeks.length, 1);
+    assert.equal(h.ticks(), 2);
+});
+
+test('ライブ移動: 純正表示だけが切り替わっても通常再生分しか進まなければ成功にしない', async () => {
+    const h = liveSeekHost({ succeedOnAttempt: Infinity, onTick(tick, h) {
+        h.video.currentTime += 0.25;
+        if (tick === 1) h.setLiveHead(true);
+    } });
+    assert.equal((await h.apply()).reason, 'live-edge-timeout');
 });
 
 test('ライブ移動: 一時的にseekableがなくても同じ実行内で再取得する', async () => {
@@ -848,3 +893,103 @@ for (const adClass of ['ad-showing', 'ad-interrupting']) {
         });
     }
 }
+
+function pausedResumeGuardHost({ hasDocumentElement = true } = {}) {
+    const source = readFileSync(resolve(__dirname, '../../Services/YouTubeControlScriptService.cs'), 'utf8');
+    const method = source.indexOf('public static string BuildPausedResumeGuardScript(');
+    const start = source.indexOf('return $$"""', method) + 'return $$"""'.length;
+    const end = source.indexOf('""";', start);
+    assert.ok(method >= 0 && start > method && end > start);
+    const script = source.slice(start, end);
+    const handlers = new Map(), timers = new Set(), observers = [];
+    class Element {
+        setAttribute(name, value) { this[name] = value; }
+        removeAttribute(name) { delete this[name]; }
+    }
+    class HTMLMediaElement extends Element {
+        play() { this.paused = false; return Promise.resolve(); }
+        pause() { this.paused = true; }
+    }
+    class MutationObserver {
+        constructor(callback) { this.callback = callback; observers.push(this); }
+        observe() { this.observing = true; }
+        disconnect() { this.observing = false; }
+    }
+    const video = new HTMLMediaElement();
+    video.paused = false;
+    const document = {
+        documentElement: hasDocumentElement ? {} : null,
+        addEventListener(name, listener) {
+            if (!handlers.has(name)) handlers.set(name, new Set());
+            handlers.get(name).add(listener);
+        },
+        removeEventListener(name, listener) { handlers.get(name)?.delete(listener); },
+        querySelectorAll: () => [video],
+        querySelector: () => null,
+        getElementById: () => null
+    };
+    const location = { href: 'https://www.youtube.com/watch?v=video-one' };
+    const window = {};
+    let nextTimer = 0;
+    const context = vm.createContext({
+        URL, DOMException, document, window, location, Element, HTMLMediaElement, MutationObserver,
+        setInterval() { timers.add(++nextTimer); return nextTimer; },
+        clearInterval(id) { timers.delete(id); }
+    });
+    return {
+        video, handlers, timers, observers, Element, HTMLMediaElement, location,
+        guard: () => window.__tabBrowserYouTubePausedResumeGuard,
+        install: (id = 'video-one') => vm.runInContext(script.replace('{{videoIdJson}}', JSON.stringify(id)), context),
+        emit(name, isTrusted) { for (const listener of handlers.get(name) || []) listener({ isTrusted, target: video }); },
+        listenerCount: () => [...handlers.values()].reduce((total, listeners) => total + listeners.size, 0)
+    };
+}
+
+test('一時停止復元: 利用者の操作で監視と遮断を解除する', async () => {
+    const host = pausedResumeGuardHost();
+    const play = host.HTMLMediaElement.prototype.play;
+    const setAttribute = host.Element.prototype.setAttribute;
+    assert.equal(host.install().installed, true);
+    assert.equal(host.video.paused, true);
+    await assert.rejects(host.video.play(), { name: 'NotAllowedError' });
+    assert.equal(host.install().alreadyInstalled, true);
+    assert.equal(host.listenerCount(), 7);
+    assert.equal(host.observers[0].observing, true);
+    host.emit('pointerdown', false);
+    assert.equal(host.guard().enabled, true);
+    host.emit('pointerdown', true);
+    assert.equal(host.guard(), undefined);
+    assert.equal(host.listenerCount(), 0);
+    assert.equal(host.timers.size, 0);
+    assert.equal(host.observers[0].observing, false);
+    assert.equal(host.HTMLMediaElement.prototype.play, play);
+    assert.equal(host.Element.prototype.setAttribute, setAttribute);
+    await host.video.play();
+    assert.equal(host.video.paused, false);
+});
+
+test('一時停止復元: 別動画のガードで古い監視を解除する', () => {
+    const host = pausedResumeGuardHost({ hasDocumentElement: false });
+    host.install();
+    const old = host.guard();
+    host.location.href = 'https://www.youtube.com/watch?v=video-two';
+    host.install('video-two');
+    assert.equal(old.enabled, false);
+    assert.equal(host.guard().expectedVideoId, 'video-two');
+    assert.equal(host.handlers.get('DOMContentLoaded').size, 1);
+    assert.equal(host.listenerCount(), 8);
+    assert.equal(host.timers.size, 1);
+});
+
+test('一時停止復元: 解除時にページが差し替えた処理を保つ', () => {
+    const host = pausedResumeGuardHost();
+    host.install();
+    const guard = host.guard();
+    const pagePlay = () => Promise.resolve();
+    host.HTMLMediaElement.prototype.play = pagePlay;
+    guard.dispose();
+    guard.dispose();
+    assert.equal(host.HTMLMediaElement.prototype.play, pagePlay);
+    assert.equal(host.guard(), undefined);
+    assert.equal(host.listenerCount(), 0);
+});

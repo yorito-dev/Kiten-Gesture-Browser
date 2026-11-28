@@ -114,6 +114,8 @@ public sealed class KitenDataMaintenanceService
                     manifest,
                     cancellationToken);
                 var targetSummary = DescribeRestoreTargets(dataRoot, manifest);
+                var executableSettingsSummary = KitenDataMaintenanceArchive.DescribeExecutableSettingsChanges(
+                    dataRoot, Path.Combine(validationRoot, "data"));
                 var historySummary = DescribeManifestHistory(manifest);
                 var preservationSummary = currentDataCorrupt
                     ? "現在データに内容破損があります。実行時は管理対象の原本を復旧記録領域のoriginal-snapshot.jsonとdataフォルダーへバイト単位で保全・照合してから置き換えます。"
@@ -121,7 +123,7 @@ public sealed class KitenDataMaintenanceService
                 return new KitenDataMaintenanceResult(
                     true,
                     false,
-                    $"復元計画: チャンネル={manifest.Channel}、バックアップ版={manifest.SourceApplication.PublicVersion}、復元時点={manifest.CreatedAtUtc:O}、データルート={dataRoot}、対象分類=基本対象、{historySummary}。{targetSummary} 実行すると、この時点より後の変更は戻りません。{preservationSummary}",
+                    $"復元計画: チャンネル={manifest.Channel}、バックアップ版={manifest.SourceApplication.PublicVersion}、復元時点={manifest.CreatedAtUtc:O}、データルート={dataRoot}、対象分類=基本対象、{historySummary}。{targetSummary} 実行すると、この時点より後の変更は戻りません。{preservationSummary}{executableSettingsSummary}",
                     VerifiedArchiveSha256: verifiedArchiveSha256);
             }
             finally

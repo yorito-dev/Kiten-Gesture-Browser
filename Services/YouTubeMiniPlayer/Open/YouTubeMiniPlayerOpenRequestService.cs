@@ -82,10 +82,11 @@ public static class YouTubeMiniPlayerOpenRequestService
 
     public static bool TryCreateNavigationUri(string url, out Uri uri)
     {
-        if (Uri.TryCreate(url, UriKind.Absolute, out var candidate)
-            && YouTubeUrlService.IsYouTubeUrl(url))
+        if (YouTubeUrlService.TryGetWebUri(url, out var candidate))
         {
-            uri = candidate;
+            uri = candidate.Scheme == Uri.UriSchemeHttps
+                ? candidate
+                : new UriBuilder(candidate) { Scheme = Uri.UriSchemeHttps, Port = -1 }.Uri;
             return true;
         }
 

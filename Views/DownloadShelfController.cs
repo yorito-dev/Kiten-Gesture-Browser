@@ -29,6 +29,7 @@ internal sealed class DownloadShelfController : IDisposable
     private readonly Action<Action> _queueUiUpdate;
     private readonly HashSet<DownloadItem> _subscribedItems = [];
     private ICollectionView? _downloadItemsView;
+    private CancellationTokenSource? _availabilityCancellation;
     private bool _initialized;
     private bool _disposed;
 
@@ -49,6 +50,8 @@ internal sealed class DownloadShelfController : IDisposable
         if (_initialized || _disposed) return;
         _initialized = true;
         _downloadService.ItemFinished += ItemFinished;
+        _elements.DownloadShelfPopup.Opened += DownloadShelfPopup_Opened;
+        _elements.DownloadShelfPopup.Closed += DownloadShelfPopup_Closed;
         _elements.DownloadKindFilterBox.ItemsSource = new List<DownloadFilterOption>
         {
             new("すべて", "all"),
@@ -91,7 +94,11 @@ internal sealed class DownloadShelfController : IDisposable
             _subscribedItems.Clear();
             foreach (var item in _downloadService.Items)
             {
-                if (_subscribedItems.Add(item)) item.PropertyChanged += DownloadItem_PropertyChanged;
+                if (_subscribedItems.Add(item))
+                {
+                    item.PropertyChanged += DownloadItem_PropertyChanged;
+                    CheckAvailabilityIfOpen(item);
+                }
             }
         }
 
@@ -99,7 +106,11 @@ internal sealed class DownloadShelfController : IDisposable
         {
             foreach (DownloadItem item in e.NewItems)
             {
-                if (_subscribedItems.Add(item)) item.PropertyChanged += DownloadItem_PropertyChanged;
+                if (_subscribedItems.Add(item))
+                {
+                    item.PropertyChanged += DownloadItem_PropertyChanged;
+                    CheckAvailabilityIfOpen(item);
+                }
             }
         }
 
@@ -118,10 +129,47 @@ internal sealed class DownloadShelfController : IDisposable
     private void DownloadItem_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DownloadItem.State)) Refresh();
+        if (sender is DownloadItem item && e.PropertyName is nameof(DownloadItem.State) or nameof(DownloadItem.FilePath))
+            CheckAvailabilityIfOpen(item);
         if (e.PropertyName is nameof(DownloadItem.State) or nameof(DownloadItem.CanResumeOperation)
             or nameof(DownloadItem.ProgressPercent))
         {
             UpdateButtonState();
+        }
+    }
+
+    private void DownloadShelfPopup_Opened(object? sender, EventArgs e)
+    {
+        CancelFileAvailability();
+        _availabilityCancellation = new CancellationTokenSource();
+        foreach (var item in _downloadService.Items)
+            CheckAvailabilityIfOpen(item);
+    }
+
+    private void DownloadShelfPopup_Closed(object? sender, EventArgs e) => CancelFileAvailability();
+
+    private void CancelFileAvailability()
+    {
+        var cancellation = _availabilityCancellation;
+        _availabilityCancellation = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+    }
+
+    private void CheckAvailabilityIfOpen(DownloadItem item)
+    {
+        if (_availabilityCancellation is { } cancellation && item.CanCheckFile)
+            _ = CheckFileAvailabilityAsync(item, cancellation.Token);
+    }
+
+    private static async Task CheckFileAvailabilityAsync(DownloadItem item, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await item.RefreshFileAvailabilityAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
     }
 
@@ -233,6 +281,9 @@ internal sealed class DownloadShelfController : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        CancelFileAvailability();
+        _elements.DownloadShelfPopup.Opened -= DownloadShelfPopup_Opened;
+        _elements.DownloadShelfPopup.Closed -= DownloadShelfPopup_Closed;
         _downloadService.ItemFinished -= ItemFinished;
         _downloadService.Items.CollectionChanged -= DownloadItems_CollectionChanged;
         foreach (var item in _subscribedItems) item.PropertyChanged -= DownloadItem_PropertyChanged;

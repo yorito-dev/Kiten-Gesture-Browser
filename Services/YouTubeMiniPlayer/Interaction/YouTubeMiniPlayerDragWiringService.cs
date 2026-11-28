@@ -58,6 +58,7 @@ internal static class YouTubeMiniPlayerDragWiringService
             }
 
             callbacks.BringToFront(state.Id, false);
+            runtime.WebDrag.CancelCtrlResize = null;
             isDragging = true;
             isResizing = YouTubeMiniPlayerInputService.GetLeftDragAction(Keyboard.Modifiers)
                 == MiniPlayerLeftDragAction.Resize;
@@ -66,6 +67,11 @@ internal static class YouTubeMiniPlayerDragWiringService
             isResizing |= resizeEdges != MiniPlayerResizeEdges.None;
             runtime.IsSurfaceDragging = !isResizing;
             runtime.IsResizing = isResizing;
+            runtime.Overlay.IsTitleBandDragging = !isResizing && ReferenceEquals(dragSurface, runtime.TitleBand);
+            if (runtime.Overlay.IsTitleBandDragging)
+            {
+                runtime.Overlay.TitleBandHideTimer?.Stop();
+            }
             if (isResizing)
             {
                 runtime.Overlay.TitleBandHideTimer?.Stop();
@@ -85,6 +91,10 @@ internal static class YouTubeMiniPlayerDragWiringService
             startTop = state.Top;
             startWidth = Math.Max(YouTubeMiniPlayerLayoutService.MinimumWidth, state.Width);
             startHeight = Math.Max(YouTubeMiniPlayerLayoutService.MinimumHeight, state.Height);
+            if (isResizing && resizeEdges == MiniPlayerResizeEdges.None)
+            {
+                runtime.CancelSurfaceCtrlResize = () => FinishDrag(restoreBounds: true);
+            }
             dragSurface.CaptureMouse();
             Mouse.UpdateCursor();
             e.Handled = true;
@@ -101,6 +111,8 @@ internal static class YouTubeMiniPlayerDragWiringService
                 isDragging = false;
                 runtime.IsSurfaceDragging = false;
                 runtime.IsResizing = false;
+                runtime.CancelSurfaceCtrlResize = null;
+                runtime.Overlay.IsTitleBandDragging = false;
                 dragSurface.ReleaseMouseCapture();
                 return;
             }
@@ -175,7 +187,7 @@ internal static class YouTubeMiniPlayerDragWiringService
                 Mouse.UpdateCursor();
         }
 
-        void FinishDrag()
+        void FinishDrag(bool restoreBounds = false)
         {
             if (!isDragging)
             {
@@ -185,15 +197,29 @@ internal static class YouTubeMiniPlayerDragWiringService
             isDragging = false;
             isResizing = false;
             resizeEdges = MiniPlayerResizeEdges.None;
-            dragSurface.ReleaseMouseCapture();
-            Mouse.UpdateCursor();
-            if (runtimes.TryGetValue(state.Id, out var runtime))
+            runtimes.TryGetValue(state.Id, out var runtime);
+            if (runtime is not null)
             {
                 runtime.IsSurfaceDragging = false;
                 runtime.IsResizing = false;
+                runtime.CancelSurfaceCtrlResize = null;
+                runtime.Overlay.IsTitleBandDragging = false;
+            }
+            dragSurface.ReleaseMouseCapture();
+            Mouse.UpdateCursor();
+            if (runtime is not null)
+            {
                 if (runtime.IsFullScreen || runtime.IsDisposed || runtime.IsClosingTaskbarWindow)
                 {
                     return;
+                }
+
+                if (restoreBounds)
+                {
+                    state.Left = startLeft;
+                    state.Top = startTop;
+                    state.Width = startWidth;
+                    state.Height = startHeight;
                 }
 
                 callbacks.Clamp(state, runtime.Root, true);

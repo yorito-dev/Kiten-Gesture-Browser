@@ -46,7 +46,8 @@ public partial class WorkspaceFolderWindow : Window
         Func<string?, string?, Task> executeGestureCommandAsync,
         Action<string> openLocalVideoInMiniPlayer,
         EventHandler<QuickLookPaneLayoutChangedEventArgs> quickLookPaneLayoutChanged,
-        EventHandler<QuickLookTextDisplayChangedEventArgs> quickLookTextDisplayChanged)
+        EventHandler<QuickLookTextDisplayChangedEventArgs> quickLookTextDisplayChanged,
+        Guid? shellCopyOwnerId = null)
     {
         InitializeComponent();
         ApplyWindowPlacement(initialPlacement);
@@ -63,7 +64,8 @@ public partial class WorkspaceFolderWindow : Window
             windows,
             thumbnails,
             folder.Id,
-            selectedItemId);
+            selectedItemId,
+            shellCopyOwnerId: shellCopyOwnerId);
         DataContext = _viewModel;
         WorkspaceCanvas.OpenShellFolderInTab = tabs.OpenShellFolderInTab;
         WorkspaceCanvas.OpenLocalVideoInMiniPlayer = openLocalVideoInMiniPlayer;

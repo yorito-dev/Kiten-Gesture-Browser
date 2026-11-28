@@ -8,6 +8,7 @@ internal sealed class YouTubeMiniPlayerOverlayState
     private int _toolbarPlacementRequestGeneration;
 
     public DispatcherTimer? TitleBandHideTimer { get; set; }
+    public bool IsTitleBandDragging { get; set; }
     public DispatcherTimer? ToolbarHideTimer { get; set; }
     public bool IsToolbarMenuOpen { get; set; }
     public bool IsNativePositionRefreshQueued { get; set; }

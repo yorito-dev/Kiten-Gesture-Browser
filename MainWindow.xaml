@@ -796,6 +796,8 @@
                                             <MenuItem Header="ステレオ" Tag="{x:Static models:TabAudioPan.Stereo}" IsCheckable="True" IsChecked="{Binding IsAudioPanStereo, Mode=OneWay}" Click="TabAudioPanMenuItem_Click" />
                                             <MenuItem Header="左から出す" Tag="{x:Static models:TabAudioPan.Left}" IsCheckable="True" IsChecked="{Binding IsAudioPanLeft, Mode=OneWay}" Click="TabAudioPanMenuItem_Click" />
                                             <MenuItem Header="右から出す" Tag="{x:Static models:TabAudioPan.Right}" IsCheckable="True" IsChecked="{Binding IsAudioPanRight, Mode=OneWay}" Click="TabAudioPanMenuItem_Click" />
+                                            <Separator />
+                                            <MenuItem Header="Windows側の処理は設定で許可した場合のみ" IsEnabled="False" />
                                         </MenuItem>
                                     </ContextMenu>
                                 </Grid.ContextMenu>
@@ -1403,6 +1405,7 @@
                             <MenuItem Header="Chrome/Edge の拡張機能を取り込む" Click="ImportExtensionButton_Click" />
                             <MenuItem Header="拡張機能を管理" Click="ManageExtensionsButton_Click" />
                             <Separator />
+
 
                             <Separator />
                             <MenuItem Header="ページ情報をコピー">
@@ -3185,7 +3188,7 @@
                                                     </Button.Style>
                                                 </Button>
                                                 <Button Width="72" Height="24" Margin="0,0,6,0" Content="{Binding PauseResumeButtonText}" Click="DownloadPauseResumeButton_Click" IsEnabled="{Binding CanPauseOrResume}" Style="{StaticResource DownloadActionButtonStyle}" />
-                                                <Button Width="48" Height="24" Margin="0,0,6,0" Content="開く" Click="DownloadOpenButton_Click" IsEnabled="{Binding CanOpen}" Style="{StaticResource DownloadActionButtonStyle}" />
+                                                <Button Width="48" Height="24" Margin="0,0,6,0" Content="開く" Click="DownloadOpenButton_Click" IsEnabled="{Binding CanOpen}" ToolTip="{Binding OpenFileToolTip}" ToolTipService.ShowOnDisabled="True" Style="{StaticResource DownloadActionButtonStyle}" />
                                                 <Button Width="72" Height="24" Margin="0,0,6,0" Content="フォルダー" Click="DownloadOpenFolderButton_Click" IsEnabled="{Binding CanOpenFolder}" Style="{StaticResource DownloadActionButtonStyle}">
                                                     <Button.ContextMenu>
                                                         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">

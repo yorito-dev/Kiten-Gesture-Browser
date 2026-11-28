@@ -5,19 +5,41 @@ namespace TabBrowser.Services;
 
 internal sealed class UrlThumbnailCaptureCoordinator
 {
-    private readonly Dictionary<string, ImageSource> _cache = new(StringComparer.OrdinalIgnoreCase);
+    internal const int MaximumCachedThumbnails = 64;
+
+    private readonly Dictionary<string, LinkedListNode<CachedThumbnail>> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly LinkedList<CachedThumbnail> _cacheUsage = [];
     private readonly Dictionary<string, List<CommandPaletteItem>> _pendingCommandPaletteItems = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _captureClaims = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _captureGate = new(1, 1);
 
     public bool TryGetCached(string url, out ImageSource thumbnail)
     {
-        return _cache.TryGetValue(url, out thumbnail!);
+        if (_cache.TryGetValue(url, out var node))
+        {
+            _cacheUsage.Remove(node);
+            _cacheUsage.AddFirst(node);
+            thumbnail = node.Value.Image;
+            return true;
+        }
+
+        thumbnail = null!;
+        return false;
     }
 
     public void StoreCached(string url, ImageSource thumbnail)
     {
-        _cache[url] = thumbnail;
+        if (_cache.Remove(url, out var previous))
+        {
+            _cacheUsage.Remove(previous);
+        }
+
+        _cache.Add(url, _cacheUsage.AddFirst(new CachedThumbnail(url, thumbnail)));
+        if (_cache.Count > MaximumCachedThumbnails && _cacheUsage.Last is { } oldest)
+        {
+            _cache.Remove(oldest.Value.Url);
+            _cacheUsage.RemoveLast();
+        }
     }
 
     public void TrackCommandPaletteItem(string url, CommandPaletteItem item)
@@ -87,6 +109,8 @@ internal sealed class UrlThumbnailCaptureCoordinator
             ? url
             : null;
     }
+
+    private sealed record CachedThumbnail(string Url, ImageSource Image);
 
     private sealed class CaptureLease(SemaphoreSlim captureGate) : IDisposable
     {

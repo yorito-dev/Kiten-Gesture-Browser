@@ -14,6 +14,8 @@ public partial class ExtensionImportWindow : Window
 
     public string? SelectedExtensionFolder { get; private set; }
 
+    public string? SelectedExtensionId { get; private set; }
+
     public bool IsAccepted { get; private set; }
 
     public ExtensionImportWindow()
@@ -88,6 +90,7 @@ public partial class ExtensionImportWindow : Window
         }
 
         SelectedExtensionFolder = candidate.ExtensionFolder;
+        SelectedExtensionId = candidate.ExtensionId;
         IsAccepted = true;
         Close();
     }

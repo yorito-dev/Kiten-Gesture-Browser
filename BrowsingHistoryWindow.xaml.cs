@@ -20,6 +20,7 @@ public partial class BrowsingHistoryWindow : Window
     private readonly List<BrowsingHistoryItemViewModel> _loadedItems = [];
     private CancellationTokenSource? _loadCancellation;
     private Func<Task<int>>? _pendingDelete;
+    private int _deleteRequestVersion;
     private int _offset;
     private bool _hasMore;
     private bool _isClosed;
@@ -82,6 +83,8 @@ public partial class BrowsingHistoryWindow : Window
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (IsLoaded)
+            CancelDeleteConfirmation();
         _searchTimer.Stop();
         _searchTimer.Start();
     }
@@ -96,6 +99,7 @@ public partial class BrowsingHistoryWindow : Window
     {
         if (IsLoaded)
         {
+            CancelDeleteConfirmation();
             await ReloadAsync();
         }
     }
@@ -332,22 +336,35 @@ public partial class BrowsingHistoryWindow : Window
     }
 
     private async void DeleteSiteButton_Click(object sender, RoutedEventArgs e)
+        => await PrepareSiteDeletionAsync(sender, allHistory: true);
+
+    private async void DeleteFilteredSiteButton_Click(object sender, RoutedEventArgs e)
+        => await PrepareSiteDeletionAsync(sender, allHistory: false);
+
+    private async Task PrepareSiteDeletionAsync(object sender, bool allHistory)
     {
         if ((sender as FrameworkElement)?.Tag is not string host)
-        {
             return;
-        }
 
+        CancelDeleteConfirmation();
+        var version = _deleteRequestVersion;
+        var (from, to) = GetSelectedPeriodRange();
+        var container = (ContainerFilterBox.SelectedItem as HistoryFilterOption)?.Value ?? string.Empty;
+        var query = allHistory ? new BrowsingHistoryQuery()
+            : new BrowsingHistoryQuery(SearchBox.Text, container, from, to);
         try
         {
-            var summary = await _historyService.GetHostSummaryAsync(host);
-            await ShowDeleteConfirmationAsync(
-                summary,
-                () => _historyService.DeleteHostAsync(host));
+            var (ids, summary) = await _historyService.PlanHostDeletionAsync(host, query);
+            if (_isClosed || version != _deleteRequestVersion)
+                return;
+
+            var scope = allHistory ? "サイト全体（全期間・全コンテナ）" : "現在の検索・期間・コンテナで絞り込んだ範囲";
+            await ShowDeleteConfirmationAsync(summary, () => _historyService.DeleteIdsAsync(ids), $"{host} − {scope}");
         }
         catch (Exception ex)
         {
-            StatusText.Text = "削除対象を確認できません: " + ex.Message;
+            if (!_isClosed && version == _deleteRequestVersion)
+                StatusText.Text = "削除対象を確認できません: " + ex.Message;
         }
     }
 
@@ -373,6 +390,34 @@ public partial class BrowsingHistoryWindow : Window
         }
     }
 
+    private async void CompactHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        CompactHistoryButton.IsEnabled = false;
+        StatusText.Text = "閲覧履歴の空き領域を整理しています。";
+        try
+        {
+            await _historyService.CompactAsync();
+            if (!_isClosed)
+            {
+                StatusText.Text = "閲覧履歴の空き領域を整理しました。";
+            }
+        }
+        catch (Exception)
+        {
+            if (!_isClosed)
+            {
+                StatusText.Text = "空き領域を整理できませんでした。しばらく待ってから再実行してください。";
+            }
+        }
+        finally
+        {
+            if (!_isClosed)
+            {
+                CompactHistoryButton.IsEnabled = true;
+            }
+        }
+    }
+
     private async void DeleteAllButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -388,8 +433,10 @@ public partial class BrowsingHistoryWindow : Window
 
     private Task ShowDeleteConfirmationAsync(
         BrowsingHistoryDeleteSummary summary,
-        Func<Task<int>> delete)
+        Func<Task<int>> delete,
+        string? scope = null)
     {
+        CancelDeleteConfirmation();
         if (summary.Count <= 0)
         {
             StatusText.Text = "削除する履歴はありません";
@@ -399,7 +446,8 @@ public partial class BrowsingHistoryWindow : Window
         _pendingDelete = delete;
         var oldest = summary.OldestVisitedAt?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? "-";
         var newest = summary.NewestVisitedAt?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? "-";
-        DeleteConfirmationText.Text = $"{summary.Count}件を削除します。対象期間: {oldest} ～ {newest}";
+        var details = $"{summary.Count}件を削除します。対象期間: {oldest} ～ {newest}";
+        DeleteConfirmationText.Text = scope is null ? details : $"{scope}\n{details}";
         DeleteConfirmationPanel.Visibility = Visibility.Visible;
         return Task.CompletedTask;
     }
@@ -432,6 +480,7 @@ public partial class BrowsingHistoryWindow : Window
 
     private void CancelDeleteConfirmation()
     {
+        _deleteRequestVersion++;
         _pendingDelete = null;
         DeleteConfirmationPanel.Visibility = Visibility.Collapsed;
     }

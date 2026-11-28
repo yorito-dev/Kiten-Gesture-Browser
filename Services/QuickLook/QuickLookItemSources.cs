@@ -29,14 +29,6 @@ public sealed class SearchQuickLookItemSource(
     Action<int> selectIndex)
     : DelegateQuickLookItemSource(sourceId, getItems, getSelectedItems, getCurrentIndex, selectIndex);
 
-public sealed class RecentQuickLookItemSource(
-    string sourceId,
-    Func<IReadOnlyList<QuickLookItem>> getItems,
-    Func<IReadOnlyList<QuickLookItem>> getSelectedItems,
-    Func<int> getCurrentIndex,
-    Action<int> selectIndex)
-    : DelegateQuickLookItemSource(sourceId, getItems, getSelectedItems, getCurrentIndex, selectIndex);
-
 public sealed class InboxQuickLookItemSource(
     string sourceId,
     Func<IReadOnlyList<QuickLookItem>> getItems,
@@ -45,7 +37,7 @@ public sealed class InboxQuickLookItemSource(
     Action<int> selectIndex)
     : DelegateQuickLookItemSource(sourceId, getItems, getSelectedItems, getCurrentIndex, selectIndex);
 
-public abstract class DelegateQuickLookItemSource(
+public class DelegateQuickLookItemSource(
     string sourceId,
     Func<IReadOnlyList<QuickLookItem>> getItems,
     Func<IReadOnlyList<QuickLookItem>> getSelectedItems,

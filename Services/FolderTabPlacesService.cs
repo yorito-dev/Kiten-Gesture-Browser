@@ -7,7 +7,7 @@ public sealed record FolderTabPlace(
     string Path,
     string DisplayName,
     bool IsPinned,
-    bool IsAvailable);
+    bool? IsAvailable);
 
 public sealed record FolderTabPlacesSnapshot(
     IReadOnlyList<FolderTabPlace> PinnedPlaces,
@@ -22,6 +22,7 @@ public static class FolderTabPlacesService
 {
     public const int MaximumPinnedPlaceCount = 50;
     public const int MaximumRecentPlaceCount = 20;
+    private static readonly SemaphoreSlim AvailabilitySlots = new(4);
 
     public static List<string> NormalizePinnedPlaces(IEnumerable<string>? paths)
     {
@@ -110,9 +111,8 @@ public static class FolderTabPlacesService
             .Select(static path => path!)
             .Where(path => !pinnedSet.Contains(path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(path => CreatePlace(path, isPinned: false))
-            .Where(static place => place.IsAvailable)
             .Take(MaximumRecentPlaceCount)
+            .Select(path => CreatePlace(path, isPinned: false))
             .ToList();
         return new FolderTabPlacesSnapshot(pinnedPlaces, recentPlaces);
     }
@@ -183,23 +183,52 @@ public static class FolderTabPlacesService
     }
 
     private static FolderTabPlace CreatePlace(string path, bool isPinned)
+        => new(path, GetDisplayName(path), isPinned, IsAvailable: null);
+
+    internal static Task<bool> CheckAvailabilityAsync(string path, CancellationToken cancellationToken)
+        => CheckPathAsync(() => Directory.Exists(path), cancellationToken);
+
+    internal static Task<bool> ShouldNavigateAddressInFolderTabAsync(string path, CancellationToken cancellationToken)
+        => CheckPathAsync(() => ShouldNavigateAddressInFolderTab(path), cancellationToken);
+
+    private static async Task<bool> CheckPathAsync(Func<bool> check, CancellationToken cancellationToken)
     {
-        return new FolderTabPlace(
-            path,
-            GetDisplayName(path),
-            isPinned,
-            IsNetworkPath(path) || Directory.Exists(path));
+        await AvailabilitySlots.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(check, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            AvailabilitySlots.Release();
+        }
+    }
+
+    private static bool ShouldNavigateAddressInFolderTab(string path)
+    {
+        if (!AddressBarInteractionCoordinator.LooksLikeFolderPath(path))
+        {
+            return Directory.Exists(path);
+        }
+
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.Directory) != 0;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private static string GetDisplayName(string path)
     {
         var name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return string.IsNullOrWhiteSpace(name) ? path : name;
-    }
-
-    private static bool IsNetworkPath(string path)
-    {
-        return path.StartsWith(@"\\", StringComparison.Ordinal);
     }
 
     private static bool TryNormalizePath(string? path, out string normalizedPath)

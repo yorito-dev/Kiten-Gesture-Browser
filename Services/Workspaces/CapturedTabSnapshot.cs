@@ -58,6 +58,12 @@ public sealed class CapturedTabSnapshot
     }
 
     public static string CreateThumbnailPngBase64(ImageSource? thumbnail)
+        => CreateThumbnailPngBase64(thumbnail, width: 320, height: 180);
+
+    internal static string CreateRecentItemThumbnailPngBase64(ImageSource? thumbnail)
+        => CreateThumbnailPngBase64(thumbnail, width: 240, height: 135);
+
+    private static string CreateThumbnailPngBase64(ImageSource? thumbnail, int width, int height)
     {
         if (thumbnail is null)
         {
@@ -66,8 +72,6 @@ public sealed class CapturedTabSnapshot
 
         try
         {
-            const int width = 320;
-            const int height = 180;
             var visual = new DrawingVisual();
             using (var context = visual.RenderOpen())
             {

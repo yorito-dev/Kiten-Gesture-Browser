@@ -15,17 +15,20 @@ public partial class ExtensionManagerWindow : Window
 {
     private readonly CoreWebView2Profile _profile;
     private readonly Action<string> _openExtensionPage;
-    private readonly IReadOnlyList<ExtensionManifestInfo> _knownManifests;
+    private readonly string? _webViewDataFolder;
+    private IReadOnlyList<ExtensionManifestInfo>? _knownManifests;
+    private int _refreshVersion;
+    private bool _closed;
 
     public ObservableCollection<BrowserExtensionItem> Extensions { get; } = [];
 
-    public ExtensionManagerWindow(CoreWebView2Profile profile, Action<string> openExtensionPage)
+    public ExtensionManagerWindow(CoreWebView2Profile profile, Action<string> openExtensionPage, string? webViewDataFolder = null)
     {
         InitializeComponent();
 
         _profile = profile;
         _openExtensionPage = openExtensionPage;
-        _knownManifests = ExtensionManifestInfo.LoadKnownManifests();
+        _webViewDataFolder = webViewDataFolder;
         DataContext = this;
     }
 
@@ -36,7 +39,13 @@ public partial class ExtensionManagerWindow : Window
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
-        await RefreshExtensionsAsync();
+        await RefreshExtensionsAsync(loadManifests: true);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _closed = true;
+        base.OnClosed(e);
     }
 
     private void ExtensionGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -44,12 +53,21 @@ public partial class ExtensionManagerWindow : Window
         UpdateSelectedExtensionView();
     }
 
-    private void OpenSettingsButton_Click(object sender, RoutedEventArgs e)
+    private async void OpenSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         var item = GetSelectedItem();
         if (item is null)
         {
             return;
+        }
+
+        if (_knownManifests is null)
+        {
+            var selectedId = item.Id;
+            await RefreshExtensionsAsync(loadManifests: true);
+            if (_closed || ExtensionGrid.SelectedItem is not BrowserExtensionItem refreshed || refreshed.Id != selectedId)
+                return;
+            item = refreshed;
         }
 
         var settingsUrl = item.GetSettingsUrl();
@@ -122,17 +140,31 @@ public partial class ExtensionManagerWindow : Window
         Close();
     }
 
-    private async Task RefreshExtensionsAsync()
+    private async Task RefreshExtensionsAsync(bool loadManifests = false)
     {
+        var version = ++_refreshVersion;
+        var selectedId = (ExtensionGrid.SelectedItem as BrowserExtensionItem)?.Id;
         try
         {
-            Extensions.Clear();
+            var manifests = loadManifests
+                ? await Task.Run(() => ExtensionManifestInfo.LoadKnownManifests(_webViewDataFolder))
+                : _knownManifests;
+            if (_closed || version != _refreshVersion)
+                return;
 
             var extensions = await _profile.GetBrowserExtensionsAsync();
+            if (_closed || version != _refreshVersion)
+                return;
+
+            _knownManifests = manifests;
+            Extensions.Clear();
             foreach (var extension in extensions.OrderBy(static x => x.Name, StringComparer.CurrentCultureIgnoreCase))
             {
-                Extensions.Add(new BrowserExtensionItem(extension, FindManifestInfo(extension)));
+                var manifest = ExtensionManifestInfo.FindByInstalledId(manifests ?? [], extension.Id);
+                Extensions.Add(new BrowserExtensionItem(extension, manifest));
             }
+            if (selectedId is not null)
+                ExtensionGrid.SelectedItem = Extensions.FirstOrDefault(item => item.Id == selectedId);
 
             SetStatus(Extensions.Count == 0
                 ? "読み込み済み拡張機能はありません"
@@ -147,7 +179,8 @@ public partial class ExtensionManagerWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus("拡張機能一覧を取得できません: " + ex.Message);
+            if (!_closed && version == _refreshVersion)
+                SetStatus("拡張機能一覧を取得できません: " + ex.Message);
         }
     }
 
@@ -185,11 +218,6 @@ public partial class ExtensionManagerWindow : Window
         OpenSettingsButton.IsEnabled = false;
         ToggleExtensionButton.IsEnabled = false;
         RemoveExtensionButton.IsEnabled = false;
-    }
-
-    private ExtensionManifestInfo? FindManifestInfo(CoreWebView2BrowserExtension extension)
-    {
-        return ExtensionManifestInfo.FindByName(_knownManifests, extension.Name);
     }
 
     private void SetStatus(string message)
@@ -308,8 +336,10 @@ public sealed class ExtensionManifestInfo
         string? optionsPage,
         string? defaultPopupPage,
         string? iconPath,
-        string sourceDirectory)
+        string sourceDirectory,
+        string extensionId)
     {
+        ExtensionId = extensionId;
         Name = name;
         Description = description;
         Version = version;
@@ -333,6 +363,16 @@ public sealed class ExtensionManifestInfo
 
     public string SourceDirectory { get; }
 
+    public string ExtensionId { get; }
+
+    internal static ExtensionManifestInfo? FindByInstalledId(IEnumerable<ExtensionManifestInfo> manifests, string id)
+    {
+        var matches = manifests.Where(candidate => candidate.ExtensionId == id)
+            .DistinctBy(static candidate => candidate.SourceDirectory, StringComparer.OrdinalIgnoreCase)
+            .Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
     public static ExtensionManifestInfo? FindByName(
         IEnumerable<ExtensionManifestInfo> manifests,
         string extensionName)
@@ -351,9 +391,9 @@ public sealed class ExtensionManifestInfo
         return $"chrome-extension://{id}/{page.TrimStart('/')}";
     }
 
-    public static IReadOnlyList<ExtensionManifestInfo> LoadKnownManifests()
+    public static IReadOnlyList<ExtensionManifestInfo> LoadKnownManifests(string? webViewDataFolder = null)
     {
-        var roots = GetCandidateExtensionRoots();
+        var roots = GetCandidateExtensionRoots(webViewDataFolder);
         var manifests = new List<ExtensionManifestInfo>();
 
         foreach (var root in roots)
@@ -363,8 +403,18 @@ public sealed class ExtensionManifestInfo
                 continue;
             }
 
-            foreach (var manifestPath in Directory.EnumerateFiles(root, "manifest.json", SearchOption.AllDirectories))
+            var options = new EnumerationOptions
             {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            foreach (var manifestPath in Directory.EnumerateFiles(root, "manifest.json", options))
+            {
+                if (Path.GetRelativePath(root, manifestPath).Split(Path.DirectorySeparatorChar)
+                    .Any(static segment => segment.StartsWith('.') && segment.EndsWith(".partial", StringComparison.Ordinal)))
+                    continue;
+
                 var manifest = TryLoadManifest(manifestPath);
                 if (manifest is not null)
                 {
@@ -417,7 +467,8 @@ public sealed class ExtensionManifestInfo
                 optionsPage,
                 defaultPopupPage,
                 iconPath,
-                extensionRoot);
+                extensionRoot,
+                ExtensionImportService.GetManifestId(root) ?? ExtensionImportService.GetPathId(extensionRoot));
         }
         catch
         {
@@ -425,9 +476,14 @@ public sealed class ExtensionManifestInfo
         }
     }
 
-    private static IEnumerable<string> GetCandidateExtensionRoots()
+    private static IEnumerable<string> GetCandidateExtensionRoots(string? webViewDataFolder)
     {
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(webViewDataFolder))
+        {
+            AddRoot(roots, Path.Combine(webViewDataFolder, ExtensionImportService.VersionsFolderName));
+            AddRoot(roots, Path.Combine(webViewDataFolder, "EBWebView", "Default", "Extensions"));
+        }
         AddRoot(roots, Path.Combine(Environment.CurrentDirectory, "extensions"));
         AddRoot(roots, Path.Combine(AppContext.BaseDirectory, "extensions"));
         AddRoot(roots, Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "extensions")));
@@ -603,19 +659,25 @@ public sealed class ExtensionManifestInfo
             return null;
         }
 
-        var normalizedRoot = Path.GetFullPath(extensionRoot);
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(extensionRoot));
         var relativePath = resourcePath.TrimStart('/', '\\')
             .Replace('/', Path.DirectorySeparatorChar)
             .Replace('\\', Path.DirectorySeparatorChar);
         var fullPath = Path.GetFullPath(Path.Combine(normalizedRoot, relativePath));
 
-        if (!fullPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase)
-            || !File.Exists(fullPath)
-            || !IsSupportedIconFile(fullPath))
-        {
+        var relative = Path.GetRelativePath(normalizedRoot, fullPath);
+        if (Path.IsPathRooted(relative) || relative == ".."
+            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || !File.Exists(fullPath) || !IsSupportedIconFile(fullPath))
             return null;
-        }
 
+        var current = fullPath;
+        while (!string.Equals(current, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                return null;
+            current = Path.GetDirectoryName(current)!;
+        }
         return fullPath;
     }
 

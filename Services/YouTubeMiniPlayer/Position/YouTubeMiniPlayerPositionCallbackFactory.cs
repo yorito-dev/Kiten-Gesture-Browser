@@ -9,7 +9,6 @@ namespace TabBrowser.Services;
 internal sealed record YouTubeMiniPlayerPositionCallbacks(
     Action<YouTubeMiniPlayerState, FrameworkElement, bool> ClampToHost,
     Action<YouTubeMiniPlayerState, UIElement> SetPosition,
-    Action<YouTubeMiniPlayerState> ForceNativePosition,
     Action<YouTubeMiniPlayerRuntime> ForceRuntimeNativePosition,
     Action<YouTubeMiniPlayerRuntime> SyncPopupOffsets,
     Action<YouTubeMiniPlayerRuntime> QueueNativePositionRefresh,
@@ -46,7 +45,6 @@ internal static class YouTubeMiniPlayerPositionCallbackFactory
                 runtime,
                 runtimes,
                 dispatcher,
-                ForceRuntimeNativePosition,
                 overlayPlacementCallbacks.RefreshOverlayPopupPosition);
         }
 
@@ -83,14 +81,6 @@ internal static class YouTubeMiniPlayerPositionCallbackFactory
                 runtime is null ? null : YouTubeMiniPlayerLayoutService.GetMinimumSize(runtime));
         }
 
-        void ForceNativePosition(YouTubeMiniPlayerState state)
-        {
-            YouTubeMiniPlayerPopupCoordinatorService.ForceNativePosition(
-                state,
-                runtimes,
-                GetPopupScreenPosition);
-        }
-
         void SyncPopupOffsets(YouTubeMiniPlayerRuntime runtime)
         {
             YouTubeMiniPlayerPopupCoordinatorService.SyncOffsets(
@@ -103,7 +93,6 @@ internal static class YouTubeMiniPlayerPositionCallbackFactory
         return new YouTubeMiniPlayerPositionCallbacks(
             ClampToHost,
             SetPosition,
-            ForceNativePosition,
             ForceRuntimeNativePosition,
             SyncPopupOffsets,
             QueueNativePositionRefresh,

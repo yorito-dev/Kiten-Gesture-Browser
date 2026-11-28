@@ -308,7 +308,7 @@ public static class YouTubeMiniPlayerArrangementService
         double spacing)
     {
         var results = new List<YouTubeMiniPlayerArrangementResult>(items.Count);
-        var (columns, rows) = GetBestGridDimensions(area, items, spacing);
+        var (columns, rows) = GetMixedAspectGridDimensions(area, items, spacing, includeChat: true);
         var cellWidth = Math.Max(1, (area.Width - (spacing * (columns - 1))) / columns);
         var cellHeight = Math.Max(1, (area.Height - (spacing * (rows - 1))) / rows);
         for (var index = 0; index < items.Count; index++)
@@ -319,11 +319,8 @@ public static class YouTubeMiniPlayerArrangementService
                 area.Top + ((index / columns) * (cellHeight + spacing)),
                 cellWidth,
                 cellHeight);
-            if (!item.HasChat
-                || cell.Width < (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth)
-                    + spacing
-                    + YouTubeLiveChatWindowState.MinimumWidth
-                || cell.Height < YouTubeLiveChatWindowState.MinimumHeight)
+            var chatWidth = GetChatWidth(item, cell.Size, spacing);
+            if (chatWidth == 0)
             {
                 var fullSize = FitSize(item, cell.Width, cell.Height, area.Width, area.Height);
                 results.Add(new YouTubeMiniPlayerArrangementResult(
@@ -332,10 +329,6 @@ public static class YouTubeMiniPlayerArrangementService
                 continue;
             }
 
-            var chatWidth = Math.Clamp(
-                cell.Width * 0.36,
-                YouTubeLiveChatWindowState.MinimumWidth,
-                cell.Width - spacing - (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth));
             var playerArea = new Rect(
                 cell.Left,
                 cell.Top,
@@ -359,6 +352,15 @@ public static class YouTubeMiniPlayerArrangementService
         }
 
         return results;
+    }
+
+    private static double GetChatWidth(YouTubeMiniPlayerArrangementItem item, Size cell, double spacing)
+    {
+        var maximum = cell.Width - spacing - (item.MinimumSize?.Width ?? YouTubeMiniPlayerLayoutService.MinimumWidth);
+        return !item.HasChat || maximum < YouTubeLiveChatWindowState.MinimumWidth
+            || cell.Height < YouTubeLiveChatWindowState.MinimumHeight
+            ? 0
+            : Math.Clamp(cell.Width * 0.36, YouTubeLiveChatWindowState.MinimumWidth, maximum);
     }
 
     private static IReadOnlyList<YouTubeMiniPlayerArrangementResult> CreateGroupLayout(
@@ -467,7 +469,7 @@ public static class YouTubeMiniPlayerArrangementService
         double spacing)
     {
         if (spacing == 0) return CreatePackedGrid(area, items);
-        var (bestColumns, bestRows) = GetBestGridDimensions(area, items, spacing);
+        var (bestColumns, bestRows) = GetMixedAspectGridDimensions(area, items, spacing, includeChat: false);
         return CreateCellsLayout(area, items, bestColumns, bestRows, spacing);
     }
 
@@ -586,6 +588,62 @@ public static class YouTubeMiniPlayerArrangementService
     {
         public double GetHeight(double expansion) => MinHeight + (MaxHeight - MinHeight) * expansion;
         public double GetWidth(double expansion, double inset) => RatioSum * (GetHeight(expansion) - inset) + Count * inset;
+    }
+
+    private static (int Columns, int Rows) GetMixedAspectGridDimensions(
+        Rect area, IReadOnlyList<YouTubeMiniPlayerArrangementItem> items, double spacing, bool includeChat)
+    {
+        const double tolerance = 0.000001;
+        var firstRatio = GetAspectRatio(items[0]);
+        if (items.All(item => Math.Abs(GetAspectRatio(item) - firstRatio) <= tolerance))
+        {
+            return GetBestGridDimensions(area, items, spacing);
+        }
+
+        var bestColumns = 0;
+        var bestSmallestVideoArea = 0d;
+        var bestTotalVideoArea = 0d;
+        for (var columns = 1; columns <= items.Count; columns++)
+        {
+            var rows = (int)Math.Ceiling(items.Count / (double)columns);
+            var cell = new Size(
+                Math.Max(1, (area.Width - spacing * (columns - 1)) / columns),
+                Math.Max(1, (area.Height - spacing * (rows - 1)) / rows));
+            var smallestVideoArea = double.PositiveInfinity;
+            var totalVideoArea = 0d;
+            foreach (var item in items)
+            {
+                var chatWidth = includeChat ? GetChatWidth(item, cell, spacing) : 0;
+                var playerWidth = chatWidth > 0 ? cell.Width - chatWidth - spacing : cell.Width;
+                var fittedSize = FitSize(item, playerWidth, cell.Height, area.Width, area.Height);
+                if ((includeChat && item.HasChat && chatWidth == 0)
+                    || fittedSize.Width > playerWidth + tolerance || fittedSize.Height > cell.Height + tolerance)
+                {
+                    // 動画や必要なチャットが収まる候補だけを比較する。
+                    totalVideoArea = 0;
+                    break;
+                }
+
+                var videoArea = YouTubeMiniPlayerLayoutService.GetVideoWidth(fittedSize.Width)
+                    * YouTubeMiniPlayerLayoutService.GetVideoHeight(fittedSize.Height);
+                smallestVideoArea = Math.Min(smallestVideoArea, videoArea);
+                totalVideoArea += videoArea;
+            }
+
+            if (totalVideoArea > 0
+                && (smallestVideoArea > bestSmallestVideoArea + tolerance
+                    || (Math.Abs(smallestVideoArea - bestSmallestVideoArea) <= tolerance
+                        && totalVideoArea > bestTotalVideoArea + tolerance)))
+            {
+                bestColumns = columns;
+                bestSmallestVideoArea = smallestVideoArea;
+                bestTotalVideoArea = totalVideoArea;
+            }
+        }
+
+        return bestColumns > 0
+            ? (bestColumns, (int)Math.Ceiling(items.Count / (double)bestColumns))
+            : GetBestGridDimensions(area, items, spacing);
     }
 
     private static (int Columns, int Rows) GetBestGridDimensions(

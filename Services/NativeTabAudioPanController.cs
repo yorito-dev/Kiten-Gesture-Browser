@@ -32,21 +32,31 @@ internal sealed class NativeTabAudioPanController
 
     public async Task ApplyAsync(
         INativeTabAudioPanProcessSource source,
+        Func<bool> isSharedSessionPanAllowed,
         Func<string?> getCurrentHost,
         TabAudioPan audioPan,
         Action<string, IReadOnlyCollection<int>, TabAudioSessionPanApplyResult> appendDiagnostic)
     {
         try
         {
+            if (!isSharedSessionPanAllowed())
+            {
+                return;
+            }
+
             var isRadiko = IsRadiko(getCurrentHost());
             var processIds = await GetProcessIdsAsync(source, getCurrentHost);
+            if (!isSharedSessionPanAllowed())
+            {
+                return;
+            }
             var result = await _applyAsync(processIds, audioPan, false);
             if (isRadiko)
             {
                 appendDiagnostic("primary", processIds, result);
             }
 
-            if (result.AppliedSessionCount == 0 && isRadiko)
+            if (result.AppliedSessionCount == 0 && isRadiko && isSharedSessionPanAllowed())
             {
                 var fallbackProcessIds = processIds.ToHashSet();
                 AddEnvironmentProcessIds(source, fallbackProcessIds);
@@ -57,6 +67,10 @@ internal sealed class NativeTabAudioPanController
                     appendDiagnostic("fallback", fallbackProcessIds, fallbackResult);
                 }
 
+                if (!isSharedSessionPanAllowed())
+                {
+                    return;
+                }
                 var pidZeroResult = await _applyAsync([0], audioPan, true);
                 appendDiagnostic("pid0", [0], pidZeroResult);
             }

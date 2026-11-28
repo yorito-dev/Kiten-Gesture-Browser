@@ -100,7 +100,8 @@ public sealed class RecentItemsService : IAsyncDisposable
 
     public void Record(RecentItem item)
     {
-        if (!TryNormalize(item, out var normalized))
+        if ((IsStandaloneWebItemKey(item.Key) && BrowserUrlRulesService.IsSelectedTextTranslationUrl(item.Target))
+            || !TryNormalize(item, out var normalized))
         {
             return;
         }
@@ -205,7 +206,8 @@ public sealed class RecentItemsService : IAsyncDisposable
 
     public bool UpdateThumbnail(RecentItem expectedItem, string thumbnailPngBase64)
     {
-        if (string.IsNullOrWhiteSpace(thumbnailPngBase64)
+        if ((IsStandaloneWebItemKey(expectedItem.Key) && BrowserUrlRulesService.IsSelectedTextTranslationUrl(expectedItem.Target))
+            || string.IsNullOrWhiteSpace(thumbnailPngBase64)
             || thumbnailPngBase64.Length > MaximumThumbnailTextLength)
         {
             return false;
@@ -244,6 +246,11 @@ public sealed class RecentItemsService : IAsyncDisposable
         string faviconPngBase64,
         string pageDescription)
     {
+        if (IsStandaloneWebItemKey(expectedItem.Key) && BrowserUrlRulesService.IsSelectedTextTranslationUrl(expectedItem.Target))
+        {
+            return false;
+        }
+
         var validThumbnail = !string.IsNullOrWhiteSpace(thumbnailPngBase64)
             && thumbnailPngBase64.Length <= MaximumThumbnailTextLength;
         var validFavicon = !string.IsNullOrWhiteSpace(faviconPngBase64)
