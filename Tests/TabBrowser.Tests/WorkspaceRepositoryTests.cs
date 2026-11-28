@@ -17,6 +17,67 @@ namespace TabBrowser.Tests;
 public sealed class WorkspaceRepositoryTests
 {
     [Fact]
+    public void DefaultRepositoryIsSharedWithoutSharingExplicitDatabaseInstances()
+    {
+        using var database = new TempDatabase();
+        Assert.Same(SQLiteWorkspaceRepository.DefaultInstance, SQLiteWorkspaceRepository.DefaultInstance);
+        Assert.NotSame(SQLiteWorkspaceRepository.DefaultInstance, new SQLiteWorkspaceRepository(database.DatabasePath));
+    }
+
+    [Fact]
+    public async Task CommandPaletteReadKeepsSearchAndOpenDataWithoutCardImages()
+    {
+        using var database = new TempDatabase();
+        var repository = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var workspace = await repository.CreateWorkspaceAsync(new Workspace { Name = "候補", Index = 1 });
+        var bookmark = await repository.AddBookmarkAsync(new BookmarkItem
+        {
+            WorkspaceId = workspace.Id,
+            Title = "ブックマーク",
+            Url = "https://example.test/",
+            Note = "検索語",
+            Tags = ["タグ"],
+            FaviconPngBase64 = "ZmF2aWNvbg==",
+            ThumbnailPngBase64 = "dGh1bWJuYWls"
+        });
+        await repository.AddSessionGroupAsync(new SessionGroupItem
+        {
+            WorkspaceId = workspace.Id,
+            Title = "セッション",
+            Tabs = [new SessionTab { Url = "https://example.test/tab", Title = "タブ" }]
+        });
+        var deleted = await repository.AddBookmarkAsync(new BookmarkItem
+        {
+            WorkspaceId = workspace.Id,
+            Url = "https://example.test/deleted"
+        });
+        await repository.DeleteItemAsync(deleted.Id);
+        var anotherWorkspace = await repository.CreateWorkspaceAsync(new Workspace { Name = "別の候補", Index = 2 });
+        var anotherItem = await repository.AddNoteAsync(new NoteItem
+        {
+            WorkspaceId = anotherWorkspace.Id,
+            Title = "メモ",
+            Note = "別の検索語"
+        });
+
+        var full = await repository.GetWorkspaceItemsAsync(workspace.Id);
+        var palette = await repository.GetCommandPaletteItemsAsync(CancellationToken.None);
+        Assert.Equal(full.Select(item => item.Id), palette.Where(item => item.WorkspaceId == workspace.Id).Select(item => item.Id));
+        Assert.Equal(anotherItem.Id, Assert.Single(palette, item => item.WorkspaceId == anotherWorkspace.Id).Id);
+        Assert.DoesNotContain(palette, item => item.Id == deleted.Id);
+        var result = Assert.IsType<BookmarkItem>(Assert.Single(palette, item => item.Id == bookmark.Id));
+        Assert.Equal((bookmark.Title, bookmark.Url, bookmark.Note), (result.Title, result.Url, result.Note));
+        Assert.Equal(bookmark.Tags, result.Tags);
+        Assert.Empty(result.FaviconPngBase64);
+        Assert.Empty(result.ThumbnailPngBase64);
+        var stored = Assert.Single(full, item => item.Id == bookmark.Id);
+        Assert.Equal(bookmark.FaviconPngBase64, stored.FaviconPngBase64);
+        Assert.Equal(bookmark.ThumbnailPngBase64, stored.ThumbnailPngBase64);
+        var session = Assert.Single(palette.OfType<SessionGroupItem>());
+        Assert.Equal("https://example.test/tab", Assert.Single(session.Tabs).Url);
+    }
+
+    [Fact]
     public async Task FolderRoundTripsAndReloadsKeepOnlyCachedCanvasLayers()
     {
         using var database = new TempDatabase();
@@ -1438,6 +1499,39 @@ public sealed class WorkspaceRepositoryTests
         }
 
         Assert.Equal(0, resetCount);
+    }
+
+    [Fact]
+    public async Task WorkspaceKeepsThreeMostRecentlyActivatedCollections()
+    {
+        using var database = new TempDatabase();
+        var repository = new SQLiteWorkspaceRepository(database.DatabasePath);
+        var slots = new List<Workspace>();
+        for (var index = 1; index <= 4; index++)
+        {
+            var slot = await repository.CreateWorkspaceAsync(new Workspace { Name = $"Workspace {index}", Index = index });
+            slots.Add(slot);
+            await repository.AddNoteAsync(new NoteItem { WorkspaceId = slot.Id, Title = $"Note {index}" });
+        }
+
+        var service = new WorkspaceService(repository);
+        await using var view = CreateWorkspaceViewModel(service, slots[0].Id);
+        await view.InitializeAsync();
+        var first = view.Items;
+        await view.LoadWorkspaceAsync(slots[1].Id);
+        var second = view.Items;
+        await view.LoadWorkspaceAsync(slots[2].Id);
+        var third = view.Items;
+        await view.LoadWorkspaceAsync(slots[0].Id);
+        Assert.Same(first, view.Items);
+        await view.LoadWorkspaceAsync(slots[3].Id);
+
+        Assert.False(view.OwnsVisibleItems(second));
+        Assert.True(view.OwnsVisibleItems(first));
+        Assert.True(view.OwnsVisibleItems(third));
+        await view.LoadWorkspaceAsync(slots[1].Id);
+        Assert.NotSame(second, view.Items);
+        Assert.Equal("Note 2", Assert.Single(view.Items).Title);
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using TabBrowser.Models;
 
@@ -10,6 +11,12 @@ public static class YouTubeControlScriptService
     public const double MinimumSpeed = 0.25;
     public const double MaximumSpeed = 2.0;
     private const double SpeedComparisonTolerance = 0.01;
+    private const string QualityVideoIdentity = """
+        player => {
+            const videoData = typeof player?.getVideoData === "function" ? player.getVideoData() : null;
+            return String(videoData?.video_id || videoData?.videoId || location.href || "");
+        }
+        """;
     internal const string AdvertisementBlockedMessage = "広告の再生中は操作できません";
     internal const string AdvertisementPlayingExpression = """
         (() => {
@@ -150,7 +157,7 @@ public static class YouTubeControlScriptService
 
     public static string BuildBestQualityReadyBridgeScript()
     {
-        return """
+        return $$"""
             (() => {
                 const bridgeKey = "__tabBrowserYouTubeBestQualityReadyBridge";
                 const bridgeVersion = 1;
@@ -168,12 +175,7 @@ public static class YouTubeControlScriptService
                 };
                 const getPlayer = () => document.getElementById("movie_player")
                     || document.querySelector(".html5-video-player");
-                const getVideoIdentity = player => {
-                    const videoData = typeof player?.getVideoData === "function"
-                        ? player.getVideoData()
-                        : null;
-                    return String(videoData?.video_id || videoData?.videoId || location.href || "");
-                };
+                const getVideoIdentity = {{QualityVideoIdentity}};
                 state.tryApply = () => {
                     const video = document.querySelector("video");
                     const player = getPlayer();
@@ -273,7 +275,7 @@ public static class YouTubeControlScriptService
         return $$"""
             (() => {
                 const bridgeKey = "__tabBrowserYouTubeMiniPlayerSizeBasedQuality";
-                const bridgeVersion = 1;
+                const bridgeVersion = 2;
                 const enabled = {{serializedEnabled}};
                 const requestedQualityCap = {{serializedQualityCap}};
                 const existing = window[bridgeKey];
@@ -300,20 +302,15 @@ public static class YouTubeControlScriptService
                     appliedKey: "",
                     appliedQuality: "",
                     appliedByBridge: false,
-                    manualVideoIdentity: "",
-                    lastVideoIdentity: "",
+                    manualVideoIdentity: existing?.manualVideoIdentity || "",
+                    lastVideoIdentity: existing?.lastVideoIdentity || "",
                     tryApply: null,
                     releaseRange: null,
                     dispose: null
                 };
                 const getPlayer = () => document.getElementById("movie_player")
                     || document.querySelector(".html5-video-player");
-                const getVideoIdentity = player => {
-                    const videoData = typeof player?.getVideoData === "function"
-                        ? player.getVideoData()
-                        : null;
-                    return String(videoData?.video_id || videoData?.videoId || location.href || "");
-                };
+                const getVideoIdentity = {{QualityVideoIdentity}};
                 const selectQuality = available => {
                     const capIndex = state.qualityCap === "highres"
                         ? 0
@@ -389,9 +386,19 @@ public static class YouTubeControlScriptService
                     if (!menuItem?.closest?.(".ytp-settings-menu")) {
                         return;
                     }
-                    const itemText = String(menuItem.textContent || "").replace(/\s+/g, " ").trim();
-                    if (!/(?:\d{3,4}p|自動|Auto|高画質|データセーバー|Higher picture quality|Data saver)/i.test(itemText)) {
-                        return;
+                    const menu = menuItem.closest?.(".ytp-panel-menu");
+                    const choices = Array.from(menu?.querySelectorAll?.('.ytp-menuitem[role="menuitemradio"][aria-checked]') || []);
+                    if (choices.length >= 2 && choices.includes(menuItem)) {
+                        const hasResolutionChoice = choices.some(choice =>
+                            /\b\d{3,4}p(?:\d+)?\b/i.test(String(choice.textContent || "")));
+                        if (!hasResolutionChoice || menuItem.getAttribute("aria-checked") !== "false") {
+                            return;
+                        }
+                    } else {
+                        const itemText = String(menuItem.textContent || "").replace(/\s+/g, " ").trim();
+                        if (!/(?:\d{3,4}p|自動|Auto|高画質|データセーバー|Higher picture quality|Data saver)/i.test(itemText)) {
+                            return;
+                        }
                     }
                     const player = getPlayer();
                     const videoIdentity = getVideoIdentity(player);
@@ -780,60 +787,17 @@ public static class YouTubeControlScriptService
             """;
     }
 
-    public static string BuildPlaybackHealthProbeScript()
+    private static readonly Lazy<string> PlaybackHealthProbeScript = new(() =>
     {
-        return """
-            (() => {
-                const video = document.querySelector("video");
-                if (!video) {
-                    return {
-                        ok: false,
-                        hasVideo: false,
-                        hasVisibleVideo: false,
-                        videoNaturalWidth: 0,
-                        videoNaturalHeight: 0
-                    };
-                }
+        const string resourceName = "TabBrowser.Scripts.YouTubePlaybackHealthProbe.js";
+        using var stream = typeof(YouTubeControlScriptService).Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException("再生診断スクリプトが埋め込まれていません。");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd().TrimEnd('\r', '\n');
+    });
 
-                const rect = video.getBoundingClientRect?.();
-                const position = Number(video.currentTime);
-                const duration = Number(video.duration);
-                let bufferedAhead = 0;
-                try {
-                    if (Number.isFinite(position)) {
-                        for (let index = 0; index < video.buffered.length; index++) {
-                            const start = video.buffered.start(index);
-                            const end = video.buffered.end(index);
-                            if (position >= start && position <= end) {
-                                bufferedAhead = Math.max(0, end - position);
-                                break;
-                            }
-                        }
-                    }
-                } catch {
-                }
-
-                return {
-                    ok: true,
-                    hasVideo: true,
-                    hasVisibleVideo: Boolean(rect && rect.width > 0 && rect.height > 0),
-                    videoNaturalWidth: Number(video.videoWidth) || 0,
-                    videoNaturalHeight: Number(video.videoHeight) || 0,
-                    position: Number.isFinite(position) ? position : null,
-                    duration: Number.isFinite(duration) ? duration : null,
-                    readyState: Number.isInteger(video.readyState) ? video.readyState : null,
-                    networkState: Number.isInteger(video.networkState) ? video.networkState : null,
-                    paused: Boolean(video.paused),
-                    ended: Boolean(video.ended),
-                    bufferedAhead,
-                    speed: Number(video.playbackRate) || 1,
-                    volume: Number(video.volume) || 0,
-                    muted: Boolean(video.muted),
-                    mediaError: Number.isInteger(video.error?.code) ? video.error.code : null
-                };
-            })();
-            """;
-    }
+    public static string BuildPlaybackHealthProbeScript()
+        => PlaybackHealthProbeScript.Value;
 
     public static string BuildMiniPlayerPageZoomScript(double zoomFactor)
     {
@@ -856,6 +820,7 @@ public static class YouTubeControlScriptService
                     return { ok: false, requested: false };
                 }
 
+                bridge.capturePausedLayout?.("host-verification");
                 bridge.beginVerification(true);
                 return { ok: true, requested: true };
             })();
@@ -1008,6 +973,11 @@ public static class YouTubeControlScriptService
                         cursor: var(--tabbrowser-mini-player-resize-cursor) !important;
                     }
 
+                    /* 一時停止フレームが左上に縮む現象を防ぐため、停止中だけ描画フィルターを使う。 */
+                    video[data-tabbrowser-mini-player-paused-frame] {
+                        filter: opacity(0.999) !important;
+                    }
+
                     html[data-tabbrowser-mini-player-fullscreen="true"] .ytp-chrome-top,
                     html[data-tabbrowser-mini-player-fullscreen="true"] .ytp-gradient-top,
                     html[data-tabbrowser-mini-player-fullscreen="true"] .ytp-title,
@@ -1048,6 +1018,11 @@ public static class YouTubeControlScriptService
                         || element.style.getPropertyPriority(name) !== "important") {
                         element.style.setProperty(name, value, "important");
                     }
+                };
+                const setLayoutHeight = (element, height) => {
+                    setImportant(element, "height", height);
+                    setImportant(element, "min-height", "0px");
+                    setImportant(element, "max-height", "none");
                 };
                 const fullScreenMessageToken = __TAB_BROWSER_YOUTUBE_MINI_PLAYER_MESSAGE_TOKEN__;
                 const contentTransformKey = "__tabBrowserYouTubeMiniPlayerContentTransform";
@@ -1559,7 +1534,7 @@ public static class YouTubeControlScriptService
                         setImportant(playerHost, "position", "fixed");
                         setImportant(playerHost, "inset", "0");
                         setImportant(playerHost, "width", "100vw");
-                        setImportant(playerHost, "height", "100vh");
+                        setLayoutHeight(playerHost, "100vh");
                         setImportant(playerHost, "margin", "0");
                         setImportant(playerHost, "padding", "0");
                         setImportant(playerHost, "transform", "none");
@@ -1570,7 +1545,7 @@ public static class YouTubeControlScriptService
                         setImportant(player, "position", "absolute");
                         setImportant(player, "inset", "0");
                         setImportant(player, "width", "100%");
-                        setImportant(player, "height", "100%");
+                        setLayoutHeight(player, "100%");
                         setImportant(player, "margin", "0");
                         setImportant(player, "padding", "0");
                         setImportant(player, "transform", "none");
@@ -1582,7 +1557,7 @@ public static class YouTubeControlScriptService
                         setImportant(videoContainer, "position", "absolute");
                         setImportant(videoContainer, "inset", "0");
                         setImportant(videoContainer, "width", "100%");
-                        setImportant(videoContainer, "height", "100%");
+                        setLayoutHeight(videoContainer, "100%");
                         setImportant(videoContainer, "overflow", "hidden");
                         setImportant(videoContainer, "transform", "none");
                     }
@@ -1593,7 +1568,7 @@ public static class YouTubeControlScriptService
                     setImportant(video, "left", "0");
                     setImportant(video, "top", "0");
                     setImportant(video, "width", "100%");
-                    setImportant(video, "height", "100%");
+                    setLayoutHeight(video, "100%");
                     setImportant(video, "object-fit", "contain");
                     setImportant(video, "opacity", "1");
                     setImportant(video, "visibility", "visible");
@@ -1632,7 +1607,7 @@ public static class YouTubeControlScriptService
                 };
 
                 const layoutBridgeKey = "__tabBrowserYouTubeMiniPlayerLayoutBridge";
-                const layoutBridgeVersion = 21;
+                const layoutBridgeVersion = 26;
                 const existingLayoutBridge = window[layoutBridgeKey];
                 if (existingLayoutBridge?.version === layoutBridgeVersion) {
                     existingLayoutBridge.beginVerification?.(true);
@@ -1670,12 +1645,109 @@ public static class YouTubeControlScriptService
                         appliedHeight: 0,
                         appliedNaturalWidth: 0,
                         appliedNaturalHeight: 0,
+                        selectVideo: getVideo,
                         scheduleApply: null,
                         beginVerification: null,
                         setInteractiveResize: null,
                         attachObservers: null,
                         attachResizeObserver: null,
                         dispose: null
+                    };
+
+                    const postLayoutDiagnostic = window.chrome?.webview?.postMessage?.bind(window.chrome.webview);
+                    const pausedFrameAttribute = "data-tabbrowser-mini-player-paused-frame";
+                    let pausedFrameVideo = null;
+                    const updatePausedFrame = video => {
+                        const next = video?.paused && !video.ended ? video : null;
+                        if (pausedFrameVideo !== next) {
+                            pausedFrameVideo?.removeAttribute(pausedFrameAttribute);
+                            pausedFrameVideo = next;
+                            pausedFrameVideo?.setAttribute(pausedFrameAttribute, "");
+                        }
+                    };
+                    const handlePlaybackState = event => {
+                        const player = getPlayer();
+                        if (event.target instanceof HTMLVideoElement
+                            && (event.target === pausedFrameVideo || player?.contains(event.target))) {
+                            updatePausedFrame(player ? getVideo() : null);
+                        }
+                    };
+                    const pausedLayoutProbes = new Map();
+                    const lastPausedLayoutProbeAt = new Map();
+                    const formatProbeSize = (width, height) =>
+                        [width, height].map(size => Math.min(32768, Math.max(0, Math.round(Number(size) || 0)))).join("x");
+                    const readProbeRectangle = element => {
+                        const rect = element?.getBoundingClientRect();
+                        return formatProbeSize(rect?.width, rect?.height);
+                    };
+                    const readPausedLayout = video => ({
+                        natural: formatProbeSize(video?.videoWidth, video?.videoHeight),
+                        video: readProbeRectangle(video),
+                        parent: readProbeRectangle(video?.parentElement),
+                        viewport: formatProbeSize(window.innerWidth, window.innerHeight)
+                    });
+                    layoutState.capturePausedLayout = reason => {
+                        if ((reason !== "host-verification" && reason !== "media-change")
+                            || !postLayoutDiagnostic || !fullScreenMessageToken || layoutState.interactiveResize
+                            || pausedLayoutProbes.has(reason)
+                            || Date.now() - (lastPausedLayoutProbeAt.get(reason) ?? -Infinity) < 30000) {
+                            return;
+                        }
+
+                        try {
+                            const video = getVideo();
+                            if (!(video instanceof HTMLVideoElement) || !video.paused || video.ended) {
+                                return;
+                            }
+
+                            const replaced = Boolean(layoutState.appliedVideo) && layoutState.appliedVideo !== video;
+                            pausedLayoutProbes.set(reason, { video, replaced, applied: false, before: readPausedLayout(video),
+                                previousNatural: formatProbeSize(layoutState.appliedNaturalWidth, layoutState.appliedNaturalHeight) });
+                        } catch {
+                            // 寸法が取得できなくても既存の補正を続ける。
+                        }
+                    };
+                    const reportPausedLayout = result => {
+                        if (pausedLayoutProbes.size === 0) {
+                            return;
+                        }
+
+                        try {
+                            const video = getVideo();
+                            const after = readPausedLayout(video);
+                            for (const [reason, probe] of pausedLayoutProbes) {
+                                postLayoutDiagnostic({ type: "youtubePlaybackDiagnostic", token: fullScreenMessageToken,
+                                    event: "paused-layout-probe", reason, result, previousNatural: probe.previousNatural,
+                                    before: probe.before, after, replaced: probe.replaced || video !== probe.video,
+                                    paused: video?.paused === true, applied: probe.applied });
+                                lastPausedLayoutProbeAt.set(reason, Date.now());
+                            }
+                        } catch {
+                            // 診断を送れなくても表示補正は続ける。
+                        } finally {
+                            pausedLayoutProbes.clear();
+                        }
+                    };
+                    let lastLayoutReportAt = Date.now();
+                    let lastObservedVideo = null;
+                    const newLayoutCounters = () => ({ replacements: 0, applied: 0, playerMissing: 0,
+                        videoMissing: 0, styleDrift: 0, applyErrors: 0 });
+                    let layoutCounters = newLayoutCounters();
+                    const reportLayout = () => {
+                        if (!postLayoutDiagnostic || !fullScreenMessageToken
+                            || Date.now() - lastLayoutReportAt < 30000
+                            || !Object.values(layoutCounters).some(count => count > 0)) {
+                            return;
+                        }
+
+                        lastLayoutReportAt = Date.now();
+                        try {
+                            postLayoutDiagnostic({ type: "youtubePlaybackDiagnostic",
+                                token: fullScreenMessageToken, event: "layout-counts", ...layoutCounters });
+                            layoutCounters = newLayoutCounters();
+                        } catch {
+                            // 診断を送れなくても表示補正は続ける。
+                        }
                     };
 
                     const runApply = () => {
@@ -1703,18 +1775,29 @@ public static class YouTubeControlScriptService
                             && layoutState.appliedNaturalHeight === (Number(video?.videoHeight) || 0)
                             && !hasLayoutStyleDrift()) {
                             layoutState.layoutVerified = Boolean(player && video) && !hasLayoutStyleDrift();
+                            reportPausedLayout(layoutState.layoutVerified ? "verified" : "missing");
+                            reportLayout();
                             return;
                         }
 
                         layoutState.applying = true;
                         try {
                             applyVideoLayout();
+                            for (const probe of pausedLayoutProbes.values()) {
+                                probe.applied = true;
+                            }
+                            layoutCounters.applied++;
                             layoutState.appliedPlayer = getPlayer();
                             layoutState.appliedVideo = getVideo();
                             layoutState.appliedWidth = width;
                             layoutState.appliedHeight = height;
                             layoutState.appliedNaturalWidth = Number(layoutState.appliedVideo?.videoWidth) || 0;
                             layoutState.appliedNaturalHeight = Number(layoutState.appliedVideo?.videoHeight) || 0;
+                        } catch (error) {
+                            layoutCounters.applyErrors++;
+                            reportPausedLayout("apply-error");
+                            reportLayout();
+                            throw error;
                         } finally {
                             // 補正中のstyle書き込みを次の補正理由にしない。
                             layoutState.contentTransformObserver?.takeRecords?.();
@@ -1730,11 +1813,17 @@ public static class YouTubeControlScriptService
                                     return;
                                 }
                                 layoutState.attachObservers?.();
-                                layoutState.layoutVerified = Boolean(getPlayer() && getVideo()) && !hasLayoutStyleDrift();
+                                const failure = !getPlayer() ? "playerMissing"
+                                    : !getVideo() ? "videoMissing"
+                                    : hasLayoutStyleDrift() ? "styleDrift" : null;
+                                layoutState.layoutVerified = failure === null;
+                                if (failure) layoutCounters[failure]++;
+                                reportLayout();
                                 if (!layoutState.layoutVerified && --layoutState.verificationAttemptsRemaining > 0) {
                                     layoutState.scheduleApply(true);
                                 } else {
                                     layoutState.verificationAttemptsRemaining = 0;
+                                    reportPausedLayout(failure === "styleDrift" ? "drift" : failure ? "missing" : "verified");
                                 }
                             });
                         }
@@ -1812,6 +1901,7 @@ public static class YouTubeControlScriptService
                                     return;
                                 }
                                 layoutState.attachObservers?.();
+                                reportLayout();
                                 if (!layoutState.layoutVerified || hasLayoutStyleDrift()) {
                                     layoutState.verificationAttemptsRemaining = 3;
                                     layoutState.scheduleApply(false);
@@ -1846,6 +1936,7 @@ public static class YouTubeControlScriptService
 
                         layoutState.interactiveResize = nextActive;
                         if (nextActive) {
+                            pausedLayoutProbes.clear();
                             clearDelayedVerifications();
                             window.cancelAnimationFrame(layoutState.applyFrame);
                             window.cancelAnimationFrame(layoutState.verificationFrame);
@@ -1865,11 +1956,16 @@ public static class YouTubeControlScriptService
                         const video = event.target;
                         if (video instanceof HTMLVideoElement && getPlayer()?.contains(video)) {
                             const isNewVideo = layoutState.activeVideo !== video;
+                            if (layoutState.appliedVideo && (isNewVideo || event.type === "resize")) {
+                                layoutState.capturePausedLayout("media-change");
+                            }
                             layoutState.activeVideo = video;
                             layoutState.beginVerification(isNewVideo);
                         }
                     };
                     const handleNavigateStart = () => {
+                        updatePausedFrame(null);
+                        pausedLayoutProbes.clear();
                         clearDelayedVerifications();
                         layoutState.activeVideo = null;
                         layoutState.appliedVideo = null;
@@ -1950,7 +2046,12 @@ public static class YouTubeControlScriptService
                     layoutState.attachObservers = () => {
                         const player = getPlayer();
                         const video = getVideo();
+                        updatePausedFrame(player ? video : null);
                         const playerParent = player?.parentElement || null;
+                        if (video) {
+                            if (lastObservedVideo && lastObservedVideo !== video) layoutCounters.replacements++;
+                            lastObservedVideo = video;
+                        }
                         if (layoutState.observedPlayer !== player
                             || layoutState.observedPlayerParent !== playerParent) {
                             layoutState.playerParentObserver?.disconnect?.();
@@ -2009,8 +2110,14 @@ public static class YouTubeControlScriptService
                     for (const eventName of videoReadyEvents) {
                         document.addEventListener(eventName, handleVideoReady, true);
                     }
+                    const playbackStateEvents = ["play", "pause", "ended"];
+                    for (const eventName of playbackStateEvents) {
+                        document.addEventListener(eventName, handlePlaybackState, true);
+                    }
                     layoutState.dispose = () => {
                         layoutState.disposed = true;
+                        updatePausedFrame(null);
+                        pausedLayoutProbes.clear();
                         clearDelayedVerifications();
                         window.cancelAnimationFrame(layoutState.applyFrame);
                         window.cancelAnimationFrame(layoutState.verificationFrame);
@@ -2025,6 +2132,9 @@ public static class YouTubeControlScriptService
                         document.removeEventListener("yt-navigate-finish", handleNavigateFinish, true);
                         for (const eventName of videoReadyEvents) {
                             document.removeEventListener(eventName, handleVideoReady, true);
+                        }
+                        for (const eventName of playbackStateEvents) {
+                            document.removeEventListener(eventName, handlePlaybackState, true);
                         }
                     };
                     window[layoutBridgeKey] = layoutState;
@@ -2060,7 +2170,7 @@ public static class YouTubeControlScriptService
                             && Number(style.opacity) > 0;
                     });
                 const hoverBridgeKey = "__tabBrowserYouTubeMiniPlayerHoverBridge";
-                const hoverBridgeVersion = 7;
+                const hoverBridgeVersion = 8;
                 const existingHoverBridge = window[hoverBridgeKey];
                 if (existingHoverBridge?.version !== hoverBridgeVersion) {
                     existingHoverBridge?.dispose?.();
@@ -2108,6 +2218,7 @@ public static class YouTubeControlScriptService
                         lastHoverSentAt = now;
                         window.chrome.webview.postMessage({
                             type: "youtubeMiniPlayerHover",
+                            token: fullScreenMessageToken,
                             hovered: allowToolbar,
                             titleHovered: Boolean(titleHovered)
                         });
@@ -2183,7 +2294,16 @@ public static class YouTubeControlScriptService
                 });
 
                 const dragBridgeKey = "__tabBrowserYouTubeMiniPlayerDragBridge";
-                if (!window[dragBridgeKey]) {
+                const dragBridgeVersion = 4;
+                const existingDragBridge = window[dragBridgeKey];
+                // 廃棄方法を持たない旧フラグのリスナーは、次のナビゲーションで消える。
+                if (existingDragBridge !== true && existingDragBridge?.version !== dragBridgeVersion) {
+                    existingDragBridge?.dispose?.();
+                    const dragListeners = new AbortController();
+                    const listenForDrag = (target, name, listener, options = false) => {
+                        const eventOptions = typeof options === "boolean" ? { capture: options } : options;
+                        target.addEventListener(name, listener, { ...eventOptions, signal: dragListeners.signal });
+                    };
                     const state = {
                         dragging: false,
                         moved: false,
@@ -2200,10 +2320,11 @@ public static class YouTubeControlScriptService
 
                         window.chrome.webview.postMessage({
                             type: "youtubeMiniPlayerDrag",
+                            token: fullScreenMessageToken,
                             phase,
                             resize: state.resizeMode,
                             resizeEdges: state.resizeEdges,
-                            cancelled: phase === "end" && (event?.type === "pointercancel" || event?.type === "lostpointercapture")
+                            cancelled: phase === "end" && (!event || event.type === "pointercancel" || event.type === "lostpointercapture")
                         });
                     };
                     const isYouTubeInteractiveTarget = (target, includeControlsBackground = true) => Boolean(target?.closest?.([
@@ -2297,9 +2418,9 @@ public static class YouTubeControlScriptService
                             clientX: resizeHoverEvent.clientX, clientY: resizeHoverEvent.clientY,
                             buttons: resizeHoverEvent.buttons, ctrlKey: event.ctrlKey });
                     };
-                    document.addEventListener("pointerover", updateResizeCursor, true);
-                    document.addEventListener("keydown", updateResizeModifier, true);
-                    document.addEventListener("keyup", updateResizeModifier, true);
+                    listenForDrag(document, "pointerover", updateResizeCursor, true);
+                    listenForDrag(document, "keydown", updateResizeModifier, true);
+                    listenForDrag(document, "keyup", updateResizeModifier, true);
                     const isYouTubeEndScreenTarget = target => Boolean(target?.closest?.([
                             ".html5-endscreen",
                             ".ytp-endscreen-content",
@@ -2328,7 +2449,7 @@ public static class YouTubeControlScriptService
                     const nativePostMessage = window.chrome?.webview?.postMessage?.bind(window.chrome.webview);
                     let pressedMiniPlayerSideButton = null;
                     const isMiniPlayerSideButton = button => button === 3 || button === 4;
-                    document.addEventListener("pointerdown", event => {
+                    listenForDrag(document, "pointerdown", event => {
                         if (!event.isTrusted || !isMiniPlayerSideButton(event.button)) {
                             return;
                         }
@@ -2337,7 +2458,7 @@ public static class YouTubeControlScriptService
                         event.preventDefault();
                         event.stopImmediatePropagation();
                     }, true);
-                    document.addEventListener("pointerup", event => {
+                    listenForDrag(document, "pointerup", event => {
                         if (!event.isTrusted || !isMiniPlayerSideButton(event.button)) {
                             return;
                         }
@@ -2354,10 +2475,10 @@ public static class YouTubeControlScriptService
                             });
                         }
                     }, true);
-                    document.addEventListener("pointercancel", () => {
+                    listenForDrag(document, "pointercancel", () => {
                         pressedMiniPlayerSideButton = null;
                     }, true);
-                    document.addEventListener("auxclick", event => {
+                    listenForDrag(document, "auxclick", event => {
                         if (!event.isTrusted || !isMiniPlayerSideButton(event.button)) {
                             return;
                         }
@@ -2365,7 +2486,7 @@ public static class YouTubeControlScriptService
                         event.preventDefault();
                         event.stopImmediatePropagation();
                     }, true);
-                    window.addEventListener("blur", () => {
+                    listenForDrag(window, "blur", () => {
                         pressedMiniPlayerSideButton = null;
                     });
                     const dragGestureThreshold = 6;
@@ -2457,7 +2578,7 @@ public static class YouTubeControlScriptService
                         }
                         return finishContentPan(event, false);
                     };
-                    document.addEventListener("pointerdown", event => {
+                    listenForDrag(document, "pointerdown", event => {
                         if (!event.isTrusted
                             || event.button !== 1
                             || event.isPrimary === false
@@ -2481,7 +2602,7 @@ public static class YouTubeControlScriptService
                         event.preventDefault();
                         event.stopImmediatePropagation();
                     }, true);
-                    document.addEventListener("pointermove", event => {
+                    listenForDrag(document, "pointermove", event => {
                         if (!contentPanState.active || contentPanState.pointerId !== event.pointerId) {
                             updateContentPanCursor(event);
                             return;
@@ -2513,9 +2634,9 @@ public static class YouTubeControlScriptService
                         event.preventDefault();
                         event.stopImmediatePropagation();
                     }, true);
-                    document.addEventListener("pointerup", event => finishContentPan(event), true);
-                    document.addEventListener("pointercancel", event => finishContentPan(event), true);
-                    document.addEventListener("auxclick", event => {
+                    listenForDrag(document, "pointerup", event => finishContentPan(event), true);
+                    listenForDrag(document, "pointercancel", event => finishContentPan(event), true);
+                    listenForDrag(document, "auxclick", event => {
                         if (event.button !== 1 || !contentPanState.suppressAuxClick) {
                             return;
                         }
@@ -2524,7 +2645,7 @@ public static class YouTubeControlScriptService
                         event.preventDefault();
                         event.stopImmediatePropagation();
                     }, true);
-                    document.addEventListener("keydown", event => {
+                    listenForDrag(document, "keydown", event => {
                         if (event.key === "Escape" && contentPanState.active) {
                             cancelContentPan(event);
                         }
@@ -2539,8 +2660,8 @@ public static class YouTubeControlScriptService
                         route,
                         token: fullScreenMessageToken
                     });
-                    window.addEventListener("click", suppressVideoSurfaceClick, true);
-                    window.addEventListener("dblclick", (event) => {
+                    listenForDrag(window, "click", suppressVideoSurfaceClick, true);
+                    listenForDrag(window, "dblclick", (event) => {
                         if (!event.isTrusted || isYouTubeControlsTarget(event) || !nativePostMessage) {
                             return;
                         }
@@ -2552,15 +2673,16 @@ public static class YouTubeControlScriptService
                             token: fullScreenMessageToken
                         });
                     }, true);
-                    const finishDrag = (event) => {
-                        if (!state.dragging || state.pointerId !== event.pointerId) {
+                    const finishDrag = (event, phase = "end") => {
+                        if (!state.dragging || (event && state.pointerId !== event.pointerId)) {
                             return;
                         }
 
+                        const pointerId = state.pointerId;
                         if (state.moved) {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            sendDrag("end", event);
+                            event?.preventDefault();
+                            event?.stopPropagation();
+                            sendDrag(phase, event);
                         }
                         state.dragging = false;
                         state.moved = false;
@@ -2569,13 +2691,21 @@ public static class YouTubeControlScriptService
                         state.resizeEdges = 0;
                         setResizeCursor(0);
                         try {
-                            document.documentElement.releasePointerCapture(event.pointerId);
+                            document.documentElement.releasePointerCapture(pointerId);
                         } catch {
                         }
-                        if (event.type === "pointerup") updateResizeCursor(event);
+                        if (event?.type === "pointerup") updateResizeCursor(event);
                     };
+                    listenForDrag(document, "keydown", event => {
+                        if (event.isTrusted && event.key === "Escape" && state.dragging && state.moved
+                            && state.resizeMode && state.resizeEdges === 0) {
+                            event.preventDefault();
+                            event.stopImmediatePropagation();
+                            finishDrag(null, "cancel");
+                        }
+                    }, true);
 
-                    document.addEventListener("pointerdown", (event) => {
+                    listenForDrag(document, "pointerdown", (event) => {
                         if (event.button !== 0 || event.isPrimary === false) {
                             return;
                         }
@@ -2608,7 +2738,7 @@ public static class YouTubeControlScriptService
                             event.stopPropagation();
                         }
                     }, true);
-                    document.addEventListener("pointermove", (event) => {
+                    listenForDrag(document, "pointermove", (event) => {
                         updateResizeCursor(event);
                         if (!state.dragging || state.pointerId !== event.pointerId) {
                             return;
@@ -2638,10 +2768,10 @@ public static class YouTubeControlScriptService
                         event.stopPropagation();
                         sendDrag("move", event);
                     }, true);
-                    document.addEventListener("pointerup", finishDrag, true);
-                    document.addEventListener("pointercancel", finishDrag, true);
-                    document.addEventListener("lostpointercapture", finishDrag, true);
-                    window.addEventListener("blur", () => {
+                    listenForDrag(document, "pointerup", finishDrag, true);
+                    listenForDrag(document, "pointercancel", finishDrag, true);
+                    listenForDrag(document, "lostpointercapture", finishDrag, true);
+                    listenForDrag(window, "blur", () => {
                         resizeHoverEvent = null;
                         setResizeCursor(0);
                         if (!state.dragging || !state.moved || !window.chrome?.webview?.postMessage) {
@@ -2650,6 +2780,7 @@ public static class YouTubeControlScriptService
 
                         window.chrome.webview.postMessage({
                             type: "youtubeMiniPlayerDrag",
+                            token: fullScreenMessageToken,
                             phase: "end",
                             cancelled: true
                         });
@@ -2661,7 +2792,7 @@ public static class YouTubeControlScriptService
                         setResizeCursor(0);
                     });
 
-                    document.addEventListener("pointerleave", () => {
+                    listenForDrag(document, "pointerleave", () => {
                         resizeHoverEvent = null;
                         if (!state.dragging) setResizeCursor(0);
                     });
@@ -2677,7 +2808,10 @@ public static class YouTubeControlScriptService
                         directionAnchorY: 0,
                         video: null,
                         wasPaused: true,
+                        contentId: null,
+                        pendingRateRestore: null,
                         previousPlaybackRate: 1,
+                        appliedPlaybackRate: 1,
                         holdUpdateTimer: null,
                         gestureActive: false,
                         gestureRoute: "",
@@ -2697,6 +2831,46 @@ public static class YouTubeControlScriptService
                     const rewindStepSeconds = 0.5;
                     const rewindIntervalMilliseconds = 250;
                     const isAdvertisementPlaying = () => __TAB_BROWSER_YOUTUBE_MINI_PLAYER_AD_PLAYING__;
+                    const getHoldSeekContentId = () => {
+                        try {
+                            const id = getPlayer()?.getVideoData?.()?.video_id;
+                            return typeof id === "string" && id ? id : null;
+                        } catch {
+                            return null;
+                        }
+                    };
+                    const cancelPendingHoldSeekRestore = () => { holdSeekState.pendingRateRestore = null; };
+                    const restoreAfterAdvertisement = event => {
+                        const pending = holdSeekState.pendingRateRestore;
+                        if (!pending || isAdvertisementPlaying()) return;
+
+                        const video = getVideo();
+                        const contentId = getHoldSeekContentId();
+                        if (event.target !== video || !contentId) return;
+
+                        cancelPendingHoldSeekRestore();
+                        if (contentId === pending.contentId && video === pending.video
+                            && video.playbackRate === pending.appliedRate) {
+                            video.playbackRate = pending.previousRate;
+                        }
+                    };
+                    for (const eventName of ["loadedmetadata", "canplay", "playing"]) {
+                        listenForDrag(document, eventName, restoreAfterAdvertisement, true);
+                    }
+                    // 広告明けを待っている間の新しい入力を優先する。
+                    for (const eventName of ["pointerdown", "keydown"]) {
+                        listenForDrag(document, eventName, event => {
+                            if (event.isTrusted) cancelPendingHoldSeekRestore();
+                        }, true);
+                    }
+                    listenForDrag(document, "yt-navigate-start", cancelPendingHoldSeekRestore, true);
+                    listenForDrag(document, "ratechange", event => {
+                        const pending = holdSeekState.pendingRateRestore;
+                        if (pending && event.target === pending.video && !isAdvertisementPlaying()
+                            && pending.video.playbackRate !== pending.appliedRate) {
+                            cancelPendingHoldSeekRestore();
+                        }
+                    }, true);
                     const getHoldSeekIndicator = () => {
                         let indicator = document.getElementById("tabbrowser-youtube-mini-player-hold-seek-indicator");
                         if (indicator) {
@@ -2963,7 +3137,15 @@ public static class YouTubeControlScriptService
                         }
 
                         const video = holdSeekState.video;
-                        if (video && !isAdvertisementPlaying()) {
+                        if (video && isAdvertisementPlaying() && holdSeekState.contentId) {
+                            holdSeekState.pendingRateRestore = {
+                                video,
+                                contentId: holdSeekState.contentId,
+                                appliedRate: holdSeekState.appliedPlaybackRate,
+                                previousRate: holdSeekState.previousPlaybackRate
+                            };
+                        } else if (video && !isAdvertisementPlaying()
+                            && (!holdSeekState.contentId || holdSeekState.contentId === getHoldSeekContentId())) {
                             video.playbackRate = holdSeekState.previousPlaybackRate;
                             if (holdSeekState.wasPaused) {
                                 video.pause();
@@ -2998,6 +3180,7 @@ public static class YouTubeControlScriptService
                             video.pause();
                         }
 
+                        holdSeekState.appliedPlaybackRate = video.playbackRate;
                         updateHoldSeekIndicator(false);
                     };
                     const activateHoldSeek = (direction, event) => {
@@ -3014,6 +3197,7 @@ public static class YouTubeControlScriptService
                         clearMiniPlayerGestureGuide();
                         holdSeekState.active = true;
                         holdSeekState.video = video;
+                        holdSeekState.contentId = getHoldSeekContentId();
                         holdSeekState.wasPaused = video.paused;
                         holdSeekState.previousPlaybackRate = Number.isFinite(video.playbackRate)
                             ? video.playbackRate
@@ -3089,7 +3273,7 @@ public static class YouTubeControlScriptService
                         event?.preventDefault?.();
                         event?.stopImmediatePropagation?.();
                     };
-                    document.addEventListener("pointerdown", event => {
+                    listenForDrag(document, "pointerdown", event => {
                         if (!event.isTrusted
                             || event.button !== 2
                             || event.isPrimary === false
@@ -3113,7 +3297,7 @@ public static class YouTubeControlScriptService
                         }
                         scheduleMiniPlayerGestureGuide();
                     }, true);
-                    document.addEventListener("pointermove", event => {
+                    listenForDrag(document, "pointermove", event => {
                         if (!holdSeekState.tracking || holdSeekState.pointerId !== event.pointerId) {
                             return;
                         }
@@ -3220,14 +3404,14 @@ public static class YouTubeControlScriptService
                         finishHoldSeek(event);
                         finishMiniPlayerRightWheel();
                     };
-                    document.addEventListener("pointerup", finishRightButtonInput, true);
-                    document.addEventListener("pointercancel", finishRightButtonInput, true);
-                    document.addEventListener("contextmenu", event => {
+                    listenForDrag(document, "pointerup", finishRightButtonInput, true);
+                    listenForDrag(document, "pointercancel", finishRightButtonInput, true);
+                    listenForDrag(document, "contextmenu", event => {
                         holdSeekState.suppressContextMenu = false;
                         event.preventDefault();
                         event.stopImmediatePropagation();
                     }, true);
-                    document.addEventListener("wheel", event => {
+                    listenForDrag(document, "wheel", event => {
                         if ((event.buttons & 2) !== 2 || isYouTubeRightInputBlockedTarget(event)) {
                             return;
                         }
@@ -3274,14 +3458,14 @@ public static class YouTubeControlScriptService
                             return true;
                         }
                     });
-                    window.addEventListener("blur", () => {
+                    listenForDrag(window, "blur", () => {
                         setContentPanCursor("");
                         finishContentPan(null);
                         finishMiniPlayerGesture(null, false);
                         finishHoldSeek();
                         finishMiniPlayerRightWheel();
                     });
-                    window.addEventListener("pagehide", () => {
+                    listenForDrag(window, "pagehide", () => {
                         setResizeCursor(0);
                         setContentPanCursor("");
                         finishContentPan(null);
@@ -3289,7 +3473,29 @@ public static class YouTubeControlScriptService
                         finishHoldSeek();
                         finishMiniPlayerRightWheel();
                     });
-                    window[dragBridgeKey] = true;
+                    const dragBridge = {
+                        version: dragBridgeVersion,
+                        cancelPendingHoldSeekRestore,
+                        dispose: () => {
+                            if (dragListeners.signal.aborted) return;
+                            dragListeners.abort();
+                            finishDrag(null);
+                            setResizeCursor(0);
+                            setContentPanCursor("");
+                            cancelContentPan(null);
+                            finishMiniPlayerGesture(null, false);
+                            finishHoldSeek();
+                            finishMiniPlayerRightWheel();
+                            clearTimeout(holdSeekState.suppressContextMenuTimer);
+                            clearTimeout(holdSeekState.indicatorHideTimer);
+                            document.getElementById("tabbrowser-youtube-mini-player-hold-seek-indicator")?.remove();
+                            if (window[dragBridgeKey] === dragBridge) {
+                                delete window[dragBridgeKey];
+                                delete window.__tabBrowserYouTubeMiniPlayerCancelRightInput;
+                            }
+                        }
+                    };
+                    window[dragBridgeKey] = dragBridge;
                 }
 
                 window.dispatchEvent(new Event("resize"));
@@ -3777,6 +3983,7 @@ public static class YouTubeControlScriptService
                     return { ok: true, alreadyInstalled: true };
                 }
 
+                existing?.dispose?.();
                 const originalPlay = HTMLMediaElement.prototype.play;
                 const originalSetAttribute = Element.prototype.setAttribute;
                 const state = {
@@ -3791,16 +3998,9 @@ public static class YouTubeControlScriptService
 
                 const disableForUserGesture = event => {
                     if (event?.isTrusted && isExpectedVideo()) {
-                        state.enabled = false;
-                        if (state.intervalId) {
-                            clearInterval(state.intervalId);
-                            state.intervalId = 0;
-                        }
+                        dispose();
                     }
                 };
-
-                document.addEventListener("pointerdown", disableForUserGesture, true);
-                document.addEventListener("keydown", disableForUserGesture, true);
 
                 const shouldStopVideo = () => state.enabled && isExpectedVideo();
                 const stopVideo = (video) => {
@@ -3841,7 +4041,7 @@ public static class YouTubeControlScriptService
                     }
                 };
 
-                Element.prototype.setAttribute = function(name, value) {
+                const guardedSetAttribute = function(name, value) {
                     if (state.enabled
                         && this instanceof HTMLMediaElement
                         && String(name).toLowerCase() === "autoplay"
@@ -3852,7 +4052,7 @@ public static class YouTubeControlScriptService
                     return originalSetAttribute.call(this, name, value);
                 };
 
-                HTMLMediaElement.prototype.play = function(...args) {
+                const guardedPlay = function(...args) {
                     if (shouldStopVideo()) {
                         stopVideo(this);
                         return Promise.reject(new DOMException(
@@ -3882,11 +4082,45 @@ public static class YouTubeControlScriptService
                     });
                 };
 
-                document.addEventListener("play", stopUnexpectedPlay, true);
-                document.addEventListener("playing", stopUnexpectedPlay, true);
-                document.addEventListener("loadedmetadata", stopUnexpectedPlay, true);
-                document.addEventListener("canplay", stopUnexpectedPlay, true);
-                document.addEventListener("timeupdate", stopUnexpectedPlay, true);
+                const mediaEvents = ["play", "playing", "loadedmetadata", "canplay", "timeupdate"];
+                const dispose = () => {
+                    state.enabled = false;
+                    if (state.intervalId) {
+                        clearInterval(state.intervalId);
+                        state.intervalId = 0;
+                    }
+
+                    state.observer?.disconnect();
+                    state.observer = null;
+                    document.removeEventListener("pointerdown", disableForUserGesture, true);
+                    document.removeEventListener("keydown", disableForUserGesture, true);
+                    document.removeEventListener("DOMContentLoaded", installObserver, true);
+                    for (const eventName of mediaEvents) {
+                        document.removeEventListener(eventName, stopUnexpectedPlay, true);
+                    }
+
+                    // ページが後から差し替えた実装は上書きしない。
+                    if (Element.prototype.setAttribute === guardedSetAttribute) {
+                        Element.prototype.setAttribute = originalSetAttribute;
+                    }
+
+                    if (HTMLMediaElement.prototype.play === guardedPlay) {
+                        HTMLMediaElement.prototype.play = originalPlay;
+                    }
+
+                    if (window[key] === state) {
+                        delete window[key];
+                    }
+                };
+                state.dispose = dispose;
+
+                Element.prototype.setAttribute = guardedSetAttribute;
+                HTMLMediaElement.prototype.play = guardedPlay;
+                document.addEventListener("pointerdown", disableForUserGesture, true);
+                document.addEventListener("keydown", disableForUserGesture, true);
+                for (const eventName of mediaEvents) {
+                    document.addEventListener(eventName, stopUnexpectedPlay, true);
+                }
                 if (document.documentElement) {
                     installObserver();
                 } else {
@@ -4454,6 +4688,7 @@ public static class YouTubeControlScriptService
                     : targetSpeed;
                 speed = Math.max(minimum, Math.min(maximum, Math.round(speed * 4) / 4));
 
+                window.__tabBrowserYouTubeMiniPlayerDragBridge?.cancelPendingHoldSeekRestore?.();
                 if (player && typeof player.setPlaybackRate === "function") {
                     player.setPlaybackRate(speed);
                 }
@@ -4733,12 +4968,13 @@ public static class YouTubeControlScriptService
             """;
     }
 
-    public static string BuildSeekToLiveEdgeScript()
+    public static string BuildSeekToLiveEdgeScript(bool useSelectedVideo = false)
     {
+        var videoExpression = useSelectedVideo ? "selectedVideo" : """document.querySelector("video")""";
         return $$"""
             (() => {
                 const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
-                const video = document.querySelector("video");
+                const video = {{videoExpression}};
                 if (!video) {
                     return { ok: false, found: false };
                 }
@@ -4814,12 +5050,20 @@ public static class YouTubeControlScriptService
 
     public static string BuildSeekToLiveEdgeAndWaitScript()
     {
-        var seekToLiveEdgeScript = BuildSeekToLiveEdgeScript();
+        var seekToLiveEdgeScript = BuildSeekToLiveEdgeScript(useSelectedVideo: true);
         return $$"""
             (async () => {
                 const player = document.getElementById("movie_player") || document.querySelector(".html5-video-player");
-                const video = document.querySelector("video");
+                const selectVideo = () => window.__tabBrowserYouTubeMiniPlayerLayoutBridge?.selectVideo?.()
+                    ?? document.querySelector("video");
+                const video = selectVideo();
                 if (!video) return { ok: false, found: false };
+                const findLiveBadge = () => player?.querySelector(".ytp-live-badge")
+                    || document.querySelector(".ytp-live-badge");
+                const liveHeadClass = "ytp-live-badge-is-livehead";
+                const startedBehindNativeEdge = findLiveBadge()?.classList.contains(liveHeadClass) === false;
+                const initialPosition = Number(video.currentTime);
+                const startedAt = Date.now();
                 const videoId = player?.getVideoData?.()?.video_id;
                 const pageUrl = location.href;
                 const request = {};
@@ -4829,7 +5073,9 @@ public static class YouTubeControlScriptService
                 document.addEventListener("pointerdown", interrupt, true);
                 document.addEventListener("keydown", interrupt, true);
                 const wasPaused = Boolean(video.paused);
+                const playbackRate = wasPaused ? 0 : Math.abs(Number(video.playbackRate)) || 1;
                 const seek = () => {
+                    const selectedVideo = video;
                     const result = {{seekToLiveEdgeScript}};
                     // 純正ライブボタンが再生を始めても、確認・再試行中の一時停止を保つ。
                     if (wasPaused && !video.paused) video.pause();
@@ -4849,7 +5095,7 @@ public static class YouTubeControlScriptService
                             || Boolean(video.paused) !== expectedPaused) {
                             return { ok: false, found: true, reason: "live-edge-cancelled" };
                         }
-                        if (document.querySelector("video") !== video || location.href !== pageUrl
+                        if (selectVideo() !== video || location.href !== pageUrl
                             || (document.getElementById("movie_player") || document.querySelector(".html5-video-player")) !== player
                             || player?.getVideoData?.()?.video_id !== videoId) {
                             return { ok: false, found: true, reason: "live-target-changed" };
@@ -4864,19 +5110,23 @@ public static class YouTubeControlScriptService
                         const seekable = video.seekable;
                         const liveEdge = seekable?.length > 0 ? Number(seekable.end(seekable.length - 1)) : Number.NaN;
                         const position = Number(video.currentTime);
-                        const liveBadge = player?.querySelector(".ytp-live-badge")
-                            || document.querySelector(".ytp-live-badge");
-                        const liveHeadConfirmed = !liveBadge
-                            || liveBadge.classList.contains("ytp-live-badge-is-livehead");
-                        // 指示先の値や古いバッジだけで成功にせず、実際の位置と純正表示を確認する。
-                        if (!video.seeking && Number.isFinite(liveEdge) && liveEdge >= 0
-                            && Number.isFinite(position) && Math.abs(liveEdge - position) <= 2 && liveHeadConfirmed) {
+                        const liveBadge = findLiveBadge();
+                        const nativeLiveHead = liveBadge?.classList.contains(liveHeadClass) === true;
+                        const nearSeekableEnd = Number.isFinite(liveEdge) && liveEdge >= 0
+                            && Math.abs(liveEdge - position) <= 2;
+                        // 長時間配信ではseekable終端と再生位置の時間軸がずれる。
+                        // 純正表示が切り替わり、通常再生では生じない位置の変化があった場合も到達とする。
+                        const elapsedPlayback = Math.max(0, Date.now() - startedAt) / 1000 * playbackRate;
+                        const reachedNativeEdge = startedBehindNativeEdge && nativeLiveHead
+                            && Math.abs(position - initialPosition) > elapsedPlayback + 2;
+                        if (!video.seeking && Number.isFinite(position)
+                            && ((nearSeekableEnd && (!liveBadge || nativeLiveHead)) || reachedNativeEdge)) {
                             return {
                                 ok: true, found: true, position,
                                 duration: Number.isFinite(video.duration) ? video.duration : 0,
                                 paused: Boolean(video.paused), muted: Boolean(video.muted),
                                 volume: Number(video.volume) || 0, speed: Number(video.playbackRate) || 1,
-                                looping: Boolean(video.loop), isLive: true
+                                looping: Boolean(video.loop), isLive: true, isAtLiveEdge: true
                             };
                         }
                         if (Date.now() >= deadline) break;
@@ -5286,6 +5536,7 @@ public static class YouTubeControlScriptService
                     const pausedResumeGuard = window.__tabBrowserYouTubePausedResumeGuard;
                     if (pausedResumeGuard) {
                         pausedResumeGuard.enabled = false;
+                        pausedResumeGuard.dispose?.();
                     }
 
                     try {

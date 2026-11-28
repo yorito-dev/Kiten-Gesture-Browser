@@ -12,7 +12,10 @@ public sealed record WorkspaceTabPort(
     Func<CapturedTabSnapshot?> CaptureCurrentTab,
     Func<Guid, Task> CloseTabAsync,
     Action<string> OpenShellFolderInTab,
-    Func<string?>? GetDeferredRestoreMessage = null);
+    Func<string?>? GetDeferredRestoreMessage = null)
+{
+    public bool IsPrivateWindow { get; init; }
+}
 
 public sealed record WorkspaceMiniPlayerPort(
     Func<IReadOnlyList<YouTubeMiniPlayerWorkspaceState>> Capture,

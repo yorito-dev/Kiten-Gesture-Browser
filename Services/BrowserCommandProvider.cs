@@ -58,7 +58,13 @@ public static class BrowserCommandProvider
         Func<Task>? focusLocationAsync = null,
         Func<string, CommandActionContext, Task>? executeLegacyCommandAsync = null)
     {
+        var hasLocationAction = focusLocationAsync is not null;
+        var missingAction = CommandAvailability.Disabled("現在の環境に実行先がありません");
         focusLocationAsync ??= () => Task.CompletedTask;
+        Func<CommandInvocationContext, CommandAvailability> WhenLegacyAvailable(
+            Func<CommandInvocationContext, CommandAvailability>? availability = null)
+            => executeLegacyCommandAsync is null ? _ => missingAction : availability ?? (_ => CommandAvailability.Available);
+
         Task RunAsync(
             string command,
             CommandActionContext context,
@@ -75,7 +81,7 @@ public static class BrowserCommandProvider
             focusLocationAsync,
             ["address", "location", "path", "url", "アドレス", "パス"],
             shortcuts: ["Ctrl+L"],
-            availability: RequirePageOrFolder);
+            availability: context => hasLocationAction ? RequirePageOrFolder(context) : missingAction);
         yield return Create(
             NewTabActionId,
             "新しいタブを開く",
@@ -99,7 +105,7 @@ public static class BrowserCommandProvider
                 () => Task.CompletedTask),
             ["duplicate", "background", "clone", "tab", "裏タブ"],
             gestures: ["DuplicateTabBackground"],
-            availability: RequirePageOrFolder);
+            availability: WhenLegacyAvailable(RequirePageOrFolder));
         yield return Create(
             CloseTabActionId,
             "現在のタブを閉じる",
@@ -107,40 +113,40 @@ public static class BrowserCommandProvider
             ["close", "tab", "閉じる"],
             shortcuts: ["Ctrl+W"],
             gestures: ["CloseTab"],
-            availability: RequireClosableTab);
+            availability: WhenLegacyAvailable(RequireClosableTab));
         yield return Create(
             CloseOtherTabsActionId,
             "他のタブを閉じる",
             context => RunAsync("CloseOtherTabs", context, () => Task.CompletedTask),
             ["close", "other", "tabs", "他のタブ"],
             gestures: ["CloseOtherTabs"],
-            availability: RequirePageOrFolder);
+            availability: WhenLegacyAvailable(RequirePageOrFolder));
         yield return Create(
             CloseTabsToRightActionId,
             "右側のタブを閉じる",
             context => RunAsync("CloseTabsToRight", context, () => Task.CompletedTask),
             ["close", "right", "tabs", "右側"],
             gestures: ["CloseTabsToRight"],
-            availability: RequirePageOrFolder);
+            availability: WhenLegacyAvailable(RequirePageOrFolder));
         yield return Create(
             CloseTabsToLeftActionId,
             "左側のタブを閉じる",
             context => RunAsync("CloseTabsToLeft", context, () => Task.CompletedTask),
             ["close", "left", "tabs", "左側"],
             gestures: ["CloseTabsToLeft"],
-            availability: RequirePageOrFolder);
+            availability: WhenLegacyAvailable(RequirePageOrFolder));
         yield return Create(
             ToggleTabMuteActionId,
             "現在のタブのミュートを切り替える",
             context => RunAsync("ToggleTabMute", context, () => Task.CompletedTask),
             ["mute", "audio", "tab", "ミュート"],
-            availability: RequireWebPage);
+            availability: WhenLegacyAvailable(RequireWebPage));
         yield return Create(
             ToggleTabPinnedActionId,
             "現在のタブの固定を切り替える",
             context => RunAsync("ToggleTabPinned", context, () => Task.CompletedTask),
             ["pin", "tab", "fixed", "固定"],
-            availability: RequirePageOrFolder);
+            availability: WhenLegacyAvailable(RequirePageOrFolder));
         yield return Create(
             ReloadActionId,
             "現在の表示を更新",
@@ -155,7 +161,7 @@ public static class BrowserCommandProvider
             context => RunAsync("StopLoading", context, () => Task.CompletedTask),
             ["stop", "loading", "読み込み停止"],
             gestures: ["StopLoading"],
-            availability: RequireWebPage);
+            availability: WhenLegacyAvailable(RequireWebPage));
         yield return Create(
             BackActionId,
             "戻る",
@@ -225,42 +231,43 @@ public static class BrowserCommandProvider
             context => RunAsync("ScrollTop", context, () => Task.CompletedTask),
             ["scroll", "top", "先頭"],
             gestures: ["ScrollTop"],
-            availability: RequireWebPage);
+            availability: WhenLegacyAvailable(RequireWebPage));
         yield return Create(
             ScrollBottomActionId,
             "ページ末尾へ移動",
             context => RunAsync("ScrollBottom", context, () => Task.CompletedTask),
             ["scroll", "bottom", "末尾"],
             gestures: ["ScrollBottom"],
-            availability: RequireWebPage);
+            availability: WhenLegacyAvailable(RequireWebPage));
         yield return Create(
             ScrollPageUpActionId,
             "1ページ上へ移動",
             context => RunAsync("ScrollPageUp", context, () => Task.CompletedTask),
             ["scroll", "page", "up", "ページ上"],
             gestures: ["ScrollPageUp"],
-            availability: RequireWebPage);
+            availability: WhenLegacyAvailable(RequireWebPage));
         yield return Create(
             ScrollPageDownActionId,
             "1ページ下へ移動",
             context => RunAsync("ScrollPageDown", context, () => Task.CompletedTask),
             ["scroll", "page", "down", "ページ下"],
             gestures: ["ScrollPageDown"],
-            availability: RequireWebPage);
+            availability: WhenLegacyAvailable(RequireWebPage));
         yield return Create(
             AddBookmarkActionId,
             "現在ページをブックマーク",
             context => RunAsync("AddBookmark", context, () => Task.CompletedTask),
             ["bookmark", "add", "ブックマーク追加"],
             gestures: ["AddBookmark"],
-            availability: RequireWebPage);
+            availability: WhenLegacyAvailable(RequireWebPage));
         yield return Create(
             ShowBookmarksActionId,
             "ブックマーク一覧を開く",
             context => RunAsync("ShowBookmarks", context, () => Task.CompletedTask),
             ["bookmark", "list", "ブックマーク一覧"],
             gestures: ["ShowBookmarks"],
-            category: "管理");
+            category: "管理",
+            availability: WhenLegacyAvailable());
         yield return Create(
             OpenDownloadsActionId,
             "ダウンロード一覧を開く",

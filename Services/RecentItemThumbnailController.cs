@@ -16,7 +16,7 @@ internal sealed class RecentItemThumbnailController
     private readonly bool _isPrivateWindow;
     private readonly CancellationToken _lifetimeToken;
     private readonly Func<IEnumerable<RecentItemThumbnailCandidate>> _getOpenTabs;
-    private readonly Func<Guid, CancellationToken, Task<IReadOnlyList<WorkspaceItem>>> _getWorkspaceItemsAsync;
+    private readonly Func<Guid, CancellationToken, Task<WorkspaceItem?>> _getWorkspaceItemAsync;
     private readonly Func<string, int, int, CancellationToken, Task<BitmapSource?>> _getMediaThumbnailAsync;
     private readonly Dictionary<ThumbnailRequest, Task<string>> _recentItemThumbnailFetchTasks = new();
 
@@ -24,14 +24,14 @@ internal sealed class RecentItemThumbnailController
         bool isPrivateWindow,
         CancellationToken lifetimeToken,
         Func<IEnumerable<RecentItemThumbnailCandidate>> getOpenTabs,
-        Func<Guid, CancellationToken, Task<IReadOnlyList<WorkspaceItem>>>? getWorkspaceItemsAsync = null,
+        Func<Guid, CancellationToken, Task<WorkspaceItem?>>? getWorkspaceItemAsync = null,
         Func<string, int, int, CancellationToken, Task<BitmapSource?>>? getMediaThumbnailAsync = null)
     {
         _isPrivateWindow = isPrivateWindow;
         _lifetimeToken = lifetimeToken;
         _getOpenTabs = getOpenTabs;
-        _getWorkspaceItemsAsync = getWorkspaceItemsAsync
-            ?? ((workspaceId, token) => new WorkspaceService().GetWorkspaceItemsAsync(workspaceId, token));
+        _getWorkspaceItemAsync = getWorkspaceItemAsync
+            ?? ((itemId, token) => new WorkspaceService().GetItemByIdAsync(itemId, token));
         _getMediaThumbnailAsync = getMediaThumbnailAsync
             ?? WorkspaceShellItemService.GetMediaThumbnailImageAsync;
     }
@@ -66,13 +66,12 @@ internal sealed class RecentItemThumbnailController
             if (recentItem.WorkspaceId is { } workspaceId
                 && recentItem.WorkspaceItemId is { } workspaceItemId)
             {
-                var workspaceItems = await _getWorkspaceItemsAsync(workspaceId, _lifetimeToken);
-                var storedThumbnail = workspaceItems
-                    .FirstOrDefault(item => item.Id == workspaceItemId)?
-                    .ThumbnailPngBase64;
-                if (!string.IsNullOrWhiteSpace(storedThumbnail))
+                var stored = await _getWorkspaceItemAsync(workspaceItemId, _lifetimeToken);
+                if (stored is { DeletedAt: null }
+                    && stored.Id == workspaceItemId && stored.WorkspaceId == workspaceId
+                    && !string.IsNullOrWhiteSpace(stored.ThumbnailPngBase64))
                 {
-                    return IsCurrent(recentItem, request) ? storedThumbnail : string.Empty;
+                    return IsCurrent(recentItem, request) ? stored.ThumbnailPngBase64 : string.Empty;
                 }
             }
 
@@ -86,7 +85,7 @@ internal sealed class RecentItemThumbnailController
                     WebThumbnailCaptureService.ThumbnailHeight,
                     _lifetimeToken);
                 return IsCurrent(recentItem, request)
-                    ? CapturedTabSnapshot.CreateThumbnailPngBase64(localThumbnail) : string.Empty;
+                    ? CapturedTabSnapshot.CreateRecentItemThumbnailPngBase64(localThumbnail) : string.Empty;
             }
 
             var normalizedUrl = UrlThumbnailCaptureCoordinator.NormalizeUrl(recentItem.Target);
@@ -99,7 +98,7 @@ internal sealed class RecentItemThumbnailController
             // URLだけの共有キャッシュ／隠しWebViewはコンテナの由来を保証できない。
             // 対応する通常タブがなければ既存の画像なし表示を使い、通信は開始しない。
             var thumbnail = FindRecentItemOpenTabThumbnail(normalizedUrl, request.ContainerProfileId, _getOpenTabs());
-            return CapturedTabSnapshot.CreateThumbnailPngBase64(thumbnail);
+            return CapturedTabSnapshot.CreateRecentItemThumbnailPngBase64(thumbnail);
         }
         catch (OperationCanceledException) when (_lifetimeToken.IsCancellationRequested)
         {

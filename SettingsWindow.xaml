@@ -195,6 +195,11 @@
                     <StackPanel>
                         <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="閲覧履歴" />
                         <CheckBox x:Name="EnableBrowsingHistoryCheckBox" Content="閲覧履歴を保存する" />
+                        <StackPanel Margin="0,8,0,4" Orientation="Horizontal">
+                            <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" Text="保持期限" />
+                            <ComboBox x:Name="BrowsingHistoryRetentionBox" MinWidth="125" DisplayMemberPath="Label" />
+                        </StackPanel>
+                        <TextBlock x:Name="BrowsingHistoryRetentionPreview" Margin="0,0,0,6" Foreground="#D1D5DB" TextWrapping="Wrap" />
                         <TextBlock Margin="0,4,0,6" Foreground="#D1D5DB" Text="履歴に残さないサイト" />
                         <TextBox x:Name="BrowsingHistoryExcludedHostsBox" MinHeight="54" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsEnabled="{Binding IsChecked, ElementName=EnableBrowsingHistoryCheckBox}" />
                         <TextBlock Margin="0,5,0,0" Foreground="#9CA3AF" FontSize="12" TextWrapping="Wrap" Text="ホスト名を改行またはカンマで区切ります（例 example.com）。サブドメインも除外します。" />
@@ -229,6 +234,14 @@
                         <CheckBox x:Name="EnableInactiveTabMemorySaverCheckBox" Grid.Row="3" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#D1D5DB" Content="長時間使っていないタブをメモリに保持したまま休止する" />
                         <CheckBox x:Name="EnableLinkHoverPreviewCheckBox" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#D1D5DB" Content="リンク先をマウスオーバーでポップアップ表示する" ToolTip="有効にすると、リンクや新しいタブのブックマークにマウスを置いたときに通信する場合があります。" />
                     </Grid>
+                </Border>
+
+                <Border x:Name="TabAudioSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Margin="0,0,0,10" FontWeight="SemiBold" Text="タブの音声位置" />
+                        <CheckBox x:Name="AllowSharedWindowsAudioPanCheckBox" Content="Windowsの音声セッションを使う互換処理を許可する" />
+                        <TextBlock Margin="20,4,0,0" Foreground="#9CA3AF" FontSize="11" TextWrapping="Wrap" Text="許可すると他のタブ、他のアプリ、OSの音も左右に偏る場合があります。既存の左右振り分け設定も、Windows側の処理はここで許可するまで作用しません。" />
+                    </StackPanel>
                 </Border>
 
                 <Border x:Name="YouTubeMiniPlayerSettingsSection" Margin="0,12,0,0" Padding="12" Background="#11141A" BorderBrush="#2A2F3A" BorderThickness="1">

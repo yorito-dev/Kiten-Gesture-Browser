@@ -34,7 +34,7 @@ internal sealed class SuperDragCoordinator
     }
 
     internal SuperDragSearchSelection BeginSearchSelection(Guid tabId, object view, string url, SuperDragOperation operation,
-        SuperDragSettings settings, Func<string, string> defaultSearch, int maximumSearchLength)
+        SuperDragSettings settings, Func<string, string?> defaultSearch, int maximumSearchLength)
     {
         CancelAll();
         var foreground = operation.Action == "ChooseSearchForeground";
@@ -49,7 +49,7 @@ internal sealed class SuperDragCoordinator
     }
 
     internal SuperDragNavigation? TakeSearchSelection(Guid id, Guid tabId, object view, string url, bool isCurrentDocument,
-        SuperDragSettings settings, Func<string, string> defaultSearch, int maximumSearchLength, string action)
+        SuperDragSettings settings, Func<string, string?> defaultSearch, int maximumSearchLength, string action)
     {
         var selection = _selection;
         if (selection?.Id != id) return null;
@@ -102,7 +102,7 @@ internal sealed class SuperDragCoordinator
     }
 
     internal static SuperDragNavigation? CreateNavigation(
-        SuperDragOperation operation, Func<string, string> defaultSearch, int maximumSearchLength,
+        SuperDragOperation operation, Func<string, string?> defaultSearch, int maximumSearchLength,
         IReadOnlyDictionary<string, SuperDragSearchProvider>? providers = null)
     {
         if (operation.Kind is not ("text" or "link" or "image")
@@ -137,7 +137,7 @@ internal sealed class SuperDragCoordinator
             }
         }
         else if (action is not ("Foreground" or "Background" or "NewWindow" or "SplitRight" or "SplitBottom")) return null;
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return null;
+        if (url is null || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return null;
         var disposition = action is "NewWindow" or "SplitRight" or "SplitBottom" ? action
             : action.EndsWith("Foreground", StringComparison.Ordinal) ? "Foreground" : "Background";
         return new(url, disposition, title);

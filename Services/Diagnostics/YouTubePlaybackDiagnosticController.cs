@@ -47,6 +47,52 @@ public sealed class YouTubePlaybackDiagnosticController
             return;
         }
 
+        if (message.EventName == "paused-layout-probe")
+        {
+            if (!_host.IsPrivateWindow && sourceKind == "mini-player" && message.PausedLayoutProbe is { } probe)
+            {
+                _host.QueuePerformanceDiagnosticLogLine([
+                    "runner=youtube-playback", "operation=paused-layout-probe",
+                    $"reason={probe.Reason}", $"result={probe.Result}",
+                    $"previousNatural={probe.PreviousNatural}", $"beforeNatural={probe.Before.Natural}",
+                    $"beforeVideo={probe.Before.Video}", $"beforeParent={probe.Before.Parent}",
+                    $"beforeViewport={probe.Before.Viewport}", $"afterNatural={probe.After.Natural}",
+                    $"afterVideo={probe.After.Video}", $"afterParent={probe.After.Parent}",
+                    $"afterViewport={probe.After.Viewport}",
+                    $"replaced={(probe.Replaced ? "true" : "false")}", $"paused={(probe.Paused ? "true" : "false")}",
+                    $"applied={(probe.Applied ? "true" : "false")}"
+                ]);
+            }
+            return;
+        }
+
+        if (message.EventName == "layout-counts")
+        {
+            if (!_host.IsPrivateWindow && sourceKind == "mini-player" && message.LayoutCounts is { } counts)
+            {
+                _host.QueuePerformanceDiagnosticLogLine([
+                    "runner=youtube-playback", "operation=layout-counts",
+                    $"replacements={counts.Replacements}", $"applied={counts.Applied}",
+                    $"playerMissing={counts.PlayerMissing}", $"videoMissing={counts.VideoMissing}",
+                    $"styleDrift={counts.StyleDrift}", $"applyErrors={counts.ApplyErrors}"
+                ]);
+            }
+            return;
+        }
+
+        if (message.EventName == "surface-probe")
+        {
+            if (!_host.IsPrivateWindow && message.PlayerSurface is ("watch" or "shorts" or "live" or "embed")
+                && message.Reason is ("video-missing" or "player-api-missing" or "available"))
+            {
+                _host.QueuePerformanceDiagnosticLogLine([
+                    "runner=youtube-playback", "operation=surface-probe",
+                    $"source={sourceKind}", $"surface={message.PlayerSurface}", $"result={message.Reason}"
+                ]);
+            }
+            return;
+        }
+
         var trackerId = CreateTargetId(sourceKind, targetId);
         var observedAt = _utcNow();
         var observation = _tracker.Observe(trackerId, message, observedAt);

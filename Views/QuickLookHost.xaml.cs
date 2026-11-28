@@ -277,8 +277,8 @@ public partial class QuickLookHost : UserControl, IQuickLookHost
         }
         else if (e.Key == Key.Enter && OpenButton.IsEnabled)
         {
-            await OpenCurrentItemAsync();
             e.Handled = true;
+            await OpenCurrentItemAsync();
         }
     }
 

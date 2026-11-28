@@ -74,6 +74,14 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
             return;
         }
 
+        if (!IsTrustedYouTubeSource(source)
+            || !runtimes.TryGetValue(state.Id, out var runtime)
+            || string.IsNullOrEmpty(message.Token)
+            || !string.Equals(runtime.WebMessageToken, message.Token, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         if (message.Kind == YouTubeMiniPlayerWebMessageKind.Drag)
         {
             HandleDrag(state, message.DragPhase, message.IsResize, runtimes, callbacks, message.ResizeEdges, message.Cancelled);
@@ -84,13 +92,6 @@ internal static class YouTubeMiniPlayerWebMessageDispatchService
         {
             callbacks.SetToolbarVisibility(state, message.Hovered);
             callbacks.SetTitleBandVisibility(state, message.TitleHovered);
-            return;
-        }
-
-        if (!IsTrustedYouTubeSource(source)
-            || !runtimes.TryGetValue(state.Id, out var runtime)
-            || !string.Equals(runtime.WebMessageToken, message.Token, StringComparison.Ordinal))
-        {
             return;
         }
 

@@ -7,17 +7,22 @@ const vm = require('node:vm');
 const source = readFileSync(resolve(__dirname, '../../Scripts/GestureHost.js'), 'utf8');
 
 // 製品のイベント登録から実行し、テスト用の認識処理へ置き換えない。
-function createSuperDragHost(config = {}, linkText = '架空 [リンク]', labels = {}) {
+function createSuperDragHost(config = {}, linkText = '架空 [リンク]', labels = {}, childFrame = false) {
     const handlers = new Map(), messages = [], hints = [];
     class Element {
         constructor(kind = 'body', protectedTarget = false) { this.kind = kind; this.protectedTarget = protectedTarget; }
         closest(selector) {
             if (selector.includes('input') && this.protectedTarget) return this;
+            if (selector === '#bookmarkList [data-bookmark-id]' && this.kind === 'bookmark') return this;
             if (selector === 'a[href]' && this.kind === 'link') return { href: 'https://target.invalid/a', textContent: linkText };
             if (selector === 'img' && this.kind === 'image') return { currentSrc: 'https://target.invalid/image.png' };
             if (selector.includes(',a[href]') && this.kind === 'link') return this;
             return null;
         }
+    }
+    class HTMLInputElement extends Element {
+        type = 'text';
+        matches() { return false; }
     }
     const surface = name => ({ addEventListener(type, handler) {
         const key = name + ':' + type; handlers.set(key, [...(handlers.get(key) || []), handler]);
@@ -29,11 +34,11 @@ function createSuperDragHost(config = {}, linkText = '架空 [リンク]', label
         Text: { Up: 'SearchForeground', Right: 'SearchBackground', Down: 'Copy', Left: 'Translate' },
         Link: { Up: 'Foreground', Right: 'Background', Down: 'Copy', Left: 'NewWindow' },
         Image: { Up: 'Foreground', Right: 'Background', Down: 'Copy', Left: 'NewWindow' }, ...config }, superDragLabels: labels };
-    const context = { ...surface('window'), document, Element, innerWidth: 900, innerHeight: 700,
+    const context = { ...surface('window'), document, Element, HTMLElement: Element, HTMLInputElement, innerWidth: 900, innerHeight: 700,
         location: { hostname: 'example.invalid', protocol: 'https:', href: 'https://example.invalid/page' },
         chrome: { webview: { postMessage: message => messages.push(message) } }, console,
         getSelection: () => ({ isCollapsed: false, containsNode: () => true, toString: () => '架空の検索語' }) };
-    context.window = context; vm.createContext(context);
+    context.window = context; context.top = childFrame ? {} : context; vm.createContext(context);
     const product = process.env.KITEN_SUPER_DRAG_BASELINE
         ? readFileSync(process.env.KITEN_SUPER_DRAG_BASELINE, 'utf8') : source;
     vm.runInContext('(() => {const __tabBrowserWebMessageToken="fixture-token";'
@@ -42,13 +47,43 @@ function createSuperDragHost(config = {}, linkText = '架空 [リンク]', label
     const emit = (type, extra = {}, targetSurface = 'window') => {
         const event = { isTrusted: true, defaultPrevented: false, target: new Element(), screenX: 100, screenY: 100,
             clientX: 100, clientY: 100, dataTransfer: { types: ['text/plain'] },
-            preventDefault() { this.defaultPrevented = true; }, ...extra };
+            preventDefault() { this.defaultPrevented = true; }, stopPropagation() {}, ...extra };
         for (const handler of handlers.get(targetSurface + ':' + type) || []) handler(event);
         return event;
     };
-    return { emit, messages, hints, context, Element, settings,
+    return { emit, messages, hints, context, Element, HTMLInputElement, settings,
         start(kind = 'link', extra = {}) { return emit('dragstart', { target: new Element(kind), ...extra }); },
         drops: () => messages.filter(message => message.type === 'superDrag' && message.phase === 'drop') };
+}
+
+for (const childFrame of [false, true]) {
+    test(`入力欄の右クリックを要求元へ返す ${childFrame ? '子フレーム' : 'ページ本体'}`, () => {
+        const host = createSuperDragHost({}, '', {}, childFrame);
+        const input = new host.HTMLInputElement('input', true);
+        const event = host.emit('contextmenu', { button: 2, target: input });
+        assert.equal(event.defaultPrevented, !childFrame);
+        const requests = host.messages.filter(message => message.type === 'pageContextMenu');
+        assert.equal(requests.length, childFrame ? 0 : 1);
+        if (!childFrame) assert.equal(requests[0].isEditable, true);
+    });
+}
+
+for (const [name, url, hasPageMenu, kind, childFrame, handledByPage] of [
+    ['新しいタブのブックマーク', 'about:blank', true, 'bookmark', false, true],
+    ['新しいタブの背景', 'about:blank', true, 'body', false, false],
+    ['通常の空白ページ', 'about:blank', false, 'bookmark', false, false],
+    ['同じマークアップを持つ外部ページ', 'https://example.invalid/page', true, 'bookmark', false, false],
+    ['子フレーム', 'about:blank', true, 'bookmark', true, false]
+]) {
+    test(`新しいタブの右クリックを適切なメニューへ渡す: ${name}`, () => {
+        const host = createSuperDragHost({}, '', {}, childFrame);
+        host.context.location.href = url;
+        host.context.document.querySelector = selector =>
+            hasPageMenu && selector === '#bookmarkContextMenu > #deleteBookmarkButton' ? {} : null;
+        const event = host.emit('contextmenu', { button: 2, target: new host.Element(kind) });
+        assert.equal(event.defaultPrevented, !handledByPage);
+        assert.equal(host.messages.filter(message => message.type === 'pageContextMenu').length, handledByPage ? 0 : 1);
+    });
 }
 
 const lRoutes = [

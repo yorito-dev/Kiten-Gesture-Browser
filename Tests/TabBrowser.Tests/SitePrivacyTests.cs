@@ -309,6 +309,27 @@ public sealed class SitePrivacyTests
     }
 
     [Fact]
+    public void PermissionManagerCanResetAdditionalSavedPermissionsWithoutExpandingGrants()
+    {
+        var settings = new[]
+        {
+            ("https://example.test", CoreWebView2PermissionKind.Camera, CoreWebView2PermissionState.Allow),
+            ("https://example.test", CoreWebView2PermissionKind.ClipboardRead, CoreWebView2PermissionState.Deny),
+            ("https://example.test", CoreWebView2PermissionKind.UnknownPermission, CoreWebView2PermissionState.Allow),
+            ("file:///tmp", CoreWebView2PermissionKind.LocalFonts, CoreWebView2PermissionState.Allow)
+        };
+        Assert.Equal(CoreWebView2PermissionKind.Camera,
+            Assert.Single(SitePrivacyService.CreatePermissionEntries(settings, false)).PermissionKind);
+        var managed = SitePrivacyService.CreatePermissionEntries(settings, true);
+        Assert.Equal(2, managed.Count);
+        var clipboard = Assert.Single(managed, entry => entry.PermissionKind == CoreWebView2PermissionKind.ClipboardRead);
+        Assert.True(SitePrivacyService.CanChangePermission(clipboard.PermissionKind, CoreWebView2PermissionState.Default));
+        Assert.False(SitePrivacyService.CanChangePermission(clipboard.PermissionKind, CoreWebView2PermissionState.Allow));
+        Assert.False(SitePrivacyService.CanChangePermission(clipboard.PermissionKind, CoreWebView2PermissionState.Deny));
+        Assert.False(SitePrivacyService.IsManagedPermission(clipboard.PermissionKind));
+    }
+
+    [Fact]
     public void SitePermissionEntriesAreFilteredToExactOrigin()
     {
         var entries = new[]

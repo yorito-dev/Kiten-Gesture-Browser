@@ -105,7 +105,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private const int YouTubePlaybackStateFallbackDelayMilliseconds = 30000;
     private const int YouTubePlaybackProgressSaveIntervalMilliseconds = 30000;
     private const int TopToolbarAutoHideDelayMilliseconds = 900;
-    private const long TabAudioPanDiagnosticLogMaxBytes = 256 * 1024;
+    private static readonly DiagnosticLogWriter s_tabAudioPanDiagnosticLogWriter = new(
+        () => Path.Combine(AppPaths.Root, "audio-pan"),
+        () => Path.Combine(AppPaths.Root, "audio-pan", "diagnostic.log"));
     private static readonly string[] ExternalUrlDropFormats =
     [
         "UniformResourceLocatorW",
@@ -127,8 +129,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly ObservableCollection<BookmarkFolderItem> _bookmarkFolders = [];
     private static readonly ClosedTabWindowHistoryStore s_closedTabWindowHistoryStore = new();
     private static readonly SessionRecoveryDiagnosticState s_sessionRecoveryDiagnosticState = new();
-    private static readonly PreviewThumbnailRenderer s_previewThumbnailRenderer = new(
-        () => VisualTreeHelper.GetDpi(Application.Current.MainWindow).PixelsPerDip);
+    private readonly PreviewThumbnailRenderer _previewThumbnailRenderer;
     private static readonly TabRuntimeCoordinator s_tabRuntimeCoordinator =
         TabRuntimeCoordinator.Shared;
     private static readonly TabAudioPanFrameSubscriptionOwner s_tabAudioPanFrameSubscriptionOwner = new(
@@ -185,6 +186,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly ContainerProfileStore _containerProfileStore = new();
     private readonly SplitViewService _splitViewService = new();
     private readonly SplitViewStore _splitViewStore = new();
+    private static bool s_hasCompletedStartupSplitViewRestore;
     private readonly SplitViewWindowStateCoordinator _splitViewWindowStateCoordinator = new();
     private readonly SplitViewDisplayController _splitViewDisplayController;
     private readonly ReadabilityController _readabilityController = new();
@@ -247,6 +249,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly Views.WorkspaceGestureController _blankViewGestureController;
     private Popup? _extensionPopup;
     private WebView2? _extensionPopupWebView;
+    private CoreWebView2? _extensionToolbarCore;
+    private int _extensionToolbarRefreshVersion;
     private readonly PopupNavigationRequestCoordinator _extensionPopupRequestCoordinator = new();
     private readonly BookmarkPreviewController _bookmarkPreviewController;
     private WorkspaceOSWindow? _workspaceOSWindow;
@@ -254,6 +258,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private readonly Dictionary<Guid, WorkspaceFolderWindow> _workspaceFolderWindows = [];
 
     private AppSettings _settings = new();
+    private TabResourceSettings? _tabResourceSettings;
+    private TabResourceSettings CurrentTabResourceSettings
+        => _tabResourceSettings ??= TabResourceSettings.Capture(_settings);
     private ContainerProfileLoadResult _containerProfiles = new(
         ContainerProfileLoadStatus.Failed, [ContainerProfile.CreateDefault()]);
     private AddressService _addressService = new(new AppSettings());
@@ -270,6 +277,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private bool _externalDownloadShutdownCompleted;
     private bool _recordCurrentWindowInClosedHistory;
     private WindowShutdownContext? _pendingWindowShutdownContext;
+    private readonly Guid _workspaceShellCopyOwnerId = Guid.NewGuid();
+    private Guid? _workspaceShellCopyShutdownOwnerId;
     private bool _webViewEnvironmentReleasedSuccessfully;
     private readonly AddressBarController _addressBarController;
     private bool _isFollowingDragCursor;
@@ -354,6 +363,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         bool restoreFloatingMediaPlaceholders = false,
         bool restoreWorkspaceSession = false)
     {
+        _previewThumbnailRenderer = new(() => VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        _performanceDiagnosticLogController = new(s_diagnosticLogWriter.AppendLines, AppendTabAudioPanDiagnosticLines);
         _clipboardWriteService = new ClipboardWriteService(Dispatcher);
         _linkCopyService = new LinkCopyService(_clipboardWriteService);
         _pageGestureVisualController = new PageGestureVisualController(this, this);
@@ -665,6 +676,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             ("dispose-performance-log", () => _performanceDiagnosticLogController.Dispose()),
             ("dispose-command-palette-preview", () => CommandPaletteQuickLookHost.Dispose()),
             ("dispose-clipboard-history", DisposeClipboardHistoryIntegration),
+            ("complete-startup-floating-media-restore", CompleteStartupFloatingMediaRestore),
             ("request-session-save", () =>
             {
                 if (_pendingWindowShutdownContext?.RequestSessionSaveAfterFinalClose == true)
@@ -680,6 +692,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _restoreFloatingMediaPlaceholders = persistSession || restoreFloatingMediaPlaceholders;
         _startupActivationDelay = startupActivationDelay;
         _settings = _settingsService.Load();
+        _tabResourceSettings = TabResourceSettings.Capture(_settings);
         ReloadContainerProfiles(applyToTabs: false);
         _settings.Downloads = DownloadSettingsProfile.Normalize(_settings.Downloads);
         _settings.TabLayout = TabLayoutSettingsProfile.Normalize(_settings.TabLayout);
@@ -733,6 +746,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _addressBarController.InitializeSuggestions();
         _tabs.CollectionChanged += (_, args) =>
         {
+            if (_downloadSavePrompt is { } prompt && !_tabs.Contains(prompt.Tab))
+                prompt.Dialog.Cancel();
+
             TrackAddedTabRuntimeOwnership(args);
             RefreshTabLayoutAfterTabCollectionChanged();
             RefreshVerticalTabViews();
@@ -1457,6 +1473,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             SetStatus("セッション復元に失敗しました: " + ex.Message, autoClear: true);
         }
 
+        if (_persistSession)
+        {
+            // 追加 Window の分割復元は、起動元のセッション復元中に完了する。
+            s_hasCompletedStartupSplitViewRestore = true;
+        }
+
         _gestureScript = await gestureScriptTask;
         MarkStartupPerformance(StartupPerformanceStage.GestureScriptLoadCompleted);
 
@@ -1536,8 +1558,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     {
         InstallRightWheelMouseHook();
         RefreshWindowFocusIndicators();
-        _statusPresentationController.EnsurePopupNotTopmost();
-        ReapplyAlwaysOnTopIfNeeded();
+        _statusPresentationController.SynchronizePopupOrder();
         UpdateToolbarState();
         NotifyVisibleFolderTabsActivated();
     }
@@ -1551,7 +1572,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         EndRightWheelTabCycling();
         UninstallRightWheelMouseHook();
         RefreshWindowFocusIndicators();
-        _statusPresentationController.EnsurePopupNotTopmost();
+        _statusPresentationController.SynchronizePopupOrder();
         QueueAlwaysOnTopReapply();
     }
 
@@ -1671,7 +1692,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             {
                 if (_isAlwaysOnTop == expectedEnabled)
                 {
-                    ReapplyAlwaysOnTopIfNeeded();
+                    _statusPresentationController.SynchronizePopupOrder();
                 }
             },
             DispatcherPriority.ContextIdle);
@@ -1686,16 +1707,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        await CaptureYouTubePlaybackStateForSessionAsync(windows);
-
-        var windowMemory = CreateSessionData(windows);
-        await AttachFloatingMediaWindowMemorySnapshotAsync(windowMemory, windows);
         try
         {
+            await CaptureYouTubePlaybackStateForSessionAsync(windows);
+            var windowMemory = CreateSessionData(windows);
+            await AttachFloatingMediaWindowMemorySnapshotAsync(windowMemory, windows);
             await _sessionService.SaveWindowMemoryAsync(windowMemory);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            AppendDiagnosticLogLine("runner=session", "operation=remembered-window-save-failed", $"type={ex.GetType().Name}");
             SetStatus("ウィンドウ構成を記憶できませんでした。既存データを確認してください", autoClear: true);
             return;
         }
@@ -1715,15 +1736,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             SetStatus("記憶したウィンドウ構成を読み込めませんでした。保存データは変更していません", autoClear: true);
             return;
         }
-        _sessionRestorationController.RestoreRememberedWindows(
-            session,
-            (state, activationDelay) =>
-            {
-                var window = new MainWindow(state, activationDelay);
-                window.Show();
-                return window;
-            },
-            RestoreFloatingMediaWindowMemoryPlaceholders);
+        try
+        {
+            _sessionRestorationController.RestoreRememberedWindows(
+                session,
+                (state, activationDelay) =>
+                {
+                    var window = new MainWindow(state, activationDelay);
+                    window.Show();
+                    return window;
+                },
+                RestoreFloatingMediaWindowMemoryPlaceholders);
+        }
+        catch (Exception ex)
+        {
+            AppendDiagnosticLogLine("runner=session", "operation=remembered-window-restore-failed", $"type={ex.GetType().Name}");
+            SetStatus("記憶したウィンドウ構成を復元できませんでした", autoClear: true);
+        }
     }
 
     private async void RestoreProtectedSessionMenuItem_Click(object sender, RoutedEventArgs e)
@@ -2236,6 +2265,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
 
         e.Cancel = true;
+        _workspaceShellCopyShutdownOwnerId = shutdownContext.IsClosingAllWindows || !hasOtherMainWindows
+            ? null : _workspaceShellCopyOwnerId;
+        using var workspaceCopyShutdownScope = ViewModels.WorkspaceOSViewModel.PreventShellCopiesDuringShutdown(
+            _workspaceShellCopyShutdownOwnerId);
         if (!_windowShutdownCoordinator.TryBegin(new WindowShutdownOperations(
             () => BeginWindowShutdown(shutdownContext),
             DrainWindowWorkAsync,
@@ -2302,6 +2335,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
 
         _isClosingWindow = true;
+        RunWindowShutdownStep("cancel-download-save-prompt", () => _downloadSavePrompt?.Dialog.Cancel());
 
         _floatingMediaHostLifetime.MarkClosing();
         if (context.RecordCurrentWindowInClosedHistory)
@@ -2339,6 +2373,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task DrainWindowWorkAsync()
     {
+        await ViewModels.WorkspaceOSViewModel.WaitForShellCopiesAsync(_workspaceShellCopyShutdownOwnerId);
+
         var result = await _windowTaskSupervisor.DrainAsync(
             TimeSpan.FromMilliseconds(WindowTaskDrainTimeoutMilliseconds));
         if (result.TimedOut)
@@ -2430,15 +2466,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 if (!await window._downloadService.StopActiveExternalDownloadsForShutdownAsync())
                     throw new IOException("ダウンロード停止処理が完了していません。");
             }));
+        var pendingSettingsApplication = s_settingsApplicationQueue.CapturePending();
+        if (pendingSettingsApplication != Task.CompletedTask)
+            targets.Add(new("settings-application", "設定の適用", () => pendingSettingsApplication));
         if (closingWindows.Any(static window => !window._isPrivateWindow))
         {
-            var settingsOwner = closingWindows.FirstOrDefault(static window => !window._isPrivateWindow && window._persistSession);
-            if (saveSettings && settingsOwner is not null)
-                targets.Add(new("settings", "設定", () =>
+            var settingsOwner = saveSettings
+                ? closingWindows.FirstOrDefault(static window => !window._isPrivateWindow && window._persistSession)
+                : null;
+            if (settingsOwner is not null)
+                targets.Add(new("settings", "設定", async () =>
                 {
+                    await pendingSettingsApplication;
                     settingsOwner.CaptureWindowPlacement();
-                    return Task.Run(SettingsService.CaptureSaveOperation(settingsOwner._settings));
+                    await Task.Run(SettingsService.CaptureSaveOperation(settingsOwner._settings));
                 }));
+            foreach (var window in closingWindows.Where(window => !window._isPrivateWindow
+                && !ReferenceEquals(window, settingsOwner)
+                && (window._commandPaletteViewController?.HasPendingUsageSettingsSave == true
+                    || window._pageToolsController?.HasPendingPageZoomSettingsSave == true)))
+            {
+                targets.Add(new($"settings-pending-{window._sessionWindowId}", $"Window {window._workspaceWindowIndex} の設定",
+                    async () =>
+                    {
+                        await pendingSettingsApplication;
+                        await Task.Run(SettingsService.CaptureSaveOperation(window._settings));
+                    }));
+            }
             targets.Add(new("session", "セッション", async () =>
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -2756,6 +2810,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         => !s_applicationWindowCloseCoordinator.IsClosingAllWindows
             && s_sessionPersistenceCoordinator.IsLatestRequestPersisted(requireSavedSnapshot: true)
             && Views.WorkspaceNoteEditController.ReservationCount == 0
+            && !ViewModels.WorkspaceOSViewModel.HasActiveShellCopies
             && !HasOpenWorkspaceNoteEditor(pendingWindows)
             && pendingWindows.All(static window => window.IsReadyForSystemSessionEnd());
 
@@ -2773,6 +2828,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             && !HasActiveDownloadForMemoryManagement()
             && !_downloadService.HasActiveExternalDownloads
             && _downloadService.IsHistoryPersisted
+            && s_settingsApplicationQueue.CapturePending().IsCompletedSuccessfully
             && SettingsService.CanConfirmPersistedState(_settings)
             && _youTubeMiniPlayerPersistenceController.CanConfirmPersistedState()
             && !_tabs.Any(tab => tab.IsLoading || GetTabHostedContent(tab) is
@@ -3518,6 +3574,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private async Task HandleTabListSelectionChangedAsync(SelectionChangedEventArgs e)
     {
         _superDragCoordinator.CancelAll();
+        if (e.RemovedItems.OfType<BrowserTab>().Any() || e.AddedItems.OfType<BrowserTab>().Any())
+            _addressBarController?.InvalidateFolderNavigation();
         if (_isChangingSelection)
         {
             return;
@@ -3536,6 +3594,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         NoteExplorationActivity();
         RefreshVerticalTabViews();
+        SynchronizeExtensionToolbarCore(GetSelectedExtensionCore());
+        QueueExtensionToolbarRefresh(ActiveTab);
         UpdateAddressConnectionBadgeForTab(ActiveTab);
         await ActivateSelectedTabAsync();
     }
@@ -4189,20 +4249,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
     }
 
-    private void DownloadOpenButton_Click(object sender, RoutedEventArgs e)
+    private async void DownloadOpenButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!TryGetDownloadItem(sender, out var item))
+        if (!TryGetDownloadItem(sender, out var item) || !item.CanCheckFile)
         {
             return;
         }
 
-        if (!File.Exists(item.FilePath))
+        var path = item.FilePath;
+        var available = await item.RefreshFileAvailabilityAsync();
+        if (available is null || _isClosingWindow || !_downloadService.Items.Contains(item))
+            return;
+
+        if (!available.Value)
         {
             SetStatus("ダウンロード済みファイルが見つかりません", autoClear: true);
             return;
         }
 
-        var currentSafety = _downloadPolicy.InspectFileName(Path.GetFileName(item.FilePath));
+        var currentSafety = _downloadPolicy.InspectFileName(Path.GetFileName(path));
         if (currentSafety.ShouldWarn)
         {
             item.IsDangerous = true;
@@ -4214,9 +4279,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
+        if (!item.CanCheckFile || !string.Equals(path, item.FilePath, StringComparison.Ordinal)
+            || !_downloadService.Items.Contains(item) || _isClosingWindow)
+            return;
+
         try
         {
-            Process.Start(new ProcessStartInfo(item.FilePath)
+            Process.Start(new ProcessStartInfo(path)
             {
                 UseShellExecute = true
             });
@@ -4287,20 +4356,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
     }
 
-    private async void DownloadCopyLinkButton_Click(object sender, RoutedEventArgs e)
+    private void DownloadCopyLinkButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!TryGetDownloadItem(sender, out var item)
-            || string.IsNullOrWhiteSpace(item.SourceUrl))
+        if (!TryGetDownloadItem(sender, out var item) || string.IsNullOrWhiteSpace(item.SourceUrl))
         {
             return;
         }
 
-        var result = await _clipboardWriteService.SetTextAsync(item.SourceUrl);
-        SetStatus(
-            result.IsSuccess
-                ? "ダウンロード元 URL をコピーしました"
-                : "クリップボードを使用できませんでした。少し待ってから再試行してください。",
-            autoClear: true);
+        var sourceUrl = item.SourceUrl;
+        _windowTaskSupervisor.TryRun("download-copy-source-url", async cancellationToken =>
+        {
+            var result = await _clipboardWriteService.SetTextAsync(sourceUrl);
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                SetStatus(
+                    result.IsSuccess
+                        ? "ダウンロード元 URL をコピーしました"
+                        : "クリップボードを使用できませんでした。少し待ってから再試行してください。",
+                    autoClear: true);
+            }
+        });
     }
 
     private async void DownloadDetailButton_Click(object sender, RoutedEventArgs e)
@@ -4503,6 +4578,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         // XAML構築中の初期通知では、まだ入力・候補表示を開始しない。
         if (_addressBarController is { } controller)
         {
+            controller.InvalidateFolderNavigation();
             await controller.HandleTextChangedAsync();
         }
     }
@@ -4633,10 +4709,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        await AddExtensionFolderAsync(dialog.SelectedExtensionFolder);
+        if (dialog.SelectedExtensionId is { } importedExtensionId)
+            _windowTaskSupervisor.TryRun("extension-import",
+                _ => AddExtensionFolderAsync(dialog.SelectedExtensionFolder, importedExtensionId));
     }
 
-    private async Task AddExtensionFolderAsync(string extensionFolder)
+    private async Task AddExtensionFolderAsync(string extensionFolder, string? importedExtensionId = null)
     {
         if (!File.Exists(Path.Combine(extensionFolder, "manifest.json")))
         {
@@ -4655,17 +4733,75 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
+        await s_extensionAddGate.WaitAsync();
         try
         {
-            var extension = await core.Profile.AddBrowserExtensionAsync(extensionFolder);
-            await RefreshExtensionToolbarAsync(core.Profile);
+            if (_isClosingWindow || !_tabs.Contains(tab) || !ReferenceEquals(GetTabWebView(tab)?.CoreWebView2, core))
+                return;
+
+            CoreWebView2BrowserExtension? extension;
+            if (importedExtensionId is not null)
+            {
+                var profile = core.Profile;
+                if (profile.IsInPrivateModeEnabled)
+                    return;
+                var installed = await profile.GetBrowserExtensionsAsync();
+                if (installed.Any(extension => extension.Id == importedExtensionId))
+                {
+                    SetStatus("同じIDの拡張機能が登録済みです。既存の登録を維持しました。", autoClear: true);
+                    return;
+                }
+
+                var existingIds = installed.Select(static extension => extension.Id).ToHashSet(StringComparer.Ordinal);
+                var sourceId = await Task.Run(() => ExtensionImportService.GetDirectoryId(extensionFolder));
+                if (existingIds.Contains(sourceId))
+                {
+                    SetStatus("同じIDの拡張機能が登録済みです。既存の登録を維持しました。", autoClear: true);
+                    return;
+                }
+
+                bool CanRegister()
+                    => !_isClosingWindow && ReferenceEquals(ActiveTab, tab) && _tabs.Contains(tab)
+                        && ReferenceEquals(GetTabWebView(tab)?.CoreWebView2, core);
+                if (!CanRegister())
+                    return;
+
+                extension = await ExtensionImportService.RegisterCopiedVersionAsync<CoreWebView2BrowserExtension>(
+                    extensionFolder, core.Environment.UserDataFolder, importedExtensionId, async (directory, id) =>
+                    {
+                        if (!CanRegister())
+                            return null;
+
+                        if (existingIds.Contains(id))
+                        {
+                            SetStatus("同じIDの拡張機能が登録済みです。既存の登録を維持しました。", autoClear: true);
+                            return null;
+                        }
+
+                        return await profile.AddBrowserExtensionAsync(directory);
+                    });
+                if (extension is null)
+                    return;
+            }
+            else
+            {
+                extension = await core.Profile.AddBrowserExtensionAsync(extensionFolder);
+            }
+
+            await RefreshExtensionToolbarAsync();
             SetStatus($"拡張機能を追加しました: {extension.Name}", autoClear: true);
         }
         catch (Exception ex)
         {
             SetStatus("拡張機能を追加できません: " + ex.Message, autoClear: true);
         }
+        finally
+        {
+            s_extensionAddGate.Release();
+        }
     }
+
+    private static readonly SemaphoreSlim s_extensionAddGate = new(1);
 
     private async void ManageExtensionsButton_Click(object sender, RoutedEventArgs e)
     {
@@ -4697,7 +4833,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        var dialog = new ExtensionManagerWindow(core.Profile, OpenExtensionPage)
+        var containerProfileId = tab.ContainerProfileId;
+        var dialog = new ExtensionManagerWindow(
+            core.Profile,
+            url => OpenTab(url, activate: true, title: "拡張機能設定", containerProfileId: containerProfileId),
+            core.Environment.UserDataFolder)
         {
             Owner = this
         };
@@ -4707,7 +4847,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        await RefreshExtensionToolbarAsync(core.Profile);
+        await RefreshExtensionToolbarAsync();
     }
 
     private async void RestoreButton_Click(object sender, RoutedEventArgs e)
@@ -4824,7 +4964,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         var result = SettingsService.CloneForEdit(editingBaseline);
         result.SuperDrag = SuperDragSettingsProfile.Normalize(dialog.ResultSettings);
-        await ApplySettingsToOpenWindowsAsync(SettingsService.MergeEditingResult(editingBaseline, result));
+        await ApplySettingsToOpenWindowsAsync(editingBaseline, result);
     }
 
     private async Task OpenSettingsDialogAsync()
@@ -4847,6 +4987,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         };
         dialog.SetGestureCommandOptions(_commandRegistry.CreateGestureCommandOptions());
         dialog.SuperDragSettingsRequested += async (_, _) => await OpenSuperDragSettingsWindowAsync();
+        dialog.ContainerProfilesSaved += (_, _) => RefreshContainerProfilesAfterSettingsSave();
         await ModelessWindowService.ShowAsync(dialog);
 
         if (_isClosingWindow)
@@ -4854,23 +4995,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        if (dialog.ContainerProfilesChanged)
-        {
-            foreach (var window in GetSettingsSynchronizationTargets())
-            {
-                window.ReloadContainerProfiles();
-                window.QueueSessionSave();
-                window.QueueWorkspaceOpenTabsRefresh();
-            }
-        }
-
         if (!dialog.IsAccepted)
         {
             return;
         }
 
-        await ApplySettingsToOpenWindowsAsync(
-            SettingsService.MergeEditingResult(editingBaseline, dialog.ResultSettings));
+        await ApplySettingsToOpenWindowsAsync(editingBaseline, dialog.ResultSettings);
+    }
+
+    private void RefreshContainerProfilesAfterSettingsSave()
+    {
+        if (_isClosingWindow)
+            return;
+
+        var loaded = _containerProfileStore.Load();
+        foreach (var window in GetSettingsSynchronizationTargets())
+        {
+            window.ApplyContainerProfileLoad(loaded, applyToTabs: true);
+            window.QueueSessionSave();
+            window.QueueWorkspaceOpenTabsRefresh();
+            if (window.IsCommandPaletteOpen)
+                window.RefreshCommandPaletteItems();
+        }
     }
 
     private async void CloseTabButton_Click(object sender, RoutedEventArgs e)
@@ -4931,6 +5077,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     void ITabAudioBoostPopupHost.QueueSessionSave() => QueueSessionSave();
     void ITabAudioBoostPopupHost.SetStatus(string message) => SetStatus(message, autoClear: true);
 
+    private static readonly SettingsApplicationQueue s_settingsApplicationQueue = new();
+
     private List<MainWindow> GetSettingsSynchronizationTargets()
     {
         var windows = GetOpenMainWindows()
@@ -4959,40 +5107,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
     }
 
-    private async Task ApplyMouseGestureSettingsToOpenWindowsAsync(AppSettings result)
+    private Task ApplyMouseGestureSettingsToOpenWindowsAsync(AppSettings result)
+        => s_settingsApplicationQueue.EnqueueAsync(async () =>
+        {
+            var original = SettingsService.CloneForEdit(_settings);
+            var edited = SettingsService.CloneForEdit(original);
+            GestureSettingsCatalog.ApplyEditingResult(edited, result);
+
+            var windowsBeforeWrite = GetSettingsSynchronizationTargets()
+                .ToDictionary(window => window, window => SettingsService.CloneForEdit(window._settings));
+            var saved = await SettingsService.CommitEditingResultAsync(original, edited);
+            foreach (var window in GetSettingsSynchronizationTargets())
+            {
+                var before = SettingsService.CloneForEdit(window._settings);
+                var updated = windowsBeforeWrite.TryGetValue(window, out var beforeWrite)
+                    ? SettingsService.PreserveLiveEdits(saved, beforeWrite, window._settings)
+                    : SettingsService.ApplyCommittedEdit(original, saved, window._settings);
+                GestureSettingsCatalog.ApplyEditingResult(window._settings, updated);
+                SettingsService.AcknowledgeSynchronizedChanges(window._settings, before);
+                window.RefreshWorkspaceGestureSettings();
+                await window.RefreshGestureScriptOnLoadedTabsAsync();
+                await window.RefreshMediaWindowGestureSettingsAsync();
+            }
+
+            SetStatus("マウスジェスチャー設定をすべてのウィンドウへ適用しました", autoClear: true);
+        });
+
+    private async Task ApplySettingsToOpenWindowsAsync(AppSettings before, AppSettings after)
     {
-        var windows = GetSettingsSynchronizationTargets();
-        var before = windows.ToDictionary(window => window, window => SettingsService.CloneForEdit(window._settings));
-        foreach (var window in windows)
+        await s_settingsApplicationQueue.EnqueueAsync(async () =>
         {
-            GestureSettingsCatalog.ApplyEditingResult(window._settings, result);
-        }
-
-        SettingsService.Save(_settings);
-        foreach (var window in windows.Where(window => !ReferenceEquals(window, this)))
-            SettingsService.AcknowledgeSynchronizedChanges(window._settings, before[window]);
-        foreach (var window in windows)
-        {
-            window.RefreshWorkspaceGestureSettings();
-            await window.RefreshGestureScriptOnLoadedTabsAsync();
-            await window.RefreshMediaWindowGestureSettingsAsync();
-        }
-
-        SetStatus("マウスジェスチャー設定をすべてのウィンドウへ適用しました", autoClear: true);
-    }
-
-    private async Task ApplySettingsToOpenWindowsAsync(AppSettings result)
-    {
-        SettingsService.Save(result);
-        foreach (var window in GetSettingsSynchronizationTargets())
-        {
-            await window.ApplySettingsAsync(result, persistSettings: false,
-                showStatus: ReferenceEquals(window, this));
-        }
+            var windowsBeforeWrite = GetSettingsSynchronizationTargets()
+                .ToDictionary(window => window, window => SettingsService.CloneForEdit(window._settings));
+            var saved = await SettingsService.CommitEditingResultAsync(before, after);
+            var sharedResources = TabResourceSettings.Capture(saved);
+            foreach (var window in GetSettingsSynchronizationTargets())
+            {
+                var updated = windowsBeforeWrite.TryGetValue(window, out var beforeWrite)
+                    ? SettingsService.PreserveLiveEdits(saved, beforeWrite, window._settings)
+                    : SettingsService.ApplyCommittedEdit(before, saved, window._settings);
+                await window.ApplySettingsAsync(updated, TabResourceSettings.Capture(updated, sharedResources),
+                    persistSettings: false, showStatus: ReferenceEquals(window, this));
+            }
+        });
     }
 
     private async Task ApplySettingsAsync(
         AppSettings result,
+        TabResourceSettings resourceSettings,
         bool persistSettings,
         bool showStatus)
     {
@@ -5007,7 +5169,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _settings.EnableFocusedViewingCpuSaver = result.EnableFocusedViewingCpuSaver;
         _settings.FocusedViewingCpuSaverDelaySeconds = result.FocusedViewingCpuSaverDelaySeconds;
         _settings.EnableInactiveTabMemorySaver = result.EnableInactiveTabMemorySaver;
+        _tabResourceSettings = resourceSettings;
         _settings.EnableLinkHoverPreview = result.EnableLinkHoverPreview;
+        _settings.AllowSharedWindowsAudioPan = result.AllowSharedWindowsAudioPan;
         if (!_settings.EnableLinkHoverPreview)
         {
             HideLinkPreview(stopPreviewPlayback: true);
@@ -5084,19 +5248,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
     }
 
+    private bool CanOpenSearchTarget([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? target)
+    {
+        if (target is not null)
+            return true;
+
+        SetStatus("検索 URL の設定が無効です。設定画面で直してください。", autoClear: true);
+        return false;
+    }
+
     private async Task NavigateFromAddressBarAsync(string input)
     {
+        _addressBarController.InvalidateFolderNavigation();
         _addressBarController.AcceptCurrentAddressText();
         NoteExplorationActivity();
-        if (GetTabHostedContent(ActiveTab) is Views.FolderTabView folderTabView
-            && Directory.Exists(input.Trim()))
+        if (GetTabHostedContent(ActiveTab) is Views.FolderTabView folderTabView)
         {
-            await folderTabView.NavigateToAsync(input);
-            return;
+            var activeFolderTab = ActiveTab;
+            var useFolderTab = await _addressBarController.CheckFolderNavigationAsync(input.Trim());
+            if (useFolderTab is null || _isClosingWindow || !ReferenceEquals(activeFolderTab, ActiveTab)
+                || !ReferenceEquals(folderTabView, GetTabHostedContent(ActiveTab)))
+                return;
+
+            if (useFolderTab.Value)
+            {
+                await folderTabView.NavigateToAsync(input);
+                return;
+            }
         }
 
         var shouldOpenSearchInNewTab = _addressService.IsSearchInput(input);
-        var target = NormalizeYouTubeShortsUrl(_addressService.Resolve(input));
+        var destination = _addressService.ResolveNavigationInput(input);
+        if (!CanOpenSearchTarget(destination))
+            return;
+
+        var target = NormalizeYouTubeShortsUrl(destination);
         var activeTab = ActiveTab is { IsNativeContentTab: false } currentTab
             ? currentTab
             : null;
@@ -5323,7 +5509,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         => DragDrop.DoDragDrop(AddressBox, CreateUrlDragData(url), DragDropEffects.Copy);
 
     bool IAddressBarHost.IsFolderNavigation(string input)
-        => GetTabHostedContent(ActiveTab) is Views.FolderTabView && Directory.Exists(input);
+        => GetTabHostedContent(ActiveTab) is Views.FolderTabView
+            && AddressBarInteractionCoordinator.LooksLikeFolderPath(input);
 
     bool IAddressBarHost.IsSearchInput(string input) => _addressService.IsSearchInput(input);
 
@@ -5361,7 +5548,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     void ISessionRestorationHost.ApplyContainerProfileToTab(BrowserTab tab) => ApplyContainerProfileToTab(tab);
     void ISessionRestorationHost.SelectTab(BrowserTab tab) => SelectTab(tab);
     void ISessionRestorationHost.SetStatus(string message, bool autoClear) => SetStatus(message, autoClear);
-    IReadOnlyCollection<SplitViewModel> ISessionRestorationHost.LoadSplitViews() => _splitViewStore.Load();
+    (IReadOnlyCollection<SplitViewModel> Current, IReadOnlyCollection<SplitViewModel> Backup)
+        ISessionRestorationHost.LoadSplitViews() => _splitViewStore.LoadForRestore();
     void ISessionRestorationHost.AppendSplitViewRestoreDiagnostic(
         SplitViewRestoreResult result, int storedCandidateCount, int sessionCandidateCount,
         int ignoredSessionGroupCount, Guid? activeTabId)
@@ -5467,8 +5655,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     }
 
     private IReadOnlyList<ContainerProfile> ReloadContainerProfiles(bool applyToTabs = true)
+        => ApplyContainerProfileLoad(_containerProfileStore.Load(), applyToTabs);
+
+    private IReadOnlyList<ContainerProfile> ApplyContainerProfileLoad(ContainerProfileLoadResult loaded, bool applyToTabs)
     {
-        var loaded = _containerProfileStore.Load();
         if (loaded.Status == ContainerProfileLoadStatus.Failed)
         {
             _containerProfiles = _containerProfiles with { Status = loaded.Status };
@@ -5684,7 +5874,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task OpenNewWindowRequestInForegroundTabAsync(
         BrowserTab sourceTab,
-        CoreWebView2NewWindowRequestedEventArgs args)
+        CoreWebView2NewWindowRequestedEventArgs args,
+        bool isAuthenticationPopup)
     {
         NoteExplorationActivity();
 
@@ -5696,7 +5887,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             : NormalizeYouTubeShortsUrl(args.Uri);
         var popupTab = new BrowserTab
         {
-            Title = BrowserUrlRulesService.GetAuthenticationPopupInitialTitle(initialUrl),
+            Title = isAuthenticationPopup
+                ? BrowserUrlRulesService.GetAuthenticationPopupInitialTitle(initialUrl)
+                : "新しいタブ",
             ContainerProfileId = sourceTab.ContainerProfileId
         };
         ApplyContainerProfileToTab(popupTab);
@@ -5719,26 +5912,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
         if (popupWebView.CoreWebView2 is not { } popupCore)
         {
-            throw new InvalidOperationException("ログイン用ポップアップの WebView2 を初期化できませんでした。");
+            throw new InvalidOperationException("ポップアップの WebView2 を初期化できませんでした。");
         }
 
         args.NewWindow = popupCore;
-        SetStatus("ログイン用ポップアップを前面タブで開きました", autoClear: true);
+        SetStatus(isAuthenticationPopup
+            ? "ログイン用ポップアップを前面タブで開きました"
+            : "ポップアップを前面タブで開きました", autoClear: true);
     }
 
     private async Task OpenNewWindowRequestInForegroundTabWithDeferralAsync(
         BrowserTab sourceTab,
-        CoreWebView2NewWindowRequestedEventArgs args)
+        CoreWebView2NewWindowRequestedEventArgs args,
+        bool isAuthenticationPopup = true)
     {
         var deferral = args.GetDeferral();
         try
         {
-            await OpenNewWindowRequestInForegroundTabAsync(sourceTab, args);
+            await OpenNewWindowRequestInForegroundTabAsync(sourceTab, args, isAuthenticationPopup);
         }
         catch (Exception ex)
         {
             args.Handled = true;
-            SetStatus("ログイン用ポップアップを開けません: " + ex.Message, autoClear: true);
+            var message = isAuthenticationPopup ? "ログイン用ポップアップを開けません: " : "ポップアップを開けません: ";
+            SetStatus(message + ex.Message, autoClear: true);
         }
         finally
         {
@@ -5783,6 +5980,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         RecordRecentTabSelection(tab);
         if (!ReferenceEquals(previousTab, tab))
         {
+            SynchronizeExtensionToolbarCore(GetSelectedExtensionCore());
+            QueueExtensionToolbarRefresh(tab);
             UpdateAddressConnectionBadgeForTab(tab);
         }
     }
@@ -6368,7 +6567,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 }
             }
 
-            await RefreshExtensionToolbarAsync(core.Profile);
+            if (ReferenceEquals(ActiveTab, tab))
+            {
+                await RefreshExtensionToolbarAsync();
+            }
         }
         finally
         {
@@ -6550,6 +6752,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 return;
             }
 
+            if (args.IsUserInitiated
+                && IsBlankUrl(args.Uri)
+                && BrowserUrlRulesService.IsBlankPopupFromCurrentWebPage(core.Source, args.OriginalSourceFrameInfo?.Source))
+            {
+                _ = OpenNewWindowRequestInForegroundTabWithDeferralAsync(tab, args, isAuthenticationPopup: false);
+                return;
+            }
+
             if (!args.IsUserInitiated)
             {
                 args.Handled = true;
@@ -6588,12 +6798,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             _ = HandleScreenCaptureStartingAsync(tab, args, deferral);
         };
         EventHandler<CoreWebView2DownloadStartingEventArgs> downloadStarting = (_, args) =>
-        {
-            if (_tabs.Contains(tab))
-            {
-                HandleDownloadStarting(tab, args);
-            }
-        };
+            HandleDownloadStarting(tab, core, args);
 
         EventHandler<CoreWebView2WebMessageReceivedEventArgs> webMessageReceived = (_, args) =>
         {
@@ -6708,55 +6913,99 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         BrowserTab tab,
         CoreWebViewEventSubscription subscription)
     {
+        if (_downloadSavePrompt is { } prompt && ReferenceEquals(prompt.Tab, tab) && ReferenceEquals(prompt.Core, subscription.Core))
+            prompt.Dialog.Cancel();
+
         subscription.Dispose();
     }
 
-    private void HandleDownloadStarting(BrowserTab tab, CoreWebView2DownloadStartingEventArgs args)
+    private readonly DownloadStartQueue _downloadStartQueue = new();
+    private (BrowserTab Tab, CoreWebView2 Core, DownloadSaveDialog Dialog)? _downloadSavePrompt;
+
+    private void HandleDownloadStarting(BrowserTab tab, CoreWebView2 core, CoreWebView2DownloadStartingEventArgs args)
     {
-        var deferral = args.GetDeferral();
-        try
-        {
-            HandleDownloadStartingCore(tab, args);
-        }
-        catch (Exception ex)
+        args.Handled = true;
+        if (_isClosingWindow || !_tabs.Contains(tab))
         {
             args.Cancel = true;
-            args.Handled = true;
-            SetStatus("ダウンロードを開始できません: " + ex.Message, autoClear: true);
+            return;
         }
-        finally
+
+        var deferral = args.GetDeferral();
+        var started = false;
+        if (!_windowTaskSupervisor.TryRun("download-start", cancellationToken => _downloadStartQueue.EnqueueAsync(
+            () => Dispatcher.InvokeAsync(static () => { }, System.Windows.Threading.DispatcherPriority.Background).Task,
+            () =>
+            {
+                bool IsCurrent() => !cancellationToken.IsCancellationRequested && !_isClosingWindow && _tabs.Contains(tab)
+                    && ReferenceEquals(GetTabWebView(tab)?.CoreWebView2, core);
+
+                try
+                {
+                    started = IsCurrent() && HandleDownloadStartingCore(tab, core, args, IsCurrent);
+                }
+                catch (Exception ex)
+                {
+                    if (!_isClosingWindow && _tabs.Contains(tab))
+                        SetStatus("ダウンロードを開始できません: " + ex.Message, autoClear: true);
+                }
+            },
+            Complete)))
         {
-            deferral.Complete();
+            Complete();
+        }
+
+        void Complete()
+        {
+            try
+            {
+                if (!started)
+                    args.Cancel = true;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or COMException)
+            {
+                // タブ破棄後はWebView2が要求を保持していない場合がある。
+            }
+            finally
+            {
+                try
+                {
+                    deferral.Complete();
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or COMException)
+                {
+                    // 終了済みのWebView2へは結果を返せない。
+                }
+            }
         }
     }
 
-    private void HandleDownloadStartingCore(BrowserTab tab, CoreWebView2DownloadStartingEventArgs args)
+    private bool HandleDownloadStartingCore(BrowserTab tab, CoreWebView2 core, CoreWebView2DownloadStartingEventArgs args, Func<bool> isCurrent)
     {
         var operation = args.DownloadOperation;
         var suggestedFileName = _downloadPathResolver.GetSuggestedFileName(args.ResultFilePath, operation.Uri);
         string selectedPath;
         if (_settings.Downloads.AskSaveLocation)
         {
-            var dialog = new SaveFileDialog
+            var dialog = new DownloadSaveDialog(ResolveDownloadInitialDirectory(args.ResultFilePath), suggestedFileName);
+            _downloadSavePrompt = (tab, core, dialog);
+            try
             {
-                Title = "ダウンロード先を選択",
-                InitialDirectory = ResolveDownloadInitialDirectory(args.ResultFilePath),
-                FileName = suggestedFileName,
-                Filter = "すべてのファイル (*.*)|*.*",
-                OverwritePrompt = false,
-                CheckPathExists = false,
-                AddExtension = true
-            };
+                if (dialog.ShowDialog(this) != true || dialog.SelectedPath is not { } path)
+                {
+                    if (!_isClosingWindow)
+                        SetStatus("ダウンロードをキャンセルしました", autoClear: true);
+                    return false;
+                }
+                if (!isCurrent())
+                    return false;
 
-            if (dialog.ShowDialog(this) != true)
-            {
-                args.Cancel = true;
-                args.Handled = true;
-                SetStatus("ダウンロードをキャンセルしました", autoClear: true);
-                return;
+                selectedPath = _downloadPathResolver.ResolveUniquePath(path);
             }
-
-            selectedPath = _downloadPathResolver.ResolveUniquePath(dialog.FileName);
+            finally
+            {
+                _downloadSavePrompt = null;
+            }
         }
         else
         {
@@ -6767,14 +7016,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         var safety = _downloadPolicy.InspectFileName(Path.GetFileName(selectedPath));
         if (safety.ShouldWarn && !ConfirmDownloadSafety(safety, Path.GetFileName(selectedPath), operation.Uri))
         {
-            args.Cancel = true;
-            args.Handled = true;
             SetStatus("危険ファイル警告でダウンロードをキャンセルしました", autoClear: true);
-            return;
+            return false;
         }
+        if (!isCurrent())
+            return false;
 
         args.ResultFilePath = selectedPath;
-        args.Handled = true;
         var item = _downloadService.TrackDownload(
             operation,
             selectedPath,
@@ -6784,6 +7032,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         UpdateDownloadsButtonState();
         OpenDownloadShelfForStart();
         SetStatus($"ダウンロードを開始しました: {item.FileName}", autoClear: true);
+        return true;
     }
 
     private string ResolveDownloadInitialDirectory(string? resultFilePath)
@@ -7075,7 +7324,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         QueueSessionSave();
         await ApplyTabAudioPanAsync(tab);
         QueueNativeTabAudioPanRetries(tab);
-        SetStatus($"このタブの音声位置を {tab.AudioPanStatusText} にしました", autoClear: true);
+        var notice = !_settings.AllowSharedWindowsAudioPan && audioPan != TabAudioPan.Stereo
+            ? "。Windows側の処理は設定で許可するまで無効です"
+            : string.Empty;
+        SetStatus($"このタブの音声位置を {tab.AudioPanStatusText} にしました{notice}", autoClear: true);
     }
 
     private static void ApplyTabMuteState(BrowserTab tab)
@@ -7179,16 +7431,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task ApplyNativeTabAudioPanAsync(BrowserTab tab, TabAudioPan audioPan)
     {
-        if (tab.IsNativeContentTab || GetTabWebView(tab)?.CoreWebView2 is not { } core)
+        if (!_settings.AllowSharedWindowsAudioPan
+            || tab.IsNativeContentTab || GetTabWebView(tab)?.CoreWebView2 is not { } core)
         {
             return;
         }
 
         await _nativeTabAudioPanController.ApplyAsync(
             new WebViewAudioPanProcessSource(core),
+            () => _settings.AllowSharedWindowsAudioPan,
             () => TryGetTabHost(tab),
             audioPan,
-            (stage, processIds, result) => AppendTabAudioPanDiagnostic(stage, tab, audioPan, processIds, result));
+            (stage, processIds, result) => QueueTabAudioPanDiagnostic(stage, tab, audioPan, processIds, result));
     }
 
     private static string? TryGetTabHost(BrowserTab tab)
@@ -7196,7 +7450,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         return TryGetHost(GetCurrentPageUrl(tab) ?? string.Empty) ?? TryGetHost(tab.Url ?? string.Empty);
     }
 
-    private static void AppendTabAudioPanDiagnostic(
+    private void QueueTabAudioPanDiagnostic(
         string stage,
         BrowserTab tab,
         TabAudioPan audioPan,
@@ -7205,15 +7459,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     {
         try
         {
-            var directory = Path.Combine(AppPaths.Root, "audio-pan");
-            Directory.CreateDirectory(directory);
-
-            var logPath = Path.Combine(directory, "diagnostic.log");
-            if (File.Exists(logPath) && new FileInfo(logPath).Length > TabAudioPanDiagnosticLogMaxBytes)
-            {
-                File.Delete(logPath);
-            }
-
             var line = string.Join(
                 " | ",
                 DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture),
@@ -7225,11 +7470,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 $"targetSessions={result.TargetSessionCount.ToString(CultureInfo.InvariantCulture)}",
                 $"activeTargetSessions={result.ActiveTargetSessionCount.ToString(CultureInfo.InvariantCulture)}",
                 $"sessions={NormalizeAudioPanDiagnosticToken(string.Join(" ; ", result.DiagnosticLines))}");
-            File.AppendAllText(logPath, line + Environment.NewLine);
+            _performanceDiagnosticLogController.QueueAudioPanLine(line);
         }
         catch
         {
             // 診断ログの失敗で通常ブラウジングや音声制御は止めない。
+        }
+    }
+
+    private void AppendTabAudioPanDiagnosticLines(IReadOnlyList<string> lines)
+    {
+        if (!_windowTaskSupervisor.TryRun(
+            "tab-audio-pan-diagnostic-write",
+            _ => Task.Run(() => s_tabAudioPanDiagnosticLogWriter.AppendLines(lines))))
+        {
+            // 通常終了では既存の診断flushから、残った行をまとめて保存する。
+            s_tabAudioPanDiagnosticLogWriter.AppendLines(lines);
         }
     }
 
@@ -7622,6 +7878,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         string operation, string reason, string pane, BrowserTab? tab,
         Popup popup, FrameworkElement host, string result)
         => AppendSplitYouTubeControlDiagnostic(operation, reason, pane, tab, popup, host, result);
+    void IYouTubeControlPanelHost.RecordSplitPanelPlacement(int generation, bool? available, bool changed)
+    {
+        if (!_isPrivateWindow)
+        {
+            _performanceDiagnosticLogController.RecordSplitPanelPlacement(generation, available, changed);
+        }
+    }
+
     string IYouTubeControlPanelHost.GetYouTubeControlIneligibleReason(BrowserTab? tab)
         => GetYouTubeControlIneligibleReason(tab);
 
@@ -8546,8 +8810,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                     var query = GetJsonString(root, "query");
                     if (!string.IsNullOrWhiteSpace(query) && ActiveTab is { } searchTab)
                     {
-                        var target = _addressService.Resolve(query);
-                        QueueNewTabSearchNavigation(searchTab, target);
+                        var target = _addressService.ResolveNavigationInput(query);
+                        if (CanOpenSearchTarget(target))
+                            QueueNewTabSearchNavigation(searchTab, target);
                     }
                     break;
                 case "openBookmark":
@@ -8563,6 +8828,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                     if (Guid.TryParse(deleteBookmarkId, out var targetBookmarkId))
                     {
                         QueueBookmarkDelete(targetBookmarkId);
+                    }
+                    break;
+                case "undoBookmarkDelete":
+                    if (Guid.TryParse(GetJsonString(root, "id"), out var undoBookmarkId))
+                    {
+                        _windowTaskSupervisor.TryRun("bookmark-undo-delete",
+                            cancellationToken => _bookmarkController.UndoDeleteAsync(undoBookmarkId, cancellationToken));
                     }
                     break;
                 case "showBookmarkPreview":
@@ -9202,20 +9474,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     private UIElement CreateWorkspaceOSView(BrowserTab workspaceTab)
     {
         var view = new Views.WorkspaceOSView();
+        var (tabs, miniPlayers, windows, thumbnails) = CreateWorkspaceWindowPorts();
         var viewModel = new ViewModels.WorkspaceOSViewModel(
-            new WorkspaceService(),
-            _settings.LastWorkspaceId,
-            new ViewModels.WorkspaceTabPort(
-                OpenWorkspaceUrlAsync, OpenWorkspaceSessionTabsAsync,
-                CaptureWorkspaceOpenTabs, CaptureWorkspaceCurrentTab,
-                CloseWorkspaceTabAsync, OpenShellFolderInTab,
-                () => _workspaceSessionController.DeferredRestoreMessage),
-            new ViewModels.WorkspaceMiniPlayerPort(
-                CaptureWorkspaceMediaOverlayShelfItems, CaptureWorkspaceMediaOverlaysAsync, OpenWorkspaceMediaSetAsync),
-            new ViewModels.WorkspaceWindowPort(
-                OpenWorkspaceSessionTabsInNewWindowAsync, OpenWorkspaceFolderWindow, SaveLastWorkspaceId,
-                () => _workspaceSessionController.DeferredRestoreMessage),
-            new ViewModels.WorkspaceThumbnailPort(CaptureWorkspaceUrlThumbnailAsync));
+            new WorkspaceService(), _settings.LastWorkspaceId, tabs, miniPlayers, windows, thumbnails,
+            shellCopyOwnerId: _workspaceShellCopyOwnerId);
         view.DataContext = viewModel;
         view.ConfigureRecentItems(App.RecentItems, recordActions: !_isPrivateWindow);
         view.ConfigureRecentItemOpening(OpenRecentItemAsync);
@@ -9365,7 +9627,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             ExecuteGestureCommandAsync,
             path => OpenLocalVideoMiniPlayer(path),
             QuickLookPaneLayoutChanged,
-            QuickLookTextDisplayChanged)
+            QuickLookTextDisplayChanged,
+            shellCopyOwnerId: _workspaceShellCopyOwnerId)
         {
             Owner = this
         };
@@ -9426,7 +9689,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             ExecuteGestureCommandAsync,
             path => OpenLocalVideoMiniPlayer(path),
             QuickLookPaneLayoutChanged,
-            QuickLookTextDisplayChanged)
+            QuickLookTextDisplayChanged,
+            shellCopyOwnerId: _workspaceShellCopyOwnerId)
         {
             Owner = this
         };
@@ -9465,7 +9729,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 OpenWorkspaceUrlAsync, OpenWorkspaceSessionTabsAsync,
                 CaptureWorkspaceOpenTabs, CaptureWorkspaceCurrentTab,
                 CloseWorkspaceTabAsync, OpenShellFolderInTab,
-                () => _workspaceSessionController.DeferredRestoreMessage),
+                () => _workspaceSessionController.DeferredRestoreMessage)
+            {
+                IsPrivateWindow = _isPrivateWindow
+            },
             new WorkspaceMiniPlayerPort(
                 CaptureWorkspaceMediaOverlayShelfItems, CaptureWorkspaceMediaOverlaysAsync, OpenWorkspaceMediaSetAsync),
             new WorkspaceWindowPort(
@@ -10134,44 +10401,60 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             : null;
     }
 
-    private void OpenExtensionPage(string url)
+    private void QueueExtensionToolbarRefresh(BrowserTab? tab)
     {
-        OpenTab(url, activate: true, title: "拡張機能設定");
-    }
+        if (tab is null || !ReferenceEquals(tab, ActiveTab))
+        {
+            return;
+        }
 
-    private void QueueExtensionToolbarRefresh(CoreWebView2Profile profile)
-    {
         _windowTaskSupervisor.TryRun(
             "extension-toolbar-refresh",
-            cancellationToken => RefreshExtensionToolbarAsync(profile, cancellationToken));
+            cancellationToken => RefreshExtensionToolbarAsync(cancellationToken));
     }
 
-    private async Task RefreshExtensionToolbarAsync(
-        CoreWebView2Profile? profile = null,
-        CancellationToken cancellationToken = default)
+    private CoreWebView2? GetSelectedExtensionCore()
+        => _isPrivateWindow || !_settings.EnableBrowserExtensions || ActiveTab is not { IsNativeContentTab: false } tab
+            ? null
+            : TryGetCoreWebView2(tab);
+
+    private void SynchronizeExtensionToolbarCore(CoreWebView2? core)
     {
-        if (cancellationToken.IsCancellationRequested)
+        if (ReferenceEquals(_extensionToolbarCore, core))
         {
             return;
         }
 
-        if (!_settings.EnableBrowserExtensions)
+        _extensionToolbarCore = core;
+        _extensionToolbarItems.Clear();
+        CloseExtensionPopup(disposeWebView: true);
+    }
+
+    private async Task RefreshExtensionToolbarAsync(CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested || _isClosingWindow)
         {
-            _extensionToolbarItems.Clear();
             return;
         }
 
-        profile ??= GetExtensionProfile();
-        if (profile is null)
+        var core = GetSelectedExtensionCore();
+        SynchronizeExtensionToolbarCore(core);
+        var refreshVersion = ++_extensionToolbarRefreshVersion;
+        if (core is null)
         {
             return;
         }
+
+        bool IsCurrent() => !cancellationToken.IsCancellationRequested
+            && !_isClosingWindow
+            && refreshVersion == _extensionToolbarRefreshVersion
+            && ReferenceEquals(core, GetSelectedExtensionCore());
 
         try
         {
             var manifests = ExtensionManifestInfo.LoadKnownManifests();
-            var extensions = await profile.GetBrowserExtensionsAsync();
-            if (cancellationToken.IsCancellationRequested)
+            var extensions = await core.Profile.GetBrowserExtensionsAsync();
+            if (!IsCurrent())
             {
                 return;
             }
@@ -10186,7 +10469,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
                 })
                 .ToList();
 
-            if (cancellationToken.IsCancellationRequested)
+            if (!IsCurrent())
             {
                 return;
             }
@@ -10199,26 +10482,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         }
         catch (Exception ex)
         {
-            if (cancellationToken.IsCancellationRequested)
+            if (IsCurrent())
             {
-                return;
-            }
-
-            SetStatus("拡張機能アイコンを更新できません: " + ex.Message, autoClear: true);
-        }
-    }
-
-    private CoreWebView2Profile? GetExtensionProfile()
-    {
-        foreach (var tab in _tabs)
-        {
-            if (GetTabWebView(tab)?.CoreWebView2?.Profile is { } profile)
-            {
-                return profile;
+                SetStatus("拡張機能アイコンを更新できません: " + ex.Message, autoClear: true);
             }
         }
-
-        return null;
     }
 
     private async void ExtensionIconButton_Click(object sender, RoutedEventArgs e)
@@ -10236,6 +10504,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     {
         if ((sender as FrameworkElement)?.DataContext is not ExtensionToolbarItem item
             || sender is not Button button)
+        {
+            return;
+        }
+
+        if (!_extensionToolbarItems.Contains(item) || !ReferenceEquals(_extensionToolbarCore, GetSelectedExtensionCore()))
         {
             return;
         }
@@ -10270,7 +10543,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             Header = "設定を開く",
             IsEnabled = !string.IsNullOrWhiteSpace(settingsUrl)
         };
-        settingsItem.Click += (_, _) => OpenExtensionToolbarPage(settingsUrl, "拡張機能設定", "設定ページが見つかりません");
+        settingsItem.Click += (_, _) =>
+        {
+            if (_extensionToolbarItems.Contains(item))
+            {
+                OpenExtensionToolbarPage(settingsUrl, "拡張機能設定", "設定ページが見つかりません");
+            }
+        };
         menu.Items.Add(settingsItem);
 
         var toggleItem = new MenuItem
@@ -10309,12 +10588,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
-        OpenTab(url, activate: true, title: title);
+        OpenTab(url, activate: true, title: title, containerProfileId: ActiveTab?.ContainerProfileId);
     }
 
     private async Task ShowExtensionPopupAsync(ExtensionToolbarItem item, Button button)
     {
-        if (_isClosingWindow)
+        if (_isClosingWindow
+            || !_extensionToolbarItems.Contains(item)
+            || GetSelectedExtensionCore() is not { } sourceCore
+            || !ReferenceEquals(_extensionToolbarCore, sourceCore))
         {
             return;
         }
@@ -10340,9 +10622,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             return;
         }
 
+        var requestVersion = _extensionPopupRequestCoordinator.BeginRequest();
         try
         {
-            var requestVersion = _extensionPopupRequestCoordinator.BeginRequest();
             var popup = EnsureExtensionPopup();
             _extensionPopupPlacementTarget = button;
             _extensionPopupRequestCoordinator.SetCurrentUrl(popupUrl);
@@ -10359,8 +10641,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             }
 
             var webView = _extensionPopupWebView;
-            await webView.EnsureCoreWebView2Async(await EnsureWebViewEnvironmentAsync());
+            await webView.EnsureCoreWebView2Async(sourceCore.Environment);
             if (_isClosingWindow
+                || !ReferenceEquals(sourceCore, GetSelectedExtensionCore())
                 || !_extensionPopupRequestCoordinator.IsCurrent(requestVersion)
                 || !ReferenceEquals(_extensionPopupWebView, webView)
                 || !ReferenceEquals(_extensionPopup, popup)
@@ -10375,15 +10658,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             webView.Focus();
             SetStatus($"{item.Name} のポップアップを表示しました", autoClear: true);
         }
-        catch (WebView2RuntimeNotFoundException)
+        catch (WebView2RuntimeNotFoundException) when (_extensionPopupRequestCoordinator.IsCurrent(requestVersion))
         {
             CloseExtensionPopup();
             SetStatus("WebView2 Runtime が見つかりません", autoClear: true);
         }
         catch (Exception ex)
         {
-            CloseExtensionPopup();
-            SetStatus("拡張機能ポップアップを表示できません: " + ex.Message, autoClear: true);
+            if (_extensionPopupRequestCoordinator.IsCurrent(requestVersion))
+            {
+                CloseExtensionPopup();
+                SetStatus("拡張機能ポップアップを表示できません: " + ex.Message, autoClear: true);
+            }
         }
     }
 
@@ -10475,6 +10761,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     private async Task ToggleExtensionFromToolbarAsync(ExtensionToolbarItem item)
     {
+        if (!_extensionToolbarItems.Contains(item))
+        {
+            return;
+        }
+
         try
         {
             await item.Extension.EnableAsync(!item.IsExtensionEnabled);
@@ -10497,7 +10788,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
 
-        if (result != MessageBoxResult.Yes)
+        if (result != MessageBoxResult.Yes || !_extensionToolbarItems.Contains(item))
         {
             return;
         }
@@ -10623,7 +10914,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         _closedTabLifecycleController.ClosePreparedTab(tab);
     }
 
-    private static ClosedTabState CreateClosedTabState(
+    private ClosedTabState CreateClosedTabState(
         BrowserTab tab,
         DateTimeOffset closedAt,
         bool isMuted)
@@ -10743,7 +11034,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     bool IClosedTabLifecycleHost.CanRememberClosedTab(BrowserTab tab)
         => !_isPrivateWindow
             && (!tab.IsNativeContentTab || tab.IsFolderTab)
-            && !string.IsNullOrWhiteSpace(tab.Url);
+            && !string.IsNullOrWhiteSpace(tab.Url)
+            && !BrowserUrlRulesService.IsSelectedTextTranslationUrl(tab.Url);
     void IClosedTabLifecycleHost.SilenceTabRuntimeAudio(BrowserTab tab) => SilenceTabRuntimeAudio(tab);
     void IClosedTabLifecycleHost.ClearSplitViewForSingleTab(BrowserTab tab) => ClearSplitViewForSingleTab(tab);
     void IClosedTabLifecycleHost.PersistSplitViewState() => PersistSplitViewState();
@@ -11276,7 +11568,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         RefreshTabFromCore(tab);
         RefreshTabAudioState(tab);
         RefreshTabMuteState(tab);
-        QueueExtensionToolbarRefresh(core.Profile);
+        QueueExtensionToolbarRefresh(tab);
     }
 
     private bool InsertTransferredTab(TabTransferSnapshot snapshot, Point dropPoint, object originalSource)
@@ -11335,6 +11627,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         var url = externalDrop.Kind == ExternalTabDropKind.Search
             ? _addressService.CreateSearchUrl(searchText)
             : externalDrop.Value;
+        if (!CanOpenSearchTarget(url))
+            return;
+
         var insertionIndex = GetInsertionIndexForDrop(tabList, dropPoint, originalSource);
         var previousPositions = CaptureTabLayoutPositions(tabList);
         OpenTab(
@@ -11614,8 +11909,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
 
     bool IInactiveTabWorkHost.IsInitialized => _isInitialized;
     bool IInactiveTabWorkHost.IsClosing => _isClosingWindow;
-    bool IInactiveTabWorkHost.IsCpuSaverEnabled => _settings.EnableFocusedViewingCpuSaver;
-    double IInactiveTabWorkHost.CpuSaverDelaySeconds => _settings.FocusedViewingCpuSaverDelaySeconds;
+    bool IInactiveTabWorkHost.IsCpuSaverEnabled => CurrentTabResourceSettings.FocusedViewingCpuSaverEnabled;
+    double IInactiveTabWorkHost.CpuSaverDelaySeconds => CurrentTabResourceSettings.CpuSaverDelaySeconds;
     int IInactiveTabWorkHost.WindowIndex => _workspaceWindowIndex;
     BrowserTab? IInactiveTabWorkHost.ActiveTab => ActiveTab;
     IList<BrowserTab> IInactiveTabWorkHost.Tabs => _tabs;
@@ -12313,7 +12608,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     {
         try
         {
-            _splitViewStore.Save(_splitViewService.Snapshot());
+            if (!_splitViewStore.Save(_splitViewService.Snapshot(), s_hasCompletedStartupSplitViewRestore))
+            {
+                AppendDiagnosticLogLine(
+                    "runner=split-restore",
+                    "operation=split-view-save-deferred",
+                    "reason=startup-restore-pending");
+            }
         }
         catch (Exception ex)
         {
@@ -12441,13 +12742,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
     void ITabThumbnailCaptureHost.RecordCaptureDiagnostic(BrowserTab tab, string? url, long elapsedMilliseconds, string detail, bool isBackgroundWarmup)
         => AppendWebViewPerformanceDiagnostic("webview-thumbnail-capture", tab, url, elapsedMilliseconds, detail, thumbnailWarmup: isBackgroundWarmup);
 
-    private static ImageSource CreateFallbackThumbnail(BrowserTab tab)
+    private ImageSource CreateFallbackThumbnail(BrowserTab tab)
     {
         return CreateFallbackThumbnail(tab.DisplayTitle, tab.Url);
     }
 
-    private static ImageSource CreateFallbackThumbnail(string titleText, string? urlText)
-        => s_previewThumbnailRenderer.CreateFallbackThumbnail(titleText, urlText);
+    private ImageSource CreateFallbackThumbnail(string titleText, string? urlText)
+        => _previewThumbnailRenderer.CreateFallbackThumbnail(titleText, urlText);
 
     private void UpdateTabLayout()
         => _tabStripController?.UpdateTabLayout();
@@ -13105,7 +13406,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         var url = tab.IsFolderTab
             ? tab.Url?.Trim()
             : NormalizeSessionTabUrl(tab.Url, tab.Title);
-        if (string.IsNullOrWhiteSpace(url))
+        if (string.IsNullOrWhiteSpace(url) || BrowserUrlRulesService.IsSelectedTextTranslationUrl(url))
         {
             return null;
         }
@@ -13183,7 +13484,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged, ILinkPreviewHo
         var bookmarkDataJson = JsonSerializer.Serialize(bookmarkData);
         var webMessageTokenJson = JsonSerializer.Serialize(GetTabWebMessageToken(tab));
 
-        return NewTabPageHtmlBuilder.Build(bookmarkDataJson, webMessageTokenJson);
+        var undoBookmarkIdJson = _bookmarkController.UndoDeleteBookmarkId is { } undoBookmarkId
+            ? JsonSerializer.Serialize(undoBookmarkId) : null;
+        return NewTabPageHtmlBuilder.Build(bookmarkDataJson, webMessageTokenJson, undoBookmarkIdJson);
     }
 
     private static async Task<string> LoadScriptAsync(string fileName)

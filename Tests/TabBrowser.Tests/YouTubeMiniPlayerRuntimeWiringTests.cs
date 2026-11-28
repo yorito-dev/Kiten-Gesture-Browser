@@ -45,7 +45,6 @@ public sealed class YouTubeMiniPlayerRuntimeWiringTests
             new YouTubeMiniPlayerPositionCallbacks(
                 ClampToHost: (_, _, _) => { },
                 SetPosition: (_, _) => { },
-                ForceNativePosition: _ => { },
                 ForceRuntimeNativePosition: _ => { },
                 SyncPopupOffsets: _ => { },
                 QueueNativePositionRefresh: _ => { },

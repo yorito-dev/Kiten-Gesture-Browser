@@ -147,6 +147,15 @@ public static class SitePrivacyService
             CoreWebView2PermissionKind.Microphone => "マイク",
             CoreWebView2PermissionKind.Notifications => "通知",
             CoreWebView2PermissionKind.Geolocation => "位置情報",
+            CoreWebView2PermissionKind.OtherSensors => "センサー",
+            CoreWebView2PermissionKind.ClipboardRead => "クリップボードの読み取り",
+            CoreWebView2PermissionKind.MultipleAutomaticDownloads => "複数ファイルの自動ダウンロード",
+            CoreWebView2PermissionKind.FileReadWrite => "ファイルの読み書き",
+            CoreWebView2PermissionKind.Autoplay => "自動再生",
+            CoreWebView2PermissionKind.LocalFonts => "ローカルフォント",
+            CoreWebView2PermissionKind.MidiSystemExclusiveMessages => "MIDIシステム排他メッセージ",
+            CoreWebView2PermissionKind.WindowManagement => "ウィンドウ管理",
+            CoreWebView2PermissionKind.PersistentStorage => "永続ストレージ",
             _ => kind.ToString()
         };
     }
@@ -162,21 +171,36 @@ public static class SitePrivacyService
     }
 
     public static async Task<IReadOnlyList<SitePermissionEntry>> GetPermissionEntriesAsync(
-        CoreWebView2Profile profile)
+        CoreWebView2Profile profile, bool includeResetOnlyPermissions = false)
     {
         var settings = await profile.GetNonDefaultPermissionSettingsAsync();
+        return CreatePermissionEntries(settings.Select(static setting =>
+            (setting.PermissionOrigin, setting.PermissionKind, setting.PermissionState)), includeResetOnlyPermissions);
+    }
+
+    internal static IReadOnlyList<SitePermissionEntry> CreatePermissionEntries(
+        IEnumerable<(string Origin, CoreWebView2PermissionKind Kind, CoreWebView2PermissionState State)> settings,
+        bool includeResetOnlyPermissions)
+    {
         return settings
-            .Where(static setting => IsManagedPermission(setting.PermissionKind))
+            .Where(setting => IsManagedPermission(setting.Kind)
+                || (includeResetOnlyPermissions && CanChangePermission(setting.Kind, CoreWebView2PermissionState.Default)
+                    && PageZoomPreferenceSettingsProfile.TryNormalizeOrigin(setting.Origin, out _)))
             .Select(static setting => new SitePermissionEntry(
-                setting.PermissionOrigin,
-                setting.PermissionKind,
-                setting.PermissionState,
-                GetPermissionName(setting.PermissionKind),
-                GetPermissionStateName(setting.PermissionState)))
+                setting.Origin,
+                setting.Kind,
+                setting.State,
+                GetPermissionName(setting.Kind),
+                GetPermissionStateName(setting.State)))
             .OrderBy(static entry => entry.Origin, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static entry => entry.PermissionName, StringComparer.CurrentCulture)
             .ToList();
     }
+
+    internal static bool CanChangePermission(CoreWebView2PermissionKind kind, CoreWebView2PermissionState state)
+        => IsManagedPermission(kind)
+            || (state == CoreWebView2PermissionState.Default
+                && kind != CoreWebView2PermissionKind.UnknownPermission && Enum.IsDefined(kind));
 
     public static Task SetPermissionStateAsync(
         CoreWebView2Profile profile,
@@ -187,6 +211,11 @@ public static class SitePrivacyService
         if (!PageZoomPreferenceSettingsProfile.TryNormalizeOrigin(origin, out var normalizedOrigin))
         {
             throw new ArgumentException("有効なHTTP/HTTPSオリジンではありません。", nameof(origin));
+        }
+
+        if (!CanChangePermission(kind, state))
+        {
+            throw new ArgumentException("この権限は既定へ戻す操作だけ使えます。", nameof(state));
         }
 
         return profile.SetPermissionStateAsync(kind, normalizedOrigin, state);

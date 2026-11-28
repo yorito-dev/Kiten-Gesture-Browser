@@ -26,6 +26,7 @@ internal interface IYouTubeMiniPlayerActivityHost
     void QueueLayoutVerification(YouTubeMiniPlayerState state);
     void CancelPendingRecovery(Guid id);
     void QueueDiagnosticLogLine(IReadOnlyList<string> fields);
+    void RecordInactiveSuspension(bool stopStalledLoad, MiniPlayerSuspendScheduleEvent scheduleEvent);
     void BringLiveChatToFront(Guid id);
     Task RefreshLiveChatAsync(YouTubeMiniPlayerState state, WebView2 webView);
     void QueueSave();
@@ -110,6 +111,12 @@ internal sealed class YouTubeMiniPlayerActivityController
 
     public void HandlePlaybackDiagnostic(YouTubeMiniPlayerState state, YouTubePlaybackDiagnosticMessage message)
     {
+        if (message.EventName is "surface-probe" or "layout-counts" or "paused-layout-probe")
+        {
+            _host.ReportPlaybackDiagnostic(state, message);
+            return;
+        }
+
         var observedAt = _utcNow();
         var previousPaused = state.IsPaused;
         var stateChanged = YouTubeMiniPlayerStateService.ApplyPlaybackDiagnosticMessage(state, message, observedAt);
@@ -284,18 +291,48 @@ internal sealed class YouTubeMiniPlayerActivityController
             return;
         }
 
-        var generation = ++runtime.InactiveSuspendGeneration;
         var queuedAt = _utcNow();
         var delay = stopStalledLoad
             ? TimeSpan.FromMilliseconds(YouTubeMiniPlayerInactiveLoadStopDelayMilliseconds)
             : _host.CpuSaverDelay;
-        _ = RunYouTubeMiniPlayerInactiveSuspensionAsync(
+        _host.RecordInactiveSuspension(stopStalledLoad, MiniPlayerSuspendScheduleEvent.Requested);
+        if (runtime.PendingInactiveSuspension is { } pending && pending.Generation == runtime.InactiveSuspendGeneration)
+        {
+            if (pending.StopStalledLoad == stopStalledLoad && pending.Delay == delay
+                && (_host.GetPlaybackActivity(state.Id)?.LastProgressAt ?? DateTimeOffset.MinValue) <= pending.QueuedAt)
+            {
+                _host.RecordInactiveSuspension(stopStalledLoad, MiniPlayerSuspendScheduleEvent.Merged);
+                return;
+            }
+            _host.RecordInactiveSuspension(stopStalledLoad, MiniPlayerSuspendScheduleEvent.Replaced);
+        }
+
+        var generation = ++runtime.InactiveSuspendGeneration;
+        runtime.PendingInactiveSuspension = (generation, stopStalledLoad, queuedAt, delay);
+        _ = RunScheduledInactiveSuspensionAsync(
             state,
             runtime,
             generation,
             queuedAt,
             delay,
             stopStalledLoad);
+    }
+
+    private async Task RunScheduledInactiveSuspensionAsync(
+        YouTubeMiniPlayerState state, YouTubeMiniPlayerRuntime runtime, int generation,
+        DateTimeOffset queuedAt, TimeSpan delay, bool stopStalledLoad)
+    {
+        try
+        {
+            await RunYouTubeMiniPlayerInactiveSuspensionAsync(state, runtime, generation, queuedAt, delay, stopStalledLoad);
+        }
+        finally
+        {
+            if (runtime.PendingInactiveSuspension?.Generation == generation)
+            {
+                runtime.PendingInactiveSuspension = null;
+            }
+        }
     }
 
     private async Task RunYouTubeMiniPlayerInactiveSuspensionAsync(
@@ -372,6 +409,7 @@ internal sealed class YouTubeMiniPlayerActivityController
         if (await _host.TrySuspendForInactivityAsync(runtime))
         {
             _inactiveYouTubeMiniPlayerSuspendCount++;
+            _host.RecordInactiveSuspension(stopStalledLoad, MiniPlayerSuspendScheduleEvent.Suspended);
             _host.QueueDiagnosticLogLine(
             [
                 "runner=youtube-inactive",

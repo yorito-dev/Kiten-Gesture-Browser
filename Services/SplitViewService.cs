@@ -78,7 +78,8 @@ public sealed class SplitViewService
         BrowserTab? rightTab,
         IEnumerable<BrowserTab> tabs,
         SplitViewModel snapshot,
-        out SplitViewModel model)
+        out SplitViewModel model,
+        bool activate = true)
     {
         ArgumentNullException.ThrowIfNull(tabs);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -110,11 +111,38 @@ public sealed class SplitViewService
 
         RemoveSplitsContainingTabs(tabs, leftTab.Id, rightTab.Id);
         splitViews.Add(restored);
-        ActiveSplitView = restored;
+        if (activate)
+        {
+            ActiveSplitView = restored;
+        }
+
         ApplySplitId(leftTab, restored);
         ApplySplitId(rightTab, restored);
         model = restored;
         return true;
+    }
+
+    internal bool TryRollbackStart(
+        SplitViewModel registration, IList<BrowserTab> tabs, IReadOnlyList<SplitViewModel> displaced)
+    {
+        var changed = splitViews.Contains(registration);
+        if (changed)
+        {
+            ClearSplitView(registration, tabs);
+        }
+
+        // タブの終了などで仮登録がすでに消えていても、残っている元のペアは復元する。
+        foreach (var snapshot in displaced)
+        {
+            var left = tabs.FirstOrDefault(tab => tab.Id == snapshot.LeftTabId);
+            var right = tabs.FirstOrDefault(tab => tab.Id == snapshot.RightTabId);
+            if (!ContainsAny(left) && !ContainsAny(right))
+            {
+                changed |= TryRestoreSnapshot(registration.WindowId, left, right, tabs, snapshot, out _, activate: false);
+            }
+        }
+
+        return changed;
     }
 
     public void Clear(IEnumerable<BrowserTab> tabs)

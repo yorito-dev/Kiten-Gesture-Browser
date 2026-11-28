@@ -9,7 +9,6 @@ using TabBrowser.Models;
 namespace TabBrowser.Services;
 
 internal sealed record YouTubeMiniPlayerRuntimeWiringCallbacks(
-    Action<YouTubeMiniPlayerState> ForcePopupNativePosition,
     Action<Guid, bool> BringToFront,
     Action<FrameworkElement, YouTubeMiniPlayerState> AttachDrag,
     Action<YouTubeMiniPlayerState> ToggleMinimized,
@@ -52,7 +51,6 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
         var runtime = runtimeParts.Runtime;
         var chrome = runtimeParts.Chrome;
         var root = runtime.Root;
-        _ = callbacks.ForcePopupNativePosition;
         root.MouseLeftButtonDown += (_, _) => callbacks.BringToFront(state.Id, false);
 
         AttachTitleBandHandlers(state, runtimeParts, runtimes, callbacks);
@@ -278,11 +276,27 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
                 callbacks.UpdateToolbarPlacement(runtime);
             }
 
-            if (!runtime.IsWebDragging && !runtime.IsSurfaceDragging && !runtime.IsResizing)
+            if (!runtime.WebDrag.IsDragging && !runtime.IsSurfaceDragging && !runtime.IsResizing)
             {
                 callbacks.QueueSave();
             }
         }
+    }
+
+    public static void AttachTitleBandHistoryNavigation(
+        YouTubeMiniPlayerRuntime runtime,
+        Action<YouTubeMiniPlayerRuntime, bool> navigate)
+    {
+        runtime.TitleBandBackButton.Click += (_, e) =>
+        {
+            e.Handled = true;
+            navigate(runtime, false);
+        };
+        runtime.TitleBandForwardButton.Click += (_, e) =>
+        {
+            e.Handled = true;
+            navigate(runtime, true);
+        };
     }
 
     private static void AttachTitleBandHandlers(
@@ -308,6 +322,15 @@ internal static class YouTubeMiniPlayerRuntimeWiringService
         titleBand.MouseEnter += (_, _) => callbacks.SetTitleBandVisibility(state, true);
         titleBand.MouseMove += (_, _) => callbacks.SetTitleBandVisibility(state, true);
         titleBand.MouseLeave += (_, _) => callbacks.SetTitleBandVisibility(state, false);
+        titleBand.LostMouseCapture += (_, e) =>
+        {
+            if (ReferenceEquals(e.OriginalSource, titleBand)
+                && runtimes.TryGetValue(state.Id, out var current)
+                && !current.IsDisposed && !current.IsClosingTaskbarWindow && !current.IsFullScreen)
+            {
+                callbacks.SetTitleBandVisibility(state, titleBand.IsMouseOver);
+            }
+        };
         runtime.TitleBandPopup.Opened += (_, _) =>
         {
             if (runtimes.TryGetValue(state.Id, out var current))

@@ -831,34 +831,17 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
         }
 
         if (TryGetDroppedPaths(e, out var paths)
-            && ViewModel is { } shellViewModel)
+            && ViewModel is { CurrentWorkspace: { } workspace } shellViewModel)
         {
-            var textFileMode = WorkspaceTextFileDropMode.PlaceAsFile;
-            var textFileCount = paths.Count(path =>
-                File.Exists(path) && WorkspaceShellItemService.IsTextDocumentPath(path));
-            if (textFileCount > 0)
-            {
-                var dialog = new WorkspaceTextFileImportChoiceWindow(textFileCount)
-                {
-                    Owner = Window.GetWindow(this)
-                };
-                _ = dialog.ShowDialog();
-                if (dialog.Choice == WorkspaceTextFileImportChoice.Cancel)
-                {
-                    return false;
-                }
-
-                textFileMode = dialog.Choice == WorkspaceTextFileImportChoice.ImportAsNote
-                    ? WorkspaceTextFileDropMode.ImportAsNote
-                    : WorkspaceTextFileDropMode.PlaceAsFile;
-            }
-
             var canvasPoint = ToCanvasPoint(pointInViewport);
-            shellViewModel.SaveDroppedShellItemsCommand.Execute(new WorkspaceShellDropRequest(
+            var folderAtDrop = shellViewModel.CurrentFolderId;
+            var request = new WorkspaceShellDropRequest(
                 paths,
                 new WorkspaceCanvasPoint(canvasPoint.X, canvasPoint.Y),
-                targetFolderId,
-                textFileMode));
+                targetFolderId ?? folderAtDrop);
+            _ = Dispatcher.InvokeAsync(
+                () => ImportDroppedShellItems(shellViewModel, workspace.Id, folderAtDrop, request),
+                DispatcherPriority.Background);
             return true;
         }
 
@@ -878,6 +861,44 @@ public partial class WorkspaceCanvasView : UserControl, IDisposable
         }
 
         return false;
+    }
+
+    private void ImportDroppedShellItems(
+        WorkspaceOSViewModel viewModel, Guid workspaceId, Guid? folderAtDrop, WorkspaceShellDropRequest request)
+    {
+        bool IsCurrentDropDestination() => !_isDisposed && IsLoaded
+            && ReferenceEquals(ViewModel, viewModel)
+            && viewModel.CurrentWorkspace?.Id == workspaceId
+            && viewModel.CurrentFolderId == folderAtDrop;
+
+        if (!IsCurrentDropDestination())
+        {
+            return;
+        }
+
+        var textFileCount = request.Paths.Count(path =>
+            WorkspaceShellItemService.IsTextDocumentPath(path) && File.Exists(path));
+        if (textFileCount > 0)
+        {
+            var dialog = new WorkspaceTextFileImportChoiceWindow(textFileCount)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            _ = dialog.ShowDialog();
+            if (dialog.Choice == WorkspaceTextFileImportChoice.Cancel || !IsCurrentDropDestination())
+            {
+                return;
+            }
+
+            request = request with
+            {
+                TextFileMode = dialog.Choice == WorkspaceTextFileImportChoice.ImportAsNote
+                    ? WorkspaceTextFileDropMode.ImportAsNote
+                    : WorkspaceTextFileDropMode.PlaceAsFile
+            };
+        }
+
+        viewModel.SaveDroppedShellItemsCommand.Execute(request);
     }
 
     private static bool HasSupportedWorkspaceDrop(DragEventArgs e)

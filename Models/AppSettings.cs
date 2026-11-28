@@ -7,16 +7,30 @@ using TabBrowser.Services;
 
 namespace TabBrowser.Models;
 
+internal sealed record TabResourceSettings(
+    bool FocusedViewingCpuSaverEnabled, double CpuSaverDelaySeconds, bool InactiveTabMemorySaverEnabled)
+{
+    public static TabResourceSettings Capture(AppSettings settings, TabResourceSettings? shared = null)
+    {
+        var current = new TabResourceSettings(settings.EnableFocusedViewingCpuSaver,
+            settings.FocusedViewingCpuSaverDelaySeconds, settings.EnableInactiveTabMemorySaver);
+        return shared is not null && shared == current ? shared : current;
+    }
+}
+
 public sealed class AppSettings
 
     : IJsonOnDeserialized, IJsonOnSerializing
 
 {
+    internal const string DefaultSearchEngine = "Google";
+    internal const string DefaultSearchUrlTemplate = "https://www.google.com/search?q={0}";
+
     public int Version { get; set; } = 1;
 
-    public string SearchEngine { get; set; } = "Google";
+    public string SearchEngine { get; set; } = DefaultSearchEngine;
 
-    public string SearchUrlTemplate { get; set; } = "https://www.google.com/search?q={0}";
+    public string SearchUrlTemplate { get; set; } = DefaultSearchUrlTemplate;
 
     public List<SearchAliasSettings> SearchAliases { get; set; } = SearchAliasSettingsProfile.CreateDefaults();
 
@@ -27,6 +41,9 @@ public sealed class AppSettings
     public bool PreserveContextMenuOnShortRightClick { get; set; } = true;
 
     public bool EnableLinkHoverPreview { get; set; }
+
+    public bool AllowSharedWindowsAudioPan { get; set; }
+    public bool RestoredAudioPanNoticeShown { get; set; }
 
     public List<GestureMappingSettings> GestureMappings { get; set; } = GestureSettingsCatalog.CreateDefaultMappings();
 
@@ -288,6 +305,19 @@ public static class PageZoomPreferenceSettingsProfile
         }
 
         var normalizedContainerProfileId = ContainerProfile.NormalizeId(containerProfileId);
+        if (entries is not null
+            && entries.TryGetNonEnumeratedCount(out var count)
+            && count <= MaximumEntryCount)
+        {
+            var matching = entries.Where(entry =>
+                    TryNormalizeOrigin(entry.Origin, out var entryOrigin)
+                    && entryOrigin.Equals(origin, StringComparison.Ordinal)
+                    && ContainerProfile.NormalizeId(entry.ContainerProfileId)
+                        .Equals(normalizedContainerProfileId, StringComparison.Ordinal))
+                .MaxBy(static entry => NormalizeUpdatedAt(entry.UpdatedAt));
+            return matching is null ? DefaultZoomFactor : NormalizeZoomFactor(matching.ZoomFactor);
+        }
+
         return Normalize(entries).FirstOrDefault(entry =>
                 entry.Origin.Equals(origin, StringComparison.Ordinal)
                 && entry.ContainerProfileId.Equals(normalizedContainerProfileId, StringComparison.Ordinal))
@@ -364,9 +394,12 @@ public static class PageZoomPreferenceSettingsProfile
             Origin = origin,
             ContainerProfileId = ContainerProfile.NormalizeId(entry.ContainerProfileId),
             ZoomFactor = NormalizeZoomFactor(entry.ZoomFactor),
-            UpdatedAt = entry.UpdatedAt == default ? DateTimeOffset.UnixEpoch : entry.UpdatedAt
+            UpdatedAt = NormalizeUpdatedAt(entry.UpdatedAt)
         };
     }
+
+    private static DateTimeOffset NormalizeUpdatedAt(DateTimeOffset updatedAt)
+        => updatedAt == default ? DateTimeOffset.UnixEpoch : updatedAt;
 }
 
 public static class FolderTabViewMode
@@ -419,6 +452,8 @@ public sealed class BrowsingHistorySettings
 {
     public bool IsEnabled { get; set; }
 
+    public int? RetentionDays { get; set; }
+
     public List<string> ExcludedHosts { get; set; } = [];
 
     public List<string> ExcludedContainerProfileIds { get; set; } = [];
@@ -428,6 +463,7 @@ public static class BrowsingHistorySettingsProfile
 {
     public const int MaximumExcludedHostCount = 200;
     public const int MaximumExcludedContainerCount = 64;
+    internal static readonly IReadOnlyList<int> RetentionChoices = [30, 90, 365];
 
     public static BrowsingHistorySettings Normalize(BrowsingHistorySettings? settings)
     {
@@ -435,6 +471,7 @@ public static class BrowsingHistorySettingsProfile
         return new BrowsingHistorySettings
         {
             IsEnabled = settings.IsEnabled,
+            RetentionDays = settings.RetentionDays is { } days && RetentionChoices.Contains(days) ? days : null,
             ExcludedHosts = (settings.ExcludedHosts ?? [])
                 .Select(NormalizeHost)
                 .Where(static host => host.Length > 0)
@@ -641,6 +678,17 @@ public static class FolderTabSortPreferenceSettingsProfile
         if (!TryNormalizeFolderPath(folderPath, out var normalizedPath))
         {
             return null;
+        }
+
+        if (entries is not null
+            && entries.TryGetNonEnumeratedCount(out var count)
+            && count <= MaximumEntryCount)
+        {
+            var matching = entries.OfType<FolderTabSortPreferenceSettings>()
+                .Where(entry => TryNormalizeFolderPath(entry.FolderPath, out var entryPath)
+                    && string.Equals(entryPath, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                .MaxBy(static entry => entry.UpdatedAt);
+            return matching is null ? null : NormalizeEntry(matching);
         }
 
         return Normalize(entries).FirstOrDefault(
@@ -1078,10 +1126,10 @@ internal static class PublicSettingsCompatibility
 {
     internal static readonly string[] RootKeys =
     [
-        "enableOnePasswordIntegration", "onePasswordCliPath", "ytDlpPath",
+        "enableOnePasswordIntegration", "onePasswordCliPath", "ytDlpPath", "ytDlpExecutableApproval",
         "enableYouTubePoTokenProvider", "youTubePoTokenPluginDirectory",
         "youTubePoTokenProviderBaseUrl", "useMwebClient",
-        "chatGptReadability", "fiveChLiveReadability", "enableXReadableMode", "youTubeFavoriteLive"
+        "chatGptReadability", "fiveChLiveReadability", "enableXReadableMode", "enableXReadableAutoTranslation", "youTubeFavoriteLive"
     ];
 
     internal static readonly string[] ToolbarKeys = ["showOnePasswordCandidateButton"];

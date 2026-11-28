@@ -65,6 +65,8 @@ internal sealed class PageToolsController
     private bool _pageToolsInitialized;
     private bool _pageToolsDisposed;
 
+    internal bool HasPendingPageZoomSettingsSave => _pageZoomSettingsSaveTimer.IsEnabled;
+
     internal void InitializePageTools()
     {
         if (_pageToolsInitialized)

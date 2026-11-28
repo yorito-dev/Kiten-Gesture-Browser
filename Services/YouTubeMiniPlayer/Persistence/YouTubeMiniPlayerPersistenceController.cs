@@ -1,3 +1,4 @@
+using System.IO;
 using TabBrowser.Models;
 using TabBrowser.Models.Workspaces;
 
@@ -10,6 +11,7 @@ internal interface IYouTubeMiniPlayerPersistenceOwner
     int WindowIndex { get; }
     IReadOnlyList<YouTubeMiniPlayerState> States { get; }
     Task<bool> CaptureLoadedAsync();
+    Action? CapturePendingSaveConfirmation();
     int RestoreWindowMemoryPlaceholders(Guid savedSessionWindowId, IEnumerable<YouTubeMiniPlayerState> players, HashSet<Guid> unavailableIds);
 }
 
@@ -22,7 +24,7 @@ internal interface IYouTubeMiniPlayerPersistenceHost : IYouTubeMiniPlayerPersist
     IReadOnlyList<IYouTubeMiniPlayerPersistenceOwner> GetWorkspaceOwners();
     Func<IEnumerable<YouTubeMiniPlayerState>, int> CreatePlaceholderRestorer();
     IEnumerable<YouTubeMiniPlayerState> LoadStoredPlayers();
-    void SaveSnapshot(IReadOnlyList<YouTubeMiniPlayerState> players);
+    bool SaveSnapshot(IReadOnlyList<YouTubeMiniPlayerState> players, bool beforeClose = false);
     bool RemoveOpenPlayersFromClosedHistory();
     void QueueSessionSave();
     void RefreshClosedHistory();
@@ -237,18 +239,21 @@ internal sealed class YouTubeMiniPlayerPersistenceController
     public void SaveYouTubeMiniPlayersNow()
     {
         var saveVersion = Volatile.Read(ref _saveRequestVersion);
-        _host.SaveSnapshot(CaptureSaveSnapshot());
-        MarkSavePersisted(saveVersion);
+        if (_host.SaveSnapshot(CaptureSaveSnapshot()))
+        {
+            MarkSavePersisted(saveVersion);
+        }
     }
 
     internal Action CapturePendingSaveOperation()
     {
-        var saveVersion = Volatile.Read(ref _saveRequestVersion);
         var snapshotAt = _utcNow();
         var persistableWindows = GetPersistableWindows();
-        if (Volatile.Read(ref _persistedSaveRequestVersion) >= saveVersion
-            && !_youTubeMiniPlayerStateSyncCoordinator.HasPendingEventStateSave
-            && !HasAdvancingPlaybackPosition(persistableWindows, snapshotAt))
+        var confirmations = persistableWindows.Append(_host).Distinct()
+            .Where(static owner => !owner.IsPrivateWindow)
+            .Select(static owner => owner.CapturePendingSaveConfirmation())
+            .OfType<Action>().ToList();
+        if (confirmations.Count == 0 && !HasAdvancingPlaybackPosition(persistableWindows, snapshotAt))
         {
             return static () => { };
         }
@@ -256,9 +261,25 @@ internal sealed class YouTubeMiniPlayerPersistenceController
         var snapshot = CaptureSaveSnapshot(persistableWindows, snapshotAt);
         return () =>
         {
-            _host.SaveSnapshot(snapshot);
-            MarkSavePersisted(saveVersion);
+            if (!_host.SaveSnapshot(snapshot, beforeClose: true))
+            {
+                throw new IOException("ミニプレイヤー状態を保存できませんでした。");
+            }
+
+            foreach (var confirm in confirmations)
+            {
+                confirm();
+            }
         };
+    }
+
+    internal Action? CapturePendingSaveConfirmation()
+    {
+        var saveVersion = Volatile.Read(ref _saveRequestVersion);
+        return Volatile.Read(ref _persistedSaveRequestVersion) < saveVersion
+            || _youTubeMiniPlayerStateSyncCoordinator.HasPendingEventStateSave
+            ? () => MarkSavePersisted(saveVersion)
+            : null;
     }
 
     internal bool CanConfirmPersistedState()

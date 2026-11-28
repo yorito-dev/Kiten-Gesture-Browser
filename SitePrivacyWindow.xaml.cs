@@ -144,7 +144,7 @@ public partial class SitePrivacyWindow : Window
     {
         using var target = AcquireCurrentTarget();
         if (target is null) return;
-        var entries = await SitePrivacyService.GetPermissionEntriesAsync(target.Value);
+        var entries = await SitePrivacyService.GetPermissionEntriesAsync(target.Value, includeResetOnlyPermissions: true);
         if (!_targets.IsCurrent(target)) return;
         PermissionGrid.ItemsSource = entries;
         StatusText.Text = entries.Count == 0
@@ -241,10 +241,12 @@ public partial class SitePrivacyWindow : Window
     private void UpdatePermissionButtons()
     {
         using var target = AcquireCurrentTarget();
-        var enabled = PermissionGrid.SelectedItem is SitePermissionEntry && target is not null;
-        AllowPermissionButton.IsEnabled = enabled;
-        DenyPermissionButton.IsEnabled = enabled;
-        ResetPermissionButton.IsEnabled = enabled;
+        var entry = target is not null ? PermissionGrid.SelectedItem as SitePermissionEntry : null;
+        AllowPermissionButton.IsEnabled = entry is not null
+            && SitePrivacyService.CanChangePermission(entry.PermissionKind, CoreWebView2PermissionState.Allow);
+        DenyPermissionButton.IsEnabled = entry is not null
+            && SitePrivacyService.CanChangePermission(entry.PermissionKind, CoreWebView2PermissionState.Deny);
+        ResetPermissionButton.IsEnabled = entry is not null;
     }
 
     private async void AllowPermissionButton_Click(object sender, RoutedEventArgs e)

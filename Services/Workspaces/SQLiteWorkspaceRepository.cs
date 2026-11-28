@@ -10,6 +10,7 @@ namespace TabBrowser.Services.Workspaces;
 public sealed class SQLiteWorkspaceRepository : IWorkspaceRepository
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Lazy<SQLiteWorkspaceRepository> SharedDefault = new(() => new SQLiteWorkspaceRepository());
     internal const int SchemaVersion = 2;
 
     private readonly string _databasePath;
@@ -18,6 +19,8 @@ public sealed class SQLiteWorkspaceRepository : IWorkspaceRepository
     private readonly Action? _beforeMigrationBackup;
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private bool _initialized;
+
+    internal static SQLiteWorkspaceRepository DefaultInstance => SharedDefault.Value;
 
     public SQLiteWorkspaceRepository()
         : this(AppPaths.WorkspaceDatabaseFile, ApplicationStabilityService.PreviousRunEndedUnexpectedly)
@@ -126,16 +129,28 @@ public sealed class SQLiteWorkspaceRepository : IWorkspaceRepository
     }
 
     public Task<IReadOnlyList<WorkspaceItem>> GetWorkspaceItemsAsync(Guid workspaceId, CancellationToken cancellationToken = default)
-        => Task.Run(() => GetWorkspaceItemsCoreAsync(workspaceId, cancellationToken), cancellationToken);
+        => Task.Run(() => GetWorkspaceItemsCoreAsync(workspaceId, includeCardImages: true, cancellationToken), cancellationToken);
 
-    private async Task<IReadOnlyList<WorkspaceItem>> GetWorkspaceItemsCoreAsync(Guid workspaceId, CancellationToken cancellationToken = default)
+    // パレットは全Workspaceを検索する。表示に使わないカード本体の画像を省いてまとめて読む。
+    internal Task<IReadOnlyList<WorkspaceItem>> GetCommandPaletteItemsAsync(CancellationToken cancellationToken)
+        => Task.Run(() => GetWorkspaceItemsCoreAsync(workspaceId: null, includeCardImages: false, cancellationToken), cancellationToken);
+
+    private async Task<IReadOnlyList<WorkspaceItem>> GetWorkspaceItemsCoreAsync(
+        Guid? workspaceId, bool includeCardImages, CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         return await ReadItemsAsync(
             connection,
-            "WHERE workspace_id = $workspaceId",
-            command => AddParameter(command, "$workspaceId", workspaceId),
-            cancellationToken);
+            workspaceId.HasValue ? "WHERE workspace_id = $workspaceId" : string.Empty,
+            command =>
+            {
+                if (workspaceId is { } id)
+                {
+                    AddParameter(command, "$workspaceId", id);
+                }
+            },
+            cancellationToken,
+            includeCardImages: includeCardImages);
     }
 
     public Task<WorkspaceItem?> GetItemByIdAsync(Guid itemId, CancellationToken cancellationToken = default)
@@ -1406,7 +1421,8 @@ public sealed class SQLiteWorkspaceRepository : IWorkspaceRepository
         Action<SqliteCommand> configureParameters,
         CancellationToken cancellationToken,
         SqliteTransaction? transaction = null,
-        bool includeDeleted = false)
+        bool includeDeleted = false,
+        bool includeCardImages = true)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -1420,8 +1436,8 @@ public sealed class SQLiteWorkspaceRepository : IWorkspaceRepository
                 i.url,
                 i.note,
                 i.note_font_size,
-                i.favicon_png_base64,
-                i.thumbnail_png_base64,
+                {{(includeCardImages ? "i.favicon_png_base64" : "''")}},
+                {{(includeCardImages ? "i.thumbnail_png_base64" : "''")}},
                 i.thumbnail_updated_at,
                 i.youtube_mini_player_state_json,
                 i.target_path,

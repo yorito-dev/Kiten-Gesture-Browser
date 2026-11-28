@@ -511,6 +511,11 @@ public sealed class DownloadService
 
     private void UpdateFromOperation(DownloadItem item, CoreWebView2DownloadOperation operation)
     {
+        if (!_operations.TryGetValue(item.Id, out var trackedOperation) || !ReferenceEquals(trackedOperation, operation))
+        {
+            return;
+        }
+
         var now = DateTimeOffset.Now;
         var previousBytes = _lastBytes.GetValueOrDefault(item.Id, operation.BytesReceived);
         var previousSample = _lastSamples.GetValueOrDefault(item.Id, now);

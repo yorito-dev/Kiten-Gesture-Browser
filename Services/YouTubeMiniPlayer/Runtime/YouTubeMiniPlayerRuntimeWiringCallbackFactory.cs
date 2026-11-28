@@ -25,7 +25,6 @@ internal static class YouTubeMiniPlayerRuntimeWiringCallbackFactory
         Action queueSave)
     {
         return new YouTubeMiniPlayerRuntimeWiringCallbacks(
-            positionCallbacks.ForceNativePosition,
             commandCallbacks.BringToFront,
             attachDrag,
             commandCallbacks.ToggleMinimized,

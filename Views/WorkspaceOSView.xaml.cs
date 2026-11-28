@@ -38,7 +38,7 @@ public partial class WorkspaceOSView : UserControl, IDisposable
     private QuickLookSettings _quickLookSettings = QuickLookSettingsProfile.Normalize(null);
     private readonly SearchQuickLookItemSource _searchQuickLookSource;
     private readonly InboxQuickLookItemSource _inboxQuickLookSource;
-    private readonly RecentQuickLookItemSource _recentQuickLookSource;
+    private readonly DelegateQuickLookItemSource _recentQuickLookSource;
     private readonly DispatcherTimer _recentHoverPopupTimer;
     private RecentItem? _recentHoverPopupItem;
     private FrameworkElement? _recentHoverPopupTarget;
@@ -78,7 +78,7 @@ public partial class WorkspaceOSView : UserControl, IDisposable
             CreateSelectedInboxQuickLookItems,
             TabShelf.GetQuickLookSelectedIndex,
             SelectInboxQuickLookIndex);
-        _recentQuickLookSource = new RecentQuickLookItemSource(
+        _recentQuickLookSource = new DelegateQuickLookItemSource(
             $"workspace-recent:{GetHashCode():X}",
             CreateRecentQuickLookItems,
             CreateSelectedRecentQuickLookItems,

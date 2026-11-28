@@ -8,8 +8,9 @@ public partial class MainWindow : IStartupWindowRestoreHost, IStartupTabActivati
 {
     private static readonly DiagnosticLogWriter s_diagnosticLogWriter = new(GetSessionDiagnosticDirectory, GetSessionDiagnosticLogPath);
     private static readonly WebMessageExceptionDiagnosticGate s_webMessageExceptionDiagnosticGate = new(() => DateTimeOffset.UtcNow);
+    private static bool s_restoredAudioPanNoticeShown;
     private readonly StartupWindowRestoreController _startupWindowRestoreController;
-    private readonly PerformanceDiagnosticLogController _performanceDiagnosticLogController = new(s_diagnosticLogWriter.AppendLines);
+    private readonly PerformanceDiagnosticLogController _performanceDiagnosticLogController;
     private OwnedDispatcherTimer? _performanceDiagnosticFlushTimer;
 
     private void InitializeStartupPerformanceTracking()
@@ -73,7 +74,16 @@ public partial class MainWindow : IStartupWindowRestoreHost, IStartupTabActivati
     void IStartupWindowRestoreHost.RestoreWindow(SessionWindowState state, TimeSpan activationDelay)
     {
         var window = new MainWindow(state, activationDelay, restoreFloatingMediaPlaceholders: true);
-        window.Show();
+        try
+        {
+            window.Show();
+        }
+        catch
+        {
+            window.CompleteStartupFloatingMediaRestore();
+            throw;
+        }
+
         window.MarkStartupPerformance(StartupPerformanceStage.SecondaryWindowShown, itemCount: state.Tabs?.Count ?? 0);
     }
 
@@ -103,4 +113,31 @@ public partial class MainWindow : IStartupWindowRestoreHost, IStartupTabActivati
     void IStartupTabActivationHost.RestartFocusedViewingCpuSaverTimer() => RestartFocusedViewingCpuSaverTimer();
     void IStartupTabActivationHost.RestartTabMemoryManagementTimer() => RestartTabMemoryManagementTimer();
     string? IStartupTabActivationHost.CreateRestoredTabLoadFailureStatus() => CreateRestoredTabLoadFailureStatus();
+
+    string? IStartupTabActivationHost.CreateRestoredAudioPanNotice()
+    {
+        if (s_restoredAudioPanNoticeShown
+            || !_sessionRestorationController.ShouldShowRestoredAudioPanNotice(
+                _settings, _restoreFloatingMediaPlaceholders, _isPrivateWindow))
+        {
+            return null;
+        }
+
+        // 各Windowの起動完了処理は同じDispatcherで実行される。
+        s_restoredAudioPanNoticeShown = true;
+        _settings.RestoredAudioPanNoticeShown = true;
+        return "復元したタブの左右振り分けをWindowsで使うには「設定 → メディア → タブの音声位置」で許可してください。";
+    }
+
+    async Task IStartupTabActivationHost.SaveRestoredAudioPanNoticeAsync()
+    {
+        try
+        {
+            await SettingsService.SaveAsync(_settings);
+        }
+        catch (Exception ex)
+        {
+            AppendSessionDiagnostic("restore-audio-pan-notice-save-failed", ex);
+        }
+    }
 }

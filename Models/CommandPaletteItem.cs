@@ -61,7 +61,8 @@ public sealed record CommandInvocationContext(
     string LinkUrl = "",
     string LinkText = "",
     bool CanNavigateBack = false,
-    bool CanNavigateForward = false)
+    bool CanNavigateForward = false,
+    bool HasTopBottomSplit = false)
 {
     public static CommandInvocationContext Global { get; } = new(CommandSurface.Global);
 }
@@ -90,6 +91,11 @@ public sealed class CommandPaletteItem : INotifyPropertyChanged
     public string Id { get; init; } = string.Empty;
 
     public CommandPaletteItemType Type { get; init; }
+
+    internal bool TracksUsage => Type is not (CommandPaletteItemType.History
+        or CommandPaletteItemType.RecentlyClosed
+        or CommandPaletteItemType.Clipboard)
+        && !string.IsNullOrWhiteSpace(Id);
 
     public string TypeText => Type switch
     {
@@ -223,6 +229,10 @@ public sealed record CommandExecutionResult(
 
 public sealed class CommandAction
 {
+    private readonly Func<CommandInvocationContext, string>? _getContextTitle;
+
+    public string GetTitle(CommandInvocationContext context) => _getContextTitle?.Invoke(context) ?? Title;
+
     public CommandAction(
         string id,
         string title,
@@ -233,7 +243,8 @@ public sealed class CommandAction
         IEnumerable<string>? shortcuts = null,
         IEnumerable<string>? gestureCommandIds = null,
         Func<CommandInvocationContext, CommandAvailability>? getAvailability = null,
-        string description = "")
+        string description = "",
+        Func<CommandInvocationContext, string>? getContextTitle = null)
     {
         Id = id;
         Title = title;
@@ -247,6 +258,7 @@ public sealed class CommandAction
             .ToList();
         GetAvailability = getAvailability ?? (_ => CommandAvailability.Available);
         Description = description;
+        _getContextTitle = getContextTitle;
     }
 
     public string Id { get; }

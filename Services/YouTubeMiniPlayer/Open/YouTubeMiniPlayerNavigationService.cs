@@ -15,6 +15,12 @@ public static class YouTubeMiniPlayerNavigationService
     public static bool TryCreateMiniPlayerUrl(string url, out string miniPlayerUrl, out bool isShorts)
     {
         miniPlayerUrl = string.Empty;
+        isShorts = false;
+        if (!YouTubeUrlService.TryGetWebUri(url, out _))
+        {
+            return false;
+        }
+
         isShorts = YouTubeUrlService.IsShortsUrl(url);
         var normalizedUrl = YouTubeUrlService.NormalizeShortsUrl(url);
         if (!YouTubeUrlService.TryGetVideoId(normalizedUrl, out var videoId))

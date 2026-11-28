@@ -68,6 +68,7 @@ public sealed record WorkspaceArrangementResult(
 public sealed class WorkspaceArrangementService
 {
     public const string SelectionAreaUnavailableMessage = "選択範囲内に整列できる空き領域がありません";
+    public const string CanvasAreaUnavailableMessage = "現在の表示範囲から全カードをキャンバス内に整列できません";
 
     private const double GridSize = 8;
     private const double DefaultCellWidth = 88;
@@ -77,6 +78,7 @@ public sealed class WorkspaceArrangementService
     public WorkspaceArrangementResult ArrangeAll(
         IReadOnlyList<WorkspaceArrangementCard> cards,
         WorkspaceArrangementBounds visibleArea,
+        WorkspaceArrangementBounds canvasArea,
         WorkspaceArrangeMode mode)
     {
         if (cards.Count == 0)
@@ -94,12 +96,20 @@ public sealed class WorkspaceArrangementService
             ? Math.Max(cellWidth, visibleArea.Width - ArrangeMargin * 2)
             : cellWidth;
         var columnCount = Math.Max(1, (int)Math.Floor(usableWidth / cellWidth));
-        var placements = orderedCards
-            .Select((card, index) => new WorkspaceArrangementPlacement(
-                card.ItemId,
-                startX + index % columnCount * cellWidth,
-                startY + index / columnCount * cellHeight))
-            .ToList();
+        var placements = new List<WorkspaceArrangementPlacement>(orderedCards.Count);
+        for (var index = 0; index < orderedCards.Count; index++)
+        {
+            var card = orderedCards[index];
+            var x = startX + index % columnCount * cellWidth;
+            var y = startY + index / columnCount * cellHeight;
+            if (!(x >= canvasArea.X && y >= canvasArea.Y
+                && x + card.Width <= canvasArea.Right && y + card.Height <= canvasArea.Bottom))
+            {
+                return WorkspaceArrangementResult.Failure(CanvasAreaUnavailableMessage);
+            }
+
+            placements.Add(new WorkspaceArrangementPlacement(card.ItemId, x, y));
+        }
         return WorkspaceArrangementResult.Success(placements);
     }
 

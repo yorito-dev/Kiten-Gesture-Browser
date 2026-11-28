@@ -102,6 +102,12 @@
                             Style="{StaticResource ShelfButtonStyle}"
                             ToolTip="&#x4FDD;&#x5B58;&#x5F8C;&#x306B;&#x73FE;&#x5728;&#x306E;&#x30BF;&#x30D6;&#x3092;&#x9589;&#x3058;&#x308B;" />
                 </WrapPanel>
+                <TextBlock Margin="0,0,0,4"
+                           Foreground="#D1D5DB"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Text="ここからWorkspaceに保存したタブは、プライベートWindowを閉じたあとも残ります。"
+                           Visibility="{Binding ShowPrivateSaveNotice, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
         </Border>
 

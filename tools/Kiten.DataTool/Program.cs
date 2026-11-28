@@ -49,9 +49,14 @@ internal static class Program
             PrintUsage();
             return 64;
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            Console.Error.WriteLine("保守処理の取り消しを受け付けました。データの更新状況を確認してください。");
+            return 1;
+        }
         catch
         {
-            Console.Error.WriteLine("保守ツールを開始できませんでした。データは変更していません。");
+            Console.Error.WriteLine("保守処理を完了できませんでした。データの更新状況を確認してください。");
             return 1;
         }
     }

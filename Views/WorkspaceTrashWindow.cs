@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using TabBrowser.Models.Workspaces;
+using TabBrowser.Services;
 using TabBrowser.Services.Workspaces;
 
 namespace TabBrowser.Views;
@@ -11,6 +12,7 @@ namespace TabBrowser.Views;
 public sealed class WorkspaceTrashWindow : Window
 {
     private readonly WorkspaceService _service;
+    private readonly Action<IReadOnlyCollection<Guid>> _forgetNotePlacements;
     private readonly Grid _root = new() { Margin = new Thickness(12) };
     private readonly ListBox _items = new() { Background = Brush("#11141A"), Foreground = Brush("#F3F4F6"), BorderBrush = Brush("#343842") };
     private readonly ComboBox _destination = new() { MinWidth = 240, Background = Brush("#23262D"), Foreground = Brush("#F3F4F6"), BorderBrush = Brush("#343842") };
@@ -24,8 +26,14 @@ public sealed class WorkspaceTrashWindow : Window
     private bool _busy;
 
     public WorkspaceTrashWindow(WorkspaceService service)
+        : this(service, static ids => SettingsService.ForgetPermanentlyDeletedWorkspaceNotePlacements(ids))
+    {
+    }
+
+    internal WorkspaceTrashWindow(WorkspaceService service, Action<IReadOnlyCollection<Guid>> forgetNotePlacements)
     {
         _service = service;
+        _forgetNotePlacements = forgetNotePlacements;
         Title = "最近削除したWorkspace項目";
         Width = 760; Height = 540; MinWidth = 540; MinHeight = 380;
         Background = Brush("#101114"); Foreground = Brush("#F3F4F6");
@@ -146,7 +154,10 @@ public sealed class WorkspaceTrashWindow : Window
         if (_pendingDelete is not { Count: > 0 } ids) return;
         await RunAsync(async () =>
         {
+            var noteIds = _deleted.OfType<NoteItem>().Where(item => ids.Contains(item.Id)).Select(item => item.Id).ToArray();
             await _service.PermanentlyDeleteItemsAsync(ids, expectedDeletionTimes: _pendingDeletionTimes);
+            if (noteIds.Length > 0)
+                _forgetNotePlacements(noteIds);
             CancelPermanentDelete();
             _deleted = _deleted.Where(x => !ids.Contains(x.Id)).ToList();
             _items.ItemsSource = _deleted.Select(x => new TrashRow(x)).ToList();

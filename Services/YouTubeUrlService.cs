@@ -27,6 +27,20 @@ public static class YouTubeUrlService
             || host.EndsWith(".youtube-nocookie.com", StringComparison.OrdinalIgnoreCase);
     }
 
+    internal static bool TryGetWebUri(string? url, out Uri uri)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var candidate)
+            && (candidate.Scheme == Uri.UriSchemeHttp || candidate.Scheme == Uri.UriSchemeHttps)
+            && IsYouTubeUrl(candidate.AbsoluteUri))
+        {
+            uri = candidate;
+            return true;
+        }
+
+        uri = null!;
+        return false;
+    }
+
     public static bool IsVideoUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !IsYouTubeUrl(url))

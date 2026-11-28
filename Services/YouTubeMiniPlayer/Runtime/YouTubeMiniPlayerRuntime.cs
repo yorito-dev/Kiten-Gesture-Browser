@@ -9,6 +9,20 @@ using TabBrowser.Views;
 
 namespace TabBrowser.Services;
 
+internal sealed class YouTubeMiniPlayerWebDragState
+{
+    public DispatcherTimer? FollowTimer { get; set; }
+    public bool IsDragging { get; set; }
+    public double StartLeft { get; set; }
+    public double StartTop { get; set; }
+    public double StartWidth { get; set; }
+    public double StartHeight { get; set; }
+    public Point StartScreenPoint { get; set; }
+    public MiniPlayerResizeEdges ResizeEdges { get; set; }
+    public bool IsCancelled { get; set; }
+    public Action? CancelCtrlResize { get; set; }
+}
+
 internal sealed class YouTubeMiniPlayerRuntime(
     YouTubeMiniPlayerState state,
     Popup popup,
@@ -114,15 +128,14 @@ internal sealed class YouTubeMiniPlayerRuntime(
 
     public string WebMessageToken { get; } = Guid.NewGuid().ToString("N");
 
-    public DispatcherTimer? WebDragFollowTimer { get; set; }
-
     public OwnedDispatcherTimer? SizeBasedQualityUpdateTimer { get; set; }
 
     public string? SizeBasedQualityAppliedSignature { get; set; }
 
-    public bool IsWebDragging { get; set; }
+    public YouTubeMiniPlayerWebDragState WebDrag { get; } = new();
 
     public bool IsSurfaceDragging { get; set; }
+    public Action? CancelSurfaceCtrlResize { get; set; }
 
     private bool _isResizing;
 
@@ -158,6 +171,7 @@ internal sealed class YouTubeMiniPlayerRuntime(
     public DateTimeOffset? LastPlaybackStateMessageAt { get; set; }
 
     public int InactiveSuspendGeneration { get; set; }
+    public (int Generation, bool StopStalledLoad, DateTimeOffset QueuedAt, TimeSpan Delay)? PendingInactiveSuspension { get; set; }
 
     public bool IsNavigationLoading { get; set; }
 
@@ -184,20 +198,6 @@ internal sealed class YouTubeMiniPlayerRuntime(
     public long? RightWheelInteractionId { get; set; }
 
     public double ContentZoomWheelDelta { get; set; }
-
-    public double WebDragStartLeft { get; set; }
-
-    public double WebDragStartTop { get; set; }
-
-    public double WebDragStartWidth { get; set; }
-
-    public double WebDragStartHeight { get; set; }
-
-    public Point WebDragStartScreenPoint { get; set; }
-
-    public MiniPlayerResizeEdges WebDragResizeEdges { get; set; }
-
-    public bool WebDragCancelled { get; set; }
 
     public Rect FullScreenRestoreBounds { get; set; } = Rect.Empty;
 

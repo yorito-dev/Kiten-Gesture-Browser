@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using TabBrowser.Models;
@@ -9,6 +10,23 @@ namespace TabBrowser.Tests;
 
 public sealed class YouTubeMiniPlayerWebDragServiceTests
 {
+    [Theory]
+    [InlineData("https://www.youtube.com/watch?v=abc123", "current", true)]
+    [InlineData("http://www.youtube.com/watch?v=abc123", "current", false)]
+    [InlineData("https://example.test/", "current", false)]
+    [InlineData("https://www.youtube.com/watch?v=abc123", "wrong", false)]
+    [InlineData("https://www.youtube.com/watch?v=abc123", null, false)]
+    public void DragAndHoverRequireTheCurrentPlayersTokenAndHttpsSource(string source, string? token, bool accepted)
+        => Run(f =>
+        {
+            var messageToken = token == "current" ? f.Runtime.WebMessageToken : token;
+            f.SendNotification(source, new { type = "youtubeMiniPlayerDrag", phase = "start", token = messageToken });
+            Assert.Equal(accepted, f.Runtime.WebDrag.IsDragging);
+
+            f.SendNotification(source, new { type = "youtubeMiniPlayerHover", hovered = true, titleHovered = true, token = messageToken });
+            Assert.Equal(accepted ? 1 : 0, f.TitleVisibilityUpdates);
+        });
+
     [Fact]
     public void CaptureCancellationStopsHeldResizeAndRejectsStaleMovesUntilANewStart()
         => Run(f =>
@@ -16,17 +34,100 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             f.SendEdges("start", 1);
             f.SendEdges("end", 1, cancelled: true);
             Assert.True(f.Down);
-            Assert.False(f.Runtime.IsWebDragging);
-            Assert.False(f.Runtime.WebDragFollowTimer!.IsEnabled);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
+            Assert.False(f.Runtime.WebDrag.FollowTimer!.IsEnabled);
             Assert.Equal(1, f.Saves);
             var bounds = f.Bounds;
             f.Cursor = new Point(50, 220);
             f.SendEdges("move", 1);
             Assert.Equal(bounds, f.Bounds);
-            Assert.False(f.Runtime.IsWebDragging);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
             f.SendEdges("start", 4);
-            Assert.True(f.Runtime.IsWebDragging);
-            Assert.False(f.Runtime.WebDragCancelled);
+            Assert.True(f.Runtime.WebDrag.IsDragging);
+            Assert.False(f.Runtime.WebDrag.IsCancelled);
+        });
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EscapeRestoresCtrlResizeEvenIfTheReleaseTimerRunsFirst(bool releaseTimerRan)
+        => Run(f =>
+        {
+            var initial = f.Bounds;
+            f.SendEdges("start", 0);
+            f.Cursor = new Point(220, 240);
+            f.SendEdges("move", 0);
+            Assert.True(f.Bounds.Width > initial.Width);
+            if (releaseTimerRan)
+            {
+                f.Down = false;
+                typeof(YouTubeMiniPlayerWebDragService).GetMethod("UpdateWebDrag", BindingFlags.NonPublic | BindingFlags.Static)!
+                    .Invoke(null, [f.Runtime, true, f.Callbacks]);
+            }
+
+            f.SendEdges("cancel", 0);
+            Assert.Equal(initial, f.Bounds);
+            Assert.False(f.Runtime.IsResizing);
+            Assert.False(f.Runtime.WebDrag.FollowTimer!.IsEnabled);
+            f.Cursor = new Point(310, 280);
+            f.SendEdges("move", 0);
+            f.SendEdges("end", 0);
+            f.SendEdges("cancel", 0);
+            Assert.Equal(initial, f.Bounds);
+            Assert.Equal(releaseTimerRan ? 2 : 1, f.Saves);
+
+            f.Down = true;
+            f.SendEdges("start", 0);
+            Assert.True(f.Runtime.IsResizing);
+        });
+
+    [Fact]
+    public void NativeEscapeRestoresCtrlResizeWithoutAPageCancelMessage()
+        => Run(f =>
+        {
+            var initial = f.Bounds;
+            f.SendEdges("start", 0);
+            f.Cursor = new Point(220, 240);
+            f.SendEdges("move", 0);
+            Assert.True(f.Bounds.Width > initial.Width);
+            var cancel = Assert.IsType<Action>(f.Runtime.WebDrag.CancelCtrlResize);
+
+            cancel();
+
+            Assert.Equal(initial, f.Bounds);
+            Assert.Null(f.Runtime.WebDrag.CancelCtrlResize);
+            Assert.False(f.Runtime.IsResizing);
+            Assert.True(f.Down);
+            f.SendEdges("move", 0);
+            f.SendEdges("end", 0);
+            Assert.Equal(initial, f.Bounds);
+            Assert.Equal(1, f.Saves);
+        });
+
+    [Fact]
+    public void EscapeDoesNotRollBackAnAcknowledgedReleaseOrAnEdgeResize()
+        => Run(f =>
+        {
+            f.SendEdges("start", 0);
+            f.Cursor = new Point(220, 240);
+            f.SendEdges("move", 0);
+            f.Down = false;
+            f.SendEdges("end", 0);
+            var committed = f.Bounds;
+            f.SendEdges("cancel", 0);
+            Assert.Equal(committed, f.Bounds);
+            Assert.Equal(1, f.Saves);
+
+            f.Down = true;
+            f.SendEdges("start", 4);
+            f.Cursor = new Point(260, 260);
+            f.SendEdges("move", 4);
+            var edgeBounds = f.Bounds;
+            Assert.True(edgeBounds.Width > committed.Width);
+            f.SendEdges("cancel", 0);
+            Assert.Equal(edgeBounds, f.Bounds);
+            Assert.True(f.Runtime.IsResizing);
+            Assert.Equal(1, f.Saves);
         });
 
     [Theory]
@@ -42,8 +143,8 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             f.Cursor = new Point(50, 100);
             f.SendEdges("move", 3);
             Assert.Equal(bounds, f.Bounds);
-            Assert.False(f.Runtime.IsWebDragging);
-            Assert.Equal(MiniPlayerResizeEdges.None, f.Runtime.WebDragResizeEdges);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
+            Assert.Equal(MiniPlayerResizeEdges.None, f.Runtime.WebDrag.ResizeEdges);
             Assert.Equal(0, f.Saves);
         });
 
@@ -66,7 +167,7 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
                 edges.HasFlag(MiniPlayerResizeEdges.Top) ? 188 : 212);
             // 移動通知の方向が変わっても開始時の方向を保持する。
             f.SendEdges("move", 0);
-            Assert.Equal(edges, f.Runtime.WebDragResizeEdges);
+            Assert.Equal(edges, f.Runtime.WebDrag.ResizeEdges);
             Assert.True(f.Runtime.IsResizing);
             Assert.True(f.Bounds.Width > before.Width);
             Assert.True(f.Bounds.Height > before.Height);
@@ -77,8 +178,8 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             Assert.Equal(16.0 / 9, f.Bounds.Width / f.Bounds.Height, 7);
             f.Down = false;
             f.SendEdges("end", value);
-            Assert.False(f.Runtime.IsWebDragging);
-            Assert.Equal(MiniPlayerResizeEdges.None, f.Runtime.WebDragResizeEdges);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
+            Assert.Equal(MiniPlayerResizeEdges.None, f.Runtime.WebDrag.ResizeEdges);
             Assert.Equal(1, f.Saves);
             var final = f.Bounds;
             f.Cursor = new Point(300, 400);
@@ -97,9 +198,9 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
         {
             f.Down = false;
             f.Send(Enum.Parse<YouTubeMiniPlayerDragPhase>(phase), resize);
-            Assert.False(f.Runtime.IsWebDragging);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
             Assert.False(f.Runtime.IsResizing);
-            Assert.Null(f.Runtime.WebDragFollowTimer);
+            Assert.Null(f.Runtime.WebDrag.FollowTimer);
             Assert.Equal(0, f.BroughtToFront);
             Assert.Equal(0, f.Saves);
             Assert.Equal(0, f.CursorReads);
@@ -114,9 +215,9 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             f.Send(YouTubeMiniPlayerDragPhase.Start, resize);
             f.Down = false; f.Cursor = new Point(180, 260);
             f.Send(YouTubeMiniPlayerDragPhase.Move, resize);
-            Assert.False(f.Runtime.IsWebDragging);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
             Assert.False(f.Runtime.IsResizing);
-            Assert.False(f.Runtime.WebDragFollowTimer!.IsEnabled);
+            Assert.False(f.Runtime.WebDrag.FollowTimer!.IsEnabled);
             Assert.Equal(new Rect(50, 60, 640, 360), f.Bounds);
             Assert.Equal(1, f.Saves);
             var reads = f.CursorReads;
@@ -137,12 +238,12 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             // Timerと同じ本番の更新経路を呼び、実時間の16ms待機に依存しない。
             typeof(YouTubeMiniPlayerWebDragService).GetMethod("UpdateWebDrag", BindingFlags.NonPublic | BindingFlags.Static)!
                 .Invoke(null, [f.Runtime, true, f.Callbacks]);
-            Assert.False(f.Runtime.IsWebDragging);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
             Assert.Equal(1, f.Saves);
             f.Cursor = new Point(240, 280);
             f.Send(YouTubeMiniPlayerDragPhase.Move, resize);
-            Assert.False(f.Runtime.IsWebDragging);
-            Assert.False(f.Runtime.WebDragFollowTimer!.IsEnabled);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
+            Assert.False(f.Runtime.WebDrag.FollowTimer!.IsEnabled);
             Assert.Equal(new Rect(50, 60, 640, 360), f.Bounds);
             Assert.Equal(1, f.Saves);
         });
@@ -157,8 +258,8 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             f.ReleaseOnRead = f.ButtonReads + 2;
             f.Cursor = new Point(180, 260);
             f.Send(YouTubeMiniPlayerDragPhase.Move, resize);
-            Assert.False(f.Runtime.IsWebDragging);
-            Assert.False(f.Runtime.WebDragFollowTimer!.IsEnabled);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
+            Assert.False(f.Runtime.WebDrag.FollowTimer!.IsEnabled);
             Assert.Equal(new Rect(50, 60, 640, 360), f.Bounds);
             Assert.Equal(1, f.Saves);
         });
@@ -172,7 +273,7 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             f.Send(YouTubeMiniPlayerDragPhase.Start, resize);
             f.Cursor = new Point(120, 210);
             f.Send(YouTubeMiniPlayerDragPhase.Move, resize);
-            Assert.True(f.Runtime.IsWebDragging);
+            Assert.True(f.Runtime.WebDrag.IsDragging);
             Assert.Equal(resize, f.Runtime.IsResizing);
             if (resize)
             {
@@ -181,12 +282,12 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             }
             else Assert.Equal(new Point(70, 70), f.Bounds.TopLeft);
             f.Send(YouTubeMiniPlayerDragPhase.End, resize);
-            Assert.True(f.Runtime.IsWebDragging);
+            Assert.True(f.Runtime.WebDrag.IsDragging);
             Assert.Equal(0, f.Saves);
             f.Down = false;
             f.Send(YouTubeMiniPlayerDragPhase.End, resize);
             f.Send(YouTubeMiniPlayerDragPhase.End, resize);
-            Assert.False(f.Runtime.IsWebDragging);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
             Assert.False(f.Runtime.IsResizing);
             Assert.Equal(1, f.Saves);
         });
@@ -196,7 +297,7 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
         => Run(f =>
         {
             f.Send(YouTubeMiniPlayerDragPhase.Move);
-            Assert.True(f.Runtime.IsWebDragging);
+            Assert.True(f.Runtime.WebDrag.IsDragging);
             f.Cursor = new Point(130, 220);
             f.Send(YouTubeMiniPlayerDragPhase.Move);
             Assert.Equal(new Point(80, 80), f.Bounds.TopLeft);
@@ -208,7 +309,7 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
         {
             f.Runtime.IsFullScreen = true;
             f.Send(YouTubeMiniPlayerDragPhase.Start);
-            Assert.False(f.Runtime.IsWebDragging);
+            Assert.False(f.Runtime.WebDrag.IsDragging);
             Assert.Equal(0, f.Saves);
         });
 
@@ -223,7 +324,7 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
     {
         public bool Down = true;
         public Point Cursor = new(100, 200);
-        public int Saves, BroughtToFront, CursorReads, ButtonReads;
+        public int Saves, BroughtToFront, CursorReads, ButtonReads, TitleVisibilityUpdates;
         public int ReleaseOnRead = int.MaxValue;
         public YouTubeMiniPlayerRuntime Runtime { get; }
         public YouTubeMiniPlayerWebDragCallbacks Callbacks { get; }
@@ -242,16 +343,26 @@ public sealed class YouTubeMiniPlayerWebDragServiceTests
             => YouTubeMiniPlayerWebDragService.HandlePhase(Runtime, phase, resize, Callbacks);
 
         public void SendEdges(string phase, int edges, bool cancelled = false)
+            => SendNotification("https://www.youtube.com/watch?v=abc123", new
+            {
+                type = "youtubeMiniPlayerDrag",
+                phase,
+                resize = true,
+                resizeEdges = edges,
+                cancelled,
+                token = Runtime.WebMessageToken
+            });
+
+        public void SendNotification(string source, object data)
         {
             var dispatch = new YouTubeMiniPlayerWebMessageDispatchCallbacks(Callbacks.BringToFront,
                 Callbacks.SetToolbarVisibility, Callbacks.KeepToolbarVisible, Callbacks.GetCursorScreenPoint,
                 Callbacks.IsLeftMouseButtonDown, Callbacks.Clamp, Callbacks.SyncPopupOffsets,
-                Callbacks.ReapplyContentTransform, Callbacks.QueueSave, (_, _) => { }, _ => { }, (_, _) => { },
+                Callbacks.ReapplyContentTransform, Callbacks.QueueSave, (_, _) => TitleVisibilityUpdates++, _ => { }, (_, _) => { },
                 _ => { }, (_, _) => { }, _ => { }, _ => { }, (_, _, _, _) => { }, _ => { },
                 (_, _, _, _) => { }, _ => { }, (_, _) => { }, _ => { });
             typeof(YouTubeMiniPlayerWebMessageDispatchService).GetMethod("Handle", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)!
-                .Invoke(null, [Runtime.State, "https://www.youtube.com/watch?v=abc123",
-                    $$"""{"type":"youtubeMiniPlayerDrag","phase":"{{phase}}","resize":true,"resizeEdges":{{edges}},"cancelled":{{cancelled.ToString().ToLowerInvariant()}}}""",
+                .Invoke(null, [Runtime.State, source, JsonSerializer.Serialize(data),
                     new Dictionary<Guid, YouTubeMiniPlayerRuntime> { [Runtime.State.Id] = Runtime }, dispatch]);
         }
 

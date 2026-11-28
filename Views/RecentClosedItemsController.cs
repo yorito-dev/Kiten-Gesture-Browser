@@ -295,6 +295,7 @@ internal sealed class RecentClosedItemsController(
             string title,
             string subtitle,
             string previewId,
+            string previewUrl,
             int closedWindowSortOrder = 0)
         {
             TabState = tabState;
@@ -312,7 +313,7 @@ internal sealed class RecentClosedItemsController(
                 Type = CommandPaletteItemType.RecentlyClosed,
                 Title = title,
                 Subtitle = subtitle,
-                Url = subtitle
+                Url = previewUrl
             };
         }
 
@@ -360,11 +361,15 @@ internal sealed class RecentClosedItemsController(
                 : !string.IsNullOrWhiteSpace(state.Url)
                     ? TryGetHost(state.Url) ?? state.Url
                     : "無題のタブ";
-            var subtitle = state.Url ?? string.Empty;
+            var url = state.Url ?? string.Empty;
+            var subtitle = url;
             if (closedWindowTabCount is { } tabCount)
             {
                 subtitle = $"{tabCount} タブのウィンドウから · {subtitle}";
             }
+            var previewId = state.ClosedWindowId is { } windowId
+                ? $"recent-window-tab:{windowId:D}:{state.SourceTabId:D}:{state.ClosedWindowTabIndex}:{url}"
+                : $"recent-tab:{state.ClosedAt?.UtcTicks ?? 0}:{state.Url}";
 
             var item = new ClosedTabHistoryItem(
                 state,
@@ -375,7 +380,8 @@ internal sealed class RecentClosedItemsController(
                 state.IsFolderTab ? "フォルダー" : "タブ",
                 title,
                 subtitle,
-                $"recent-tab:{state.ClosedAt?.UtcTicks ?? 0}:{state.Url}",
+                previewId,
+                url,
                 state.ClosedWindowId is null
                     ? 0
                     : (state.ClosedWindowTabIndex ?? 0) + 1);
@@ -419,7 +425,8 @@ internal sealed class RecentClosedItemsController(
                 "ウィンドウ",
                 title,
                 subtitle,
-                "recent-window:" + state.Id.ToString("D"));
+                "recent-window:" + state.Id.ToString("D"),
+                subtitle);
         }
 
         public static ClosedTabHistoryItem FromYouTubeMiniPlayer(
@@ -446,7 +453,8 @@ internal sealed class RecentClosedItemsController(
                 state.SourceKind == MiniPlayerSourceKind.LocalFile ? "動画ミニ" : "YTミニ",
                 string.IsNullOrWhiteSpace(title) ? "無題のミニプレイヤー" : title,
                 subtitle,
-                "recent-mini:" + state.Id.ToString("D"));
+                "recent-mini:" + state.Id.ToString("D"),
+                subtitle);
             return item;
         }
 

@@ -52,6 +52,7 @@ internal interface IYouTubeControlPanelHost
         string operation, string reason, string pane, BrowserTab? tab,
         Popup popup, FrameworkElement host, string result);
     string GetYouTubeControlIneligibleReason(BrowserTab? tab);
+    void RecordSplitPanelPlacement(int generation, bool? available, bool changed = false);
 }
 
 // 通常／分割の表示と更新予約を所有する。WebView操作・入力検証はWindow側へ委譲する。
@@ -68,6 +69,7 @@ internal sealed class YouTubeControlPanelController : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly Func<DateTimeOffset> _now;
     private readonly Func<int, CancellationToken, Task> _delayAsync;
+    private readonly Dictionary<Popup, (int Generation, Guid TabId, (double X, double Y)? Placement)> _splitPlacementObservations = [];
     private bool _disposed;
 
     internal YouTubeControlPanelController(
@@ -521,7 +523,8 @@ internal sealed class YouTubeControlPanelController : IDisposable
 
     internal bool UpdateSplitYouTubeControlPanels(
         string reason,
-        bool allowInactiveWindow = false)
+        bool allowInactiveWindow = false,
+        int? refreshGeneration = null)
     {
         if (!_host.IsActive && !allowInactiveWindow)
         {
@@ -551,7 +554,8 @@ internal sealed class YouTubeControlPanelController : IDisposable
             _elements.SplitLeftYouTubeSpeedResetButton,
             _elements.SplitLeftYouTubeSpeedUpButton,
             _elements.SplitLeftYouTubeLoopButton,
-            allowInactiveWindow);
+            allowInactiveWindow,
+            refreshGeneration);
         var hasRightPanel = UpdateSplitYouTubeControlPanelForPane(
             reason,
             SplitViewPane.Right,
@@ -562,7 +566,8 @@ internal sealed class YouTubeControlPanelController : IDisposable
             _elements.SplitRightYouTubeSpeedResetButton,
             _elements.SplitRightYouTubeSpeedUpButton,
             _elements.SplitRightYouTubeLoopButton,
-            allowInactiveWindow);
+            allowInactiveWindow,
+            refreshGeneration);
 
         return hasLeftPanel || hasRightPanel;
     }
@@ -577,7 +582,8 @@ internal sealed class YouTubeControlPanelController : IDisposable
         Button speedResetButton,
         Button speedUpButton,
         Button loopButton,
-        bool allowInactiveWindow)
+        bool allowInactiveWindow,
+        int? refreshGeneration)
     {
         if (!_host.TryGetSplitPaneYouTubeTab(pane, out var tab))
         {
@@ -617,7 +623,8 @@ internal sealed class YouTubeControlPanelController : IDisposable
             speedResetButton,
             speedUpButton,
             loopButton,
-            allowInactiveWindow);
+            allowInactiveWindow,
+            refreshGeneration);
         return true;
     }
 
@@ -632,7 +639,8 @@ internal sealed class YouTubeControlPanelController : IDisposable
         Button speedResetButton,
         Button speedUpButton,
         Button loopButton,
-        bool allowInactiveWindow)
+        bool allowInactiveWindow,
+        int? refreshGeneration)
     {
         _windowTaskSupervisor.TryRun(
             "split-youtube-control-pane-update",
@@ -648,6 +656,7 @@ internal sealed class YouTubeControlPanelController : IDisposable
                 speedUpButton,
                 loopButton,
                 allowInactiveWindow,
+                refreshGeneration,
                 cancellationToken));
     }
 
@@ -663,6 +672,7 @@ internal sealed class YouTubeControlPanelController : IDisposable
         Button speedUpButton,
         Button loopButton,
         bool allowInactiveWindow,
+        int? refreshGeneration,
         CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -673,6 +683,10 @@ internal sealed class YouTubeControlPanelController : IDisposable
         try
         {
             var wasOpen = popup.IsOpen;
+            if (refreshGeneration is { } requestGeneration)
+            {
+                _host.RecordSplitPanelPlacement(requestGeneration, available: null);
+            }
             var placement = await _host.GetPlacementAsync(tab, host, panel);
             if (cancellationToken.IsCancellationRequested)
             {
@@ -688,6 +702,16 @@ internal sealed class YouTubeControlPanelController : IDisposable
             {
                 popup.IsOpen = false;
                 return;
+            }
+
+            if (refreshGeneration is { } generation
+                && _youTubeControlWorkCoordinator.IsCurrentSplitPanelRefresh(generation))
+            {
+                var next = (generation, tab.Id, placement);
+                var changed = _splitPlacementObservations.TryGetValue(popup, out var previous)
+                    && previous.Generation == generation ? previous != next : placement.HasValue;
+                _splitPlacementObservations[popup] = next;
+                _host.RecordSplitPanelPlacement(generation, placement.HasValue, changed);
             }
 
             if (placement is not { } value)
@@ -945,7 +969,7 @@ internal sealed class YouTubeControlPanelController : IDisposable
         {
             if (IsCurrentSplitYouTubeControlPanelRefresh(generation))
             {
-                UpdateSplitYouTubeControlPanels(reason);
+                UpdateSplitYouTubeControlPanels(reason, refreshGeneration: generation);
             }
         }), priority);
     }
@@ -985,7 +1009,7 @@ internal sealed class YouTubeControlPanelController : IDisposable
                     return;
                 }
 
-                UpdateSplitYouTubeControlPanels($"youtube-refresh-delay-{delay}");
+                UpdateSplitYouTubeControlPanels($"youtube-refresh-delay-{delay}", refreshGeneration: generation);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

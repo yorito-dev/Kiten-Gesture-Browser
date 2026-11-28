@@ -107,16 +107,18 @@ public static class FeatureCommandProvider
             "workspace",
             "window",
             "別ウィンドウ");
-        yield return CreateSplit(
+        yield return CreatePaneCommand(
             FocusSplitLeftActionId,
-            "分割表示の左ペインへ移動",
+            isFirst: true,
+            "へ移動",
             focusSplitLeftAsync,
             "split",
             "left",
             "分割");
-        yield return CreateSplit(
+        yield return CreatePaneCommand(
             FocusSplitRightActionId,
-            "分割表示の右ペインへ移動",
+            isFirst: false,
+            "へ移動",
             focusSplitRightAsync,
             "split",
             "right",
@@ -158,17 +160,19 @@ public static class FeatureCommandProvider
             "split",
             "detach",
             "分割");
-        yield return CreateSplit(
+        yield return CreatePaneCommand(
             CloseSplitLeftActionId,
-            "分割表示の左ペインを閉じる",
+            isFirst: true,
+            "を閉じる",
             closeSplitLeftAsync,
             "split",
             "close",
             "left",
             "分割");
-        yield return CreateSplit(
+        yield return CreatePaneCommand(
             CloseSplitRightActionId,
-            "分割表示の右ペインを閉じる",
+            isFirst: false,
+            "を閉じる",
             closeSplitRightAsync,
             "split",
             "close",
@@ -395,6 +399,26 @@ public static class FeatureCommandProvider
             category: category,
             shortcuts: shortcuts,
             gestureCommandIds: gestures);
+    }
+
+    private static CommandAction CreatePaneCommand(
+        string id, bool isFirst, string operation, Func<Task> runAsync, params string[] keywords)
+    {
+        var horizontal = isFirst ? "左" : "右";
+        var vertical = isFirst ? "上" : "下";
+        string Describe(string direction) => $"分割表示の{direction}ペイン{operation}";
+        return new CommandAction(
+            id,
+            Describe(horizontal + "／" + vertical),
+            _ => runAsync(),
+            keywords.Append(vertical),
+            category: "分割表示",
+            getAvailability: static context => context.IsSplitView
+                ? CommandAvailability.Available
+                : CommandAvailability.Disabled("分割表示中に使用できます"),
+            getContextTitle: context => Describe(context.IsSplitView
+                ? context.HasTopBottomSplit ? vertical : horizontal
+                : horizontal + "／" + vertical));
     }
 
     private static CommandAction CreateSplit(

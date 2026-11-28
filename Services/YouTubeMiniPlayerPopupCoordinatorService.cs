@@ -32,17 +32,6 @@ internal static class YouTubeMiniPlayerPopupCoordinatorService
     }
 
     public static void ForceNativePosition(
-        YouTubeMiniPlayerState state,
-        IReadOnlyDictionary<Guid, YouTubeMiniPlayerRuntime> runtimes,
-        Func<YouTubeMiniPlayerState, Point> getScreenPosition)
-    {
-        if (runtimes.TryGetValue(state.Id, out var runtime))
-        {
-            ForceNativePosition(runtime, getScreenPosition);
-        }
-    }
-
-    public static void ForceNativePosition(
         YouTubeMiniPlayerRuntime runtime,
         Func<YouTubeMiniPlayerState, Point> getScreenPosition)
     {

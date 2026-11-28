@@ -2001,6 +2001,18 @@ public sealed class KitenDataMaintenanceServiceTests
     }
 
     [Fact]
+    public void DataToolUnclassifiedFailuresDoNotClaimDataWasUnchanged()
+    {
+        var root = FindRepositoryRoot();
+        var program = File.ReadAllText(Path.Combine(root, "tools", "Kiten.DataTool", "Program.cs"));
+
+        Assert.Contains("catch (OperationCanceledException) when (cancellation.IsCancellationRequested)", program);
+        Assert.Contains("保守処理の取り消しを受け付けました。データの更新状況を確認してください。", program);
+        Assert.Contains("保守処理を完了できませんでした。データの更新状況を確認してください。", program);
+        Assert.DoesNotContain("データは変更していません。", program);
+    }
+
+    [Fact]
     public void SourceAndScriptsKeepStartupAndDistributionSafetyContracts()
     {
         var root = FindRepositoryRoot();

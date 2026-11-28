@@ -26,6 +26,7 @@ internal static class WindowTaskOwnershipPolicy
         Drain("bookmark-delete"),
         Drain("bookmark-open"),
         Drain("bookmark-preview-show"),
+        Drain("bookmark-undo-delete"),
         Drain("browser-shortcut-command"),
 
         Drain("closed-tab-runtime-suspend"),
@@ -39,6 +40,9 @@ internal static class WindowTaskOwnershipPolicy
         Drain("copy-context-page-url"),
         Drain("copy-current-page-link"),
         Drain("copy-selected-text"),
+        Drain("download-copy-source-url"),
+        Drain("download-start"),
+        Drain("extension-import"),
         Drain("extension-toolbar-refresh"),
         Drain("folder-tab-navigate-back"),
         Drain("folder-tab-navigate-forward"),
@@ -60,6 +64,7 @@ internal static class WindowTaskOwnershipPolicy
 
         Drain("tab-audio-pan-apply"),
         Drain("tab-audio-pan-close-reset"),
+        Drain("tab-audio-pan-diagnostic-write"),
         Drain("tab-audio-pan-frame-apply"),
         Drain("tab-audio-pan-frame-initialize"),
         Drain("tab-audio-pan-retries"),
@@ -171,8 +176,8 @@ internal static class WindowTaskOwnershipPolicy
             "CoreWebView2 deferral", "WebView2から取得したdeferralを必ず完了する処理であり、callback契約が完了寿命を所有する。"),
         Continue("MainWindow.xaml.cs", "HandleSitePermissionRequestedAsync", 1,
             "CoreWebView2 deferral", "WebView2から取得したdeferralを必ず完了する処理であり、callback契約が完了寿命を所有する。"),
-        Continue("MainWindow.xaml.cs", "OpenNewWindowRequestInForegroundTabWithDeferralAsync", 1,
-            "CoreWebView2 deferral", "NewWindowRequestedのdeferral完了までをWebView2 callback契約が所有する。"),
+        Continue("MainWindow.xaml.cs", "OpenNewWindowRequestInForegroundTabWithDeferralAsync", 2,
+            "CoreWebView2 deferral", "認証用と利用者操作の空ポップアップは、どちらもNewWindowRequestedのdeferral完了までをWebView2 callback契約が所有する。"),
 
         AuditedDiscard(
             "MainWindow.xaml.cs",
@@ -207,7 +212,7 @@ internal static class WindowTaskOwnershipPolicy
             "mini-player audio-focus owner", "終了Controllerから既存音声Controllerの共有gateと復元手順へ接続する。"),
         Continue("YouTubeMiniPlayerRecoveryController.cs", "RunYouTubeMiniPlayerAutoRecoveryAsync", 1,
             "YouTubeMiniPlayerRecoveryService", "復旧Controllerが既存serviceの要求取消・段階遷移とWindow lifetime tokenを共有し、RuntimeとWebViewの現行性を確認する。"),
-        Continue("YouTubeMiniPlayerActivityController.cs", "RunYouTubeMiniPlayerInactiveSuspensionAsync", 1,
+        Continue("YouTubeMiniPlayerActivityController.cs", "RunScheduledInactiveSuspensionAsync", 1,
             "mini-player Runtime generation", "非アクティブControllerが既存Window lifetime tokenとRuntime世代を確認し、待機後の現行性と表示条件を守る。"),
         Continue("YouTubeMiniPlayerLifetimeController.cs", "host.StopAudioPreviewAsync", 1,
             "mini-player audio-preview owner", "終了Controllerから既存音声Controllerの共有gateとpreview停止手順へ接続する。"),

@@ -387,13 +387,12 @@ internal sealed class CommandPaletteViewController : IDisposable
         CommandPaletteList.ScrollIntoView(CommandPaletteList.SelectedItem);
     }
 
+    internal bool HasPendingUsageSettingsSave => _commandPaletteUsageSaveTimer.IsEnabled;
+
     internal void RecordCommandPaletteUsage(CommandPaletteItem item)
     {
         if (_disposed) return;
-        if (item.Type is CommandPaletteItemType.History
-                or CommandPaletteItemType.RecentlyClosed
-                or CommandPaletteItemType.Clipboard
-            || string.IsNullOrWhiteSpace(item.Id))
+        if (!item.TracksUsage)
         {
             return;
         }

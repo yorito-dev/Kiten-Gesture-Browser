@@ -95,6 +95,8 @@ public sealed class TabShelfViewModel : INotifyPropertyChanged
 
     public bool HasOpenTabs => OpenTabs.Count > 0;
 
+    public bool ShowPrivateSaveNotice => _tabs.IsPrivateWindow;
+
     public void RefreshTabs()
     {
         var targetIndex = 0;

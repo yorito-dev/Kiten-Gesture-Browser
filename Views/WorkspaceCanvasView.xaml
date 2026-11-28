@@ -12,7 +12,9 @@
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
-        <Style x:Key="WorkspaceUtilityButtonStyle" TargetType="{x:Type Button}">
+        <Style x:Key="WorkspaceUtilityButtonStyle"
+               TargetType="{x:Type Button}"
+               BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Height" Value="26" />
             <Setter Property="MinWidth" Value="34" />
             <Setter Property="Margin" Value="0,0,6,0" />
@@ -135,7 +137,9 @@
             </Style.Triggers>
         </Style>
 
-        <Style x:Key="ShellItemMenuStyle" TargetType="{x:Type MenuItem}">
+        <Style x:Key="ShellItemMenuStyle"
+               TargetType="{x:Type MenuItem}"
+               BasedOn="{StaticResource {x:Type MenuItem}}">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Type}" Value="{x:Static workspaceModels:WorkspaceItemType.ShellItem}">
@@ -144,7 +148,9 @@
             </Style.Triggers>
         </Style>
 
-        <Style x:Key="ShellDirectoryMenuStyle" TargetType="{x:Type MenuItem}">
+        <Style x:Key="ShellDirectoryMenuStyle"
+               TargetType="{x:Type MenuItem}"
+               BasedOn="{StaticResource {x:Type MenuItem}}">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsShellDirectory}" Value="True">

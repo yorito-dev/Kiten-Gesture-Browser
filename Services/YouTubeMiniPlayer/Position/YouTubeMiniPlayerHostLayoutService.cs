@@ -27,7 +27,7 @@ internal static class YouTubeMiniPlayerHostLayoutService
         foreach (var runtime in runtimes)
         {
             if (runtime.IsFullScreen
-                || runtime.IsWebDragging
+                || runtime.WebDrag.IsDragging
                 || runtime.IsSurfaceDragging
                 || runtime.IsResizing)
             {

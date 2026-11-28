@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.ExceptionServices;
 using System.Windows.Threading;
 using TabBrowser.Models.Workspaces;
@@ -65,6 +66,47 @@ public sealed class WorkspaceTrashWindowTests
             Assert.Contains("完全削除しました", window.StatusText);
             Assert.Empty(await service.GetDeletedItemsAsync());
             Assert.Equal(0L, await db.ScalarAsync("SELECT COUNT(*) FROM workspace_session_tabs;"));
+        }
+        finally { window.Close(); }
+    });
+
+    [Fact]
+    public void NotePlacementIsForgottenOnlyAfterPermanentDeletion() => RunInSta(async () =>
+    {
+        using var db = new TempWorkspaceDatabase();
+        var service = new WorkspaceService(db.Repository());
+        var workspace = await service.CreateWorkspaceAsync("検証", 1);
+        var retained = await service.AddNoteAsync(workspace.Id, "残すメモ", "本文", 0, 0);
+        var folder = await service.AddFolderAsync(workspace.Id, "親", 0, 0);
+        var removed = await service.AddNoteAsync(workspace.Id, "完全削除するメモ", "本文", 0, 0, folder.Id);
+        var path = Path.Combine(db.DirectoryPath, "settings.json");
+        var settings = new TabBrowser.Models.AppSettings();
+        foreach (var itemId in new[] { retained.Id, folder.Id, removed.Id })
+            settings.WorkspaceNoteEditorWindowPlacements[itemId] = new() { Width = 620, Height = 480 };
+        Services.SettingsService.SaveToFile(path, settings);
+        var earlierWindow = new Services.SettingsService(path).Load();
+        earlierWindow.WorkspaceNoteEditorWindowPlacements[retained.Id].Width = 700;
+        var saveEarlierWindow = Services.SettingsService.CaptureSaveOperation(earlierWindow, path);
+        var window = new WorkspaceTrashWindow(service,
+            ids => Services.SettingsService.ForgetPermanentlyDeletedWorkspaceNotePlacements(ids, path));
+        try
+        {
+            await service.DeleteItemAsync(retained.Id);
+            await service.DeleteItemAsync(folder.Id);
+            await window.ReloadAsync();
+            Assert.Equal(3, new Services.SettingsService(path).Load().WorkspaceNoteEditorWindowPlacements.Count);
+            window.SelectItem(folder.Id);
+            window.PreparePermanentDelete();
+            await window.ConfirmPermanentDeleteAsync();
+            Assert.Contains("完全削除しました", window.StatusText);
+
+            // 設定を先に捕捉した別Windowが後から保存しても、消すのは確定したメモのIDだけ。
+            Assert.Equal(3, new Services.SettingsService(path).Load().WorkspaceNoteEditorWindowPlacements.Count);
+            saveEarlierWindow();
+            var latest = new Services.SettingsService(path).Load().WorkspaceNoteEditorWindowPlacements;
+            Assert.DoesNotContain(removed.Id, latest.Keys);
+            Assert.Contains(folder.Id, latest.Keys);
+            Assert.Equal(700, latest[retained.Id].Width);
         }
         finally { window.Close(); }
     });

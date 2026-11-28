@@ -8,6 +8,7 @@ internal interface IApplicationKeyboardShortcutWindow
     bool IsReadyForKeyboardShortcut { get; }
     bool IsCommandPaletteInputOwnerActive();
     void QueueCommandPaletteShortcut();
+    bool TryQueueMiniPlayerResizeCancellation();
     void ReportKeyboardShortcutFailure(string failure);
 }
 
@@ -33,6 +34,7 @@ internal sealed class ApplicationKeyboardShortcutHook : IDisposable
     private const int VirtualKeyF8 = 0x77;
     private const int VirtualKeyF9 = 0x78;
     private const int VirtualKeyK = 0x4B;
+    private const int VirtualKeyEscape = 0x1B;
     private const int VirtualKeyControl = 0x11;
     private const int VirtualKeyShift = 0x10;
     private const int VirtualKeyMenu = 0x12;
@@ -143,6 +145,12 @@ internal sealed class ApplicationKeyboardShortcutHook : IDisposable
     private bool HandleKey(int message, int virtualKey, int flags)
     {
         var isDown = message is WmKeyDown or WmSystemKeyDown;
+        if (virtualKey == VirtualKeyEscape && isDown)
+        {
+            _ = _windows().Any(static window => window.IsReadyForKeyboardShortcut && window.TryQueueMiniPlayerResizeCancellation());
+            return false;
+        }
+
         if (virtualKey == VirtualKeyF8)
         {
             var window = _windows().FirstOrDefault(static candidate => candidate.IsReadyForKeyboardShortcut);

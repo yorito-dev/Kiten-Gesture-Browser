@@ -16,7 +16,14 @@ public sealed class YouTubeMiniPlayerStore
         WriteIndented = true
     };
 
+    private static readonly object FileGate = new();
+
     private readonly string _storeFile;
+    private readonly string _backupFile;
+    private readonly HashSet<Guid> _explicitlyClosed = [];
+    private bool _recoveryPending;
+    private StartupRestoreState _startupRestoreState;
+    private HashSet<Guid>? _unrestoredPlayerIds;
 
     public YouTubeMiniPlayerStore()
         : this(AppPaths.YouTubeMiniPlayersFile)
@@ -26,35 +33,173 @@ public sealed class YouTubeMiniPlayerStore
     public YouTubeMiniPlayerStore(string storeFile)
     {
         _storeFile = storeFile;
+        _backupFile = AtomicFileService.CreateBackupFilePath(storeFile);
     }
 
-    public List<YouTubeMiniPlayerState> Load()
+    public List<YouTubeMiniPlayerState> Load() => Load(forStartup: false);
+
+    internal List<YouTubeMiniPlayerState> LoadForStartup() => Load(forStartup: true);
+
+    private List<YouTubeMiniPlayerState> Load(bool forStartup)
     {
-        try
+        lock (FileGate)
         {
-            if (!File.Exists(_storeFile))
+            if (forStartup && _startupRestoreState == StartupRestoreState.NotStarted)
             {
-                return [];
+                _startupRestoreState = StartupRestoreState.Restoring;
             }
 
-            using var stream = File.OpenRead(_storeFile);
-            var items = JsonSerializer.Deserialize<List<YouTubeMiniPlayerState>>(stream, JsonOptions);
-            return Normalize(items);
+            var primaryState = Read(_storeFile, out var players);
+            if (primaryState == ReadState.Loaded)
+            {
+                return players.Where(player => !_explicitlyClosed.Contains(player.Id)).ToList();
+            }
+
+            var backupState = Read(_backupFile, out var backup);
+            _recoveryPending |= primaryState != ReadState.Missing || backupState != ReadState.Missing;
+            return backup.Where(player => !_explicitlyClosed.Contains(player.Id)).ToList();
         }
-        catch
+    }
+
+    internal void CompleteStartupRestore()
+    {
+        lock (FileGate)
         {
-            return [];
+            _startupRestoreState = StartupRestoreState.Completed;
+        }
+    }
+
+    internal void RecordExplicitClose(Guid id)
+    {
+        lock (FileGate)
+        {
+            _explicitlyClosed.Add(id);
+        }
+    }
+
+    internal void RecordReopened(Guid id)
+    {
+        lock (FileGate)
+        {
+            _explicitlyClosed.Remove(id);
         }
     }
 
     public void Save(IEnumerable<YouTubeMiniPlayerState> players)
     {
-        AtomicFileService.EnsureDirectory(_storeFile);
         var normalized = Normalize(players);
-        AtomicFileService.Write(
+        lock (FileGate)
+        {
+            var primaryState = Read(_storeFile, out var primary);
+            if (primaryState == ReadState.Loaded)
+            {
+                WriteSnapshot(primary, normalized, _backupFile);
+                // この保存で作ったバックアップに載る閉鎖だけを引き継ぐ。
+                _explicitlyClosed.IntersectWith(primary.Select(static player => player.Id));
+                _recoveryPending = false;
+                return;
+            }
+
+            var backupState = Read(_backupFile, out var backup);
+            if (primaryState == ReadState.Missing && backupState == ReadState.Missing && !_recoveryPending)
+            {
+                WriteSnapshot([], normalized, _backupFile);
+                _explicitlyClosed.Clear();
+                return;
+            }
+
+            _recoveryPending = true;
+            if (primaryState == ReadState.Unavailable || backupState != ReadState.Loaded)
+            {
+                throw new IOException("既存のミニプレイヤー状態を確認できないため、保存を保留しました。");
+            }
+
+            WriteSnapshot(backup, normalized, backupFile: null);
+            _explicitlyClosed.IntersectWith(backup.Select(static player => player.Id));
+            _recoveryPending = false;
+        }
+    }
+
+    private void WriteSnapshot(
+        List<YouTubeMiniPlayerState> stored, List<YouTubeMiniPlayerState> snapshot, string? backupFile)
+    {
+        if (!_recoveryPending && _startupRestoreState == StartupRestoreState.NotStarted)
+        {
+            Write(snapshot, backupFile);
+            return;
+        }
+
+        var accountedFor = snapshot.Select(static player => player.Id).ToHashSet();
+        accountedFor.UnionWith(_explicitlyClosed);
+        if (_startupRestoreState != StartupRestoreState.Completed)
+        {
+            if ((_recoveryPending && _startupRestoreState == StartupRestoreState.Restoring)
+                || stored.Exists(player => !accountedFor.Contains(player.Id)))
+            {
+                throw new IOException("復元待ちのミニプレイヤーがあるため、保存を保留しました。");
+            }
+
+            Write(snapshot, backupFile);
+            return;
+        }
+
+        // 復元先のない記録は、次の通常保存や終了前保存でも引き継ぐ。
+        var unrestored = stored.Where(player => !accountedFor.Contains(player.Id)
+            && (_recoveryPending || _unrestoredPlayerIds is null || _unrestoredPlayerIds.Contains(player.Id)))
+            .ToList();
+        snapshot.AddRange(unrestored);
+        Write(snapshot, backupFile);
+        _unrestoredPlayerIds = unrestored.Select(static player => player.Id).ToHashSet();
+    }
+
+    private void Write(List<YouTubeMiniPlayerState> players, string? backupFile)
+        => AtomicFileService.Write(
             _storeFile,
-            AtomicFileService.CreateBackupFilePath(_storeFile),
-            stream => JsonSerializer.Serialize(stream, normalized, JsonOptions));
+            backupFile,
+            stream => JsonSerializer.Serialize(stream, players, JsonOptions));
+
+    private static ReadState Read(string path, out List<YouTubeMiniPlayerState> players)
+    {
+        players = [];
+        try
+        {
+            using var stream = File.OpenRead(path);
+            if (JsonSerializer.Deserialize<List<YouTubeMiniPlayerState>>(stream, JsonOptions) is not { } stored
+                || stored.Any(static player => player is null))
+            {
+                return ReadState.Corrupt;
+            }
+
+            players = Normalize(stored);
+            return ReadState.Loaded;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return ReadState.Missing;
+        }
+        catch (JsonException)
+        {
+            return ReadState.Corrupt;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ReadState.Unavailable;
+        }
+    }
+
+    private enum StartupRestoreState
+    {
+        NotStarted,
+        Restoring,
+        Completed
+    }
+
+    private enum ReadState
+    {
+        Missing,
+        Loaded,
+        Corrupt,
+        Unavailable
     }
 
     public static List<YouTubeMiniPlayerState> NormalizeClosedHistory(

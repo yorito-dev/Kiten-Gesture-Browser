@@ -1422,6 +1422,18 @@
         }
 
         youTubeMenuReadyTarget = null;
+        if (window.top !== window && isEditableContextTarget(event)) {
+            // 子フレームの編集欄はWebView2のコンテキストメニュー要求へ渡す。
+            return;
+        }
+
+        if (window.top === window && location.href === "about:blank"
+            && event.target?.closest?.("#bookmarkList [data-bookmark-id]")
+            && document.querySelector("#bookmarkContextMenu > #deleteBookmarkButton")) {
+            // 新しいタブのブックマークにはページ自身の削除メニューがある。
+            return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
         showPageContextMenu(event);

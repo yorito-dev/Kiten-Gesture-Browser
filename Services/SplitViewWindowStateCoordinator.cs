@@ -4,13 +4,13 @@ internal sealed class SplitViewWindowStateCoordinator
 {
     private readonly Dictionary<string, int> _accentSlots = new(StringComparer.Ordinal);
     private int _displayRefreshGeneration;
-    private bool _isPreparing;
+    private int _preparations;
 
-    public bool IsPreparing => _isPreparing;
+    public bool IsPreparing => _preparations > 0;
 
     public IDisposable EnterPreparation()
     {
-        _isPreparing = true;
+        _preparations++;
         return new PreparationLease(this);
     }
 
@@ -76,7 +76,7 @@ internal sealed class SplitViewWindowStateCoordinator
 
     private void CompletePreparation()
     {
-        _isPreparing = false;
+        _preparations--;
     }
 
     private sealed class PreparationLease(SplitViewWindowStateCoordinator coordinator) : IDisposable

@@ -2,6 +2,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using TabBrowser.Models;
 
 namespace TabBrowser.Services;
@@ -17,6 +18,7 @@ public sealed class SessionService
     private const string ProtectedSessionFileSearchPattern = "protected-session-*.json";
     private const string CorruptPrimaryDirectorySuffix = ".corrupt";
     private static readonly TimeSpan ProtectedSessionMinimumInterval = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan PlaybackSnapshotMinimumInterval = TimeSpan.FromMinutes(5);
     // 名前付き保存は低頻度の明示操作。同一プロセスの複数Windowからの保存・削除を直列化する。
     private static readonly SemaphoreSlim NamedRestorePointGate = new(1, 1);
     // MainWindowごとのSessionServiceも同じデータ領域を使う。読込・修復・保存を同一プロセス内で直列化する。
@@ -41,7 +43,9 @@ public sealed class SessionService
     private readonly Action<SessionPersistenceDiagnosticOperation>? _beforePersistenceOperation;
     private readonly Action? _beforePrimaryRepair;
     private readonly Action<CorruptPrimaryPreservationStage>? _beforeCorruptPrimaryPreservationStage;
+    private readonly TimeProvider _timeProvider;
     private string? _lastSavedSessionJson;
+    private long? _lastAutomaticSnapshotTimestamp;
     private bool _preserveSessionBackupUntilPrimarySaved;
     private bool _preserveWindowMemoryBackupUntilPrimarySaved;
     private bool _sessionPrimaryVersionCheckedForSave;
@@ -76,7 +80,8 @@ public sealed class SessionService
         SessionRecoveryDiagnosticState recoveryDiagnosticState,
         Action<SessionPersistenceDiagnosticOperation>? beforePersistenceOperation = null,
         Action? beforePrimaryRepair = null,
-        Action<CorruptPrimaryPreservationStage>? beforeCorruptPrimaryPreservationStage = null)
+        Action<CorruptPrimaryPreservationStage>? beforeCorruptPrimaryPreservationStage = null,
+        TimeProvider? timeProvider = null)
     {
         _sessionFile = sessionFile;
         _sessionBackupFile = AtomicFileService.CreateBackupFilePath(sessionFile);
@@ -90,6 +95,7 @@ public sealed class SessionService
         _beforePersistenceOperation = beforePersistenceOperation;
         _beforePrimaryRepair = beforePrimaryRepair;
         _beforeCorruptPrimaryPreservationStage = beforeCorruptPrimaryPreservationStage;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public SessionRecoveryDiagnosticSnapshot CaptureRecoveryDiagnosticSnapshot()
@@ -404,7 +410,11 @@ public sealed class SessionService
         }
     }
 
-    public async Task SaveAsync(SessionData session)
+    public Task SaveAsync(SessionData session) => SaveAsync(session, canDeferPlaybackSnapshot: false);
+
+    internal Task SaveAutomaticallyAsync(SessionData session) => SaveAsync(session, canDeferPlaybackSnapshot: true);
+
+    private async Task SaveAsync(SessionData session, bool canDeferPlaybackSnapshot)
     {
         ValidateSupportedSessionVersion(session);
         EnsureUniqueSessionTabIds(session);
@@ -421,6 +431,7 @@ public sealed class SessionService
                 return;
             }
 
+            var previousSession = _lastSavedSessionJson;
             await TryProtectCurrentSessionBeforeOverwriteAsync(session).ConfigureAwait(false);
             var saveAttempt = _recoveryDiagnosticState.Begin(SessionPersistenceDiagnosticOperation.NormalSave);
             try
@@ -441,11 +452,55 @@ public sealed class SessionService
                 throw;
             }
 
-            await TrySaveSessionSnapshotAsync(serializedSession).ConfigureAwait(false);
+            if (!canDeferPlaybackSnapshot || !ShouldDeferPlaybackSnapshot(previousSession, serializedSession))
+            {
+                await TrySaveSessionSnapshotAsync(serializedSession).ConfigureAwait(false);
+            }
         }
         finally
         {
             SessionFileGate.Release();
+        }
+    }
+
+    private bool ShouldDeferPlaybackSnapshot(string? previousSession, string currentSession)
+    {
+        if (previousSession is null
+            || _lastAutomaticSnapshotTimestamp is not { } timestamp
+            || _timeProvider.GetElapsedTime(timestamp) >= PlaybackSnapshotMinimumInterval)
+        {
+            return false;
+        }
+
+        return JsonNode.DeepEquals(WithoutOpenTabPlaybackPositions(previousSession),
+            WithoutOpenTabPlaybackPositions(currentSession));
+    }
+
+    private static JsonNode? WithoutOpenTabPlaybackPositions(string serializedSession)
+    {
+        var session = JsonNode.Parse(serializedSession);
+        RemovePositions(session?["tabs"] as JsonArray);
+        if (session?["windows"] is JsonArray windows)
+        {
+            foreach (var window in windows)
+            {
+                RemovePositions(window?["tabs"] as JsonArray);
+            }
+        }
+
+        return session;
+
+        static void RemovePositions(JsonArray? tabs)
+        {
+            if (tabs is null)
+            {
+                return;
+            }
+
+            foreach (var tab in tabs.OfType<JsonObject>())
+            {
+                tab.Remove("youTubePlaybackPositionSeconds");
+            }
         }
     }
 
@@ -588,31 +643,12 @@ public sealed class SessionService
             _beforePersistenceOperation?.Invoke(
                 SessionPersistenceDiagnosticOperation.AutomaticSnapshotCreation);
             await SaveSessionSnapshotAsync(serializedSession);
+            _lastAutomaticSnapshotTimestamp = _timeProvider.GetTimestamp();
             _recoveryDiagnosticState.CompleteSucceeded(snapshotAttempt);
         }
         catch (Exception ex)
         {
-            _recoveryDiagnosticState.CompleteFailed(snapshotAttempt, ex);
-            // スナップショットは補助復旧用なので、通常セッション保存は失敗扱いにしない。
-            return;
-        }
-
-        TryTrimSessionSnapshots();
-    }
-
-    private void TrySaveSessionSnapshot(string serializedSession)
-    {
-        var snapshotAttempt = _recoveryDiagnosticState.Begin(
-            SessionPersistenceDiagnosticOperation.AutomaticSnapshotCreation);
-        try
-        {
-            _beforePersistenceOperation?.Invoke(
-                SessionPersistenceDiagnosticOperation.AutomaticSnapshotCreation);
-            SaveSessionSnapshot(serializedSession);
-            _recoveryDiagnosticState.CompleteSucceeded(snapshotAttempt);
-        }
-        catch (Exception ex)
-        {
+            _lastAutomaticSnapshotTimestamp = null;
             _recoveryDiagnosticState.CompleteFailed(snapshotAttempt, ex);
             // スナップショットは補助復旧用なので、通常セッション保存は失敗扱いにしない。
             return;
@@ -626,13 +662,6 @@ public sealed class SessionService
         Directory.CreateDirectory(_sessionSnapshotDirectory);
         var snapshotFile = CreateSessionSnapshotFilePath(_sessionSnapshotDirectory);
         await SaveSerializedToFileAsync(snapshotFile, serializedSession);
-    }
-
-    private void SaveSessionSnapshot(string serializedSession)
-    {
-        Directory.CreateDirectory(_sessionSnapshotDirectory);
-        var snapshotFile = CreateSessionSnapshotFilePath(_sessionSnapshotDirectory);
-        SaveSerializedToFile(snapshotFile, serializedSession);
     }
 
     private void TryTrimSessionSnapshots()
@@ -794,63 +823,6 @@ public sealed class SessionService
         {
             _recoveryDiagnosticState.CompleteFailed(protectedAttempt, ex);
             // 保護復元点は補助復旧用なので、通常セッション読込は継続する。
-            return;
-        }
-
-        TryTrimProtectedSessionFiles();
-    }
-
-    private void TryProtectCurrentSessionBeforeOverwrite(SessionData incomingSession)
-    {
-        var protectedAttempt = _recoveryDiagnosticState.Begin(
-            SessionPersistenceDiagnosticOperation.ProtectedRecoveryPointCreation);
-        try
-        {
-            var latestProtectedFile = GetLatestProtectedSessionFile();
-            if (HasRestorableSessionContent(incomingSession)
-                && latestProtectedFile is not null
-                && DateTime.UtcNow - latestProtectedFile.LastWriteTimeUtc < ProtectedSessionMinimumInterval)
-            {
-                _recoveryDiagnosticState.CompleteSkipped(protectedAttempt);
-                return;
-            }
-
-            if (!File.Exists(_sessionFile))
-            {
-                _recoveryDiagnosticState.CompleteSkipped(protectedAttempt);
-                return;
-            }
-
-            var currentSession = NormalizeLoadedSession(ParseSessionData(File.ReadAllBytes(_sessionFile)));
-            if (!HasRestorableSessionContent(currentSession))
-            {
-                _recoveryDiagnosticState.CompleteSkipped(protectedAttempt);
-                return;
-            }
-
-            var serializedCurrentSession = SerializeSession(currentSession);
-            if (latestProtectedFile is not null
-                && string.Equals(
-                    File.ReadAllText(latestProtectedFile.FullName),
-                    serializedCurrentSession,
-                    StringComparison.Ordinal))
-            {
-                _recoveryDiagnosticState.CompleteSkipped(protectedAttempt);
-                return;
-            }
-
-            _beforePersistenceOperation?.Invoke(
-                SessionPersistenceDiagnosticOperation.ProtectedRecoveryPointCreation);
-            Directory.CreateDirectory(_protectedSessionDirectory);
-            SaveSerializedToFile(
-                CreateProtectedSessionFilePath(_protectedSessionDirectory),
-                serializedCurrentSession);
-            _recoveryDiagnosticState.CompleteSucceeded(protectedAttempt);
-        }
-        catch (Exception ex)
-        {
-            _recoveryDiagnosticState.CompleteFailed(protectedAttempt, ex);
-            // 保護復元点は補助復旧用なので、通常セッション保存は継続する。
             return;
         }
 
@@ -1352,59 +1324,6 @@ public sealed class SessionService
             : normalized[..500];
     }
 
-    public void Save(SessionData session)
-    {
-        ValidateSupportedSessionVersion(session);
-        EnsureUniqueSessionTabIds(session);
-        var serializedSession = SerializeSession(session);
-        SessionFileGate.Wait();
-        try
-        {
-            EnsureSessionPrimaryMayBeSaved();
-            if (CanSkipSessionSave(serializedSession))
-            {
-                var skippedAttempt = _recoveryDiagnosticState.Begin(
-                    SessionPersistenceDiagnosticOperation.NormalSave);
-                _recoveryDiagnosticState.CompleteSkipped(skippedAttempt);
-                return;
-            }
-
-            TryProtectCurrentSessionBeforeOverwrite(session);
-            var saveAttempt = _recoveryDiagnosticState.Begin(SessionPersistenceDiagnosticOperation.NormalSave);
-            try
-            {
-                _beforePersistenceOperation?.Invoke(SessionPersistenceDiagnosticOperation.NormalSave);
-                if (_sessionCorruptPrimaryBytes is not null)
-                    EnsurePrimaryUnchanged(_sessionFile, _sessionCorruptPrimaryBytes);
-                SaveSerializedToFile(_sessionFile, serializedSession,
-                    _preserveSessionBackupUntilPrimarySaved ? null : _sessionBackupFile);
-                _preserveSessionBackupUntilPrimarySaved = false;
-                _sessionCorruptPrimaryBytes = null;
-                _lastSavedSessionJson = serializedSession;
-                _recoveryDiagnosticState.CompleteSucceeded(saveAttempt);
-            }
-            catch (Exception ex)
-            {
-                _recoveryDiagnosticState.CompleteFailed(saveAttempt, ex);
-                throw;
-            }
-
-            TrySaveSessionSnapshot(serializedSession);
-        }
-        finally
-        {
-            SessionFileGate.Release();
-        }
-    }
-
-    private static void SaveToFile(string filePath, SessionData session, string? backupFilePath = null)
-    {
-        AtomicFileService.Write(
-            filePath,
-            backupFilePath,
-            stream => JsonSerializer.Serialize(stream, session, JsonOptions));
-    }
-
     private bool CanSkipSessionSave(string serializedSession)
     {
         return File.Exists(_sessionFile)
@@ -1558,21 +1477,6 @@ public sealed class SessionService
             {
                 await using var writer = new StreamWriter(stream, leaveOpen: true);
                 await writer.WriteAsync(serializedSession);
-            });
-    }
-
-    private static void SaveSerializedToFile(
-        string filePath,
-        string serializedSession,
-        string? backupFilePath = null)
-    {
-        AtomicFileService.Write(
-            filePath,
-            backupFilePath,
-            stream =>
-            {
-                using var writer = new StreamWriter(stream, leaveOpen: true);
-                writer.Write(serializedSession);
             });
     }
 

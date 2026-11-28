@@ -8,6 +8,23 @@ internal sealed class AddressBarInteractionCoordinator
     private double _dragStartY;
     private bool _isDragCandidate;
     private int _suggestionSuppressionDepth;
+    private int _folderNavigationVersion;
+
+    public void InvalidateFolderNavigation() => _folderNavigationVersion++;
+
+    public int BeginFolderNavigation() => ++_folderNavigationVersion;
+
+    public bool IsFolderNavigationCurrent(int version) => version == _folderNavigationVersion;
+
+    public static bool LooksLikeFolderPath(string input)
+    {
+        var path = input.Trim();
+        return System.IO.Path.IsPathRooted(path)
+            || path.StartsWith(@".\", StringComparison.Ordinal)
+            || path.StartsWith(@"..\", StringComparison.Ordinal)
+            || path.StartsWith("./", StringComparison.Ordinal)
+            || path.StartsWith("../", StringComparison.Ordinal);
+    }
 
     public string OriginalEditText => _originalEditText;
 

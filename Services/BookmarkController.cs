@@ -56,6 +56,11 @@ public sealed class BookmarkController : IDisposable
     private readonly Func<DateTimeOffset> _now;
     private readonly bool _recordOpenUsage;
     private bool _isSubscribed;
+    private DeletedBookmark? _deletedBookmark;
+
+    internal Guid? UndoDeleteBookmarkId => _deletedBookmark?.Bookmark.Id;
+
+    private sealed record DeletedBookmark(BookmarkItem Bookmark, int Index);
 
     internal BookmarkController(
         IBookmarkControllerHost host,
@@ -254,6 +259,7 @@ public sealed class BookmarkController : IDisposable
                 return false;
             }
 
+            _deletedBookmark = new DeletedBookmark(BookmarkDataSnapshot.Clone(bookmark), data.Bookmarks.IndexOf(bookmark));
             data.Bookmarks.Remove(bookmark);
             removed = true;
             return true;
@@ -292,6 +298,51 @@ public sealed class BookmarkController : IDisposable
         var result = await _stateStore.UpdateAsync(changeSet.ApplyTo);
         ReportMutationResult(result, "ブックマークを更新しました");
         return result;
+    }
+
+    internal async Task UndoDeleteAsync(Guid bookmarkId, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested || _deletedBookmark is not { } deleted
+            || deleted.Bookmark.Id != bookmarkId || !EnsureWritable())
+            return;
+
+        var alreadyExists = false;
+        var result = await _stateStore.UpdateAsync(data =>
+        {
+            if (!ReferenceEquals(deleted, _deletedBookmark) || cancellationToken.IsCancellationRequested)
+                return false;
+
+            _deletedBookmark = null;
+            if (data.Bookmarks.Any(item => item.Id == bookmarkId
+                || BookmarkService.UrlComparer.Equals(item.Url, deleted.Bookmark.Url)))
+            {
+                alreadyExists = true;
+                return false;
+            }
+
+            data.Bookmarks.Insert(Math.Min(deleted.Index, data.Bookmarks.Count), deleted.Bookmark);
+            return true;
+        });
+        if (!result.Persisted)
+        {
+            ReportMutationResult(result, string.Empty);
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        if (alreadyExists)
+        {
+            _host.RefreshLoadedNewTabPages();
+            _host.SetStatus("同じブックマークが既にあります");
+        }
+        else if (result.Applied)
+        {
+            _host.CloseAddressSuggestions();
+            _host.QueueSessionSave();
+            _host.SetStatus("ブックマークの削除を取り消しました");
+        }
     }
 
     public void Dispose()

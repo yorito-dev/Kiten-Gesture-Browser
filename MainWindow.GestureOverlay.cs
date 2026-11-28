@@ -631,6 +631,12 @@ public partial class MainWindow : IPageGestureVisualHost, INativeWebGestureHost
         {
             var selection = _superDragCoordinator.BeginSearchSelection(sourceTab.Id, core, core.Source, operation, superDrag,
                 _addressService.CreateSearchUrl, SearchSelectedTextMaxLength);
+            if (selection.Choices.Count == 0 && !CanOpenSearchTarget(_addressService.CreateSearchUrl(operation.Value)))
+            {
+                _superDragCoordinator.CloseSearchSelection(selection.Id);
+                return;
+            }
+
             var interaction = s_inputInteractionHub.TryBegin(InputInteractionKind.PageContextMenu,
                 _workspaceWindowId, sourceTab.Id, DateTimeOffset.Now);
             if (!interaction.Accepted || interaction.Current is not { } currentInteraction)
@@ -660,6 +666,10 @@ public partial class MainWindow : IPageGestureVisualHost, INativeWebGestureHost
             superDrag.CustomSearchProviders);
         if (navigation is null)
         {
+            if ((operation.Action is "SearchForeground" or "SearchBackground")
+                && !CanOpenSearchTarget(_addressService.CreateSearchUrl(operation.Value)))
+                return;
+
             SetStatus("実行できるHTTP／HTTPSのURLがありません", autoClear: true);
             return;
         }
